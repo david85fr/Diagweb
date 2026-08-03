@@ -1,0 +1,2230 @@
+<style>
+/* Diagweb — styles (mobile-first, thèmes clair/sombre) */
+
+:root {
+  --bg: #0b0e14;
+  --panel: #141a24;
+  --panel-2: #1c2431;
+  --line: #26303f;
+  --ink: #e6edf5;
+  --muted: #8494a8;
+  --faint: #5b6a7e;
+  --accent: #2dd4bf;
+  --accent-dim: #1b8b7e;
+  --good: #46d17f;
+  --warn: #f5b942;
+  --crit: #ff5f56;
+  --shadow: 0 1px 0 rgba(255,255,255,.03), 0 12px 32px -18px rgba(0,0,0,.8);
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #eef1f5;
+    --panel: #ffffff;
+    --panel-2: #f4f6f9;
+    --line: #dde3ea;
+    --ink: #131922;
+    --muted: #5a6675;
+    --faint: #8b98a8;
+    --accent: #0d9488;
+    --accent-dim: #14b8a6;
+    --good: #12924f;
+    --warn: #b7791f;
+    --crit: #d64535;
+    --shadow: 0 1px 0 rgba(255,255,255,.6), 0 14px 30px -20px rgba(20,30,45,.35);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b0e14; --panel: #141a24; --panel-2: #1c2431; --line: #26303f;
+  --ink: #e6edf5; --muted: #8494a8; --faint: #5b6a7e;
+  --accent: #2dd4bf; --accent-dim: #1b8b7e; --good: #46d17f; --warn: #f5b942; --crit: #ff5f56;
+  --shadow: 0 1px 0 rgba(255,255,255,.03), 0 12px 32px -18px rgba(0,0,0,.8);
+}
+:root[data-theme="light"] {
+  --bg: #eef1f5; --panel: #ffffff; --panel-2: #f4f6f9; --line: #dde3ea;
+  --ink: #131922; --muted: #5a6675; --faint: #8b98a8;
+  --accent: #0d9488; --accent-dim: #14b8a6; --good: #12924f; --warn: #b7791f; --crit: #d64535;
+  --shadow: 0 1px 0 rgba(255,255,255,.6), 0 14px 30px -20px rgba(20,30,45,.35);
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background:
+    radial-gradient(1100px 500px at 85% -10%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%),
+    var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+.wrap { max-width: 1720px; margin: 0 auto; padding: 10px 12px 60px; }
+.hide { display: none !important; }
+button { font-family: var(--sans); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- Barre supérieure ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 40;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 10px;
+  align-items: center;
+  padding: 8px 0 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.logo {
+  width: 30px; height: 30px; border-radius: 8px; flex: none;
+  background: linear-gradient(145deg, var(--accent), var(--accent-dim));
+  display: grid; place-items: center;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.logo svg { width: 18px; height: 18px; display: block; }
+.brand h1 { font-size: 16px; margin: 0; letter-spacing: -.02em; font-weight: 680; }
+.brand p { margin: 0; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.topActions { display: flex; gap: 6px; justify-content: flex-end; }
+
+.searchrow {
+  position: relative;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 6px;
+}
+.searchrow .searchbox { grid-column: 1 / -1; }
+.searchbox { position: relative; min-width: 0; }
+#searchInput {
+  width: 100%;
+  font: 16px/1.2 var(--mono);
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 12px;
+}
+#searchInput::placeholder { color: var(--faint); font-family: var(--sans); font-size: 14px; }
+#searchInput:focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); outline: none; }
+
+.suggest {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 60;
+  width: min(100%, 560px);
+  max-height: min(46vh, 380px); overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 4px;
+}
+.sug {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  gap: 8px; align-items: baseline;
+  width: 100%; text-align: left;
+  background: none; border: 0; border-radius: 7px;
+  padding: 8px 8px; cursor: pointer;
+  color: var(--ink);
+}
+.sug:hover, .sug.sel { background: var(--panel-2); }
+.sug-addr { font-family: var(--mono); font-size: 13px; }
+.sug-label { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sug-unit { color: var(--faint); font-family: var(--mono); font-size: 11px; }
+.sug-help { padding: 8px 10px 6px; font-size: 11.5px; color: var(--muted); border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.sug-help code { font-family: var(--mono); background: var(--panel-2); border-radius: 4px; padding: 1px 4px; font-size: 11px; }
+
+#targetSel, #periodSel {
+  font: 13px var(--sans);
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 8px;
+  min-height: 38px;
+  max-width: 44vw;
+}
+#targetSel { min-width: 0; }
+#periodSel { max-width: 32vw; }
+
+/* ---------- Boutons ---------- */
+.btn {
+  font-size: 13px; font-weight: 560;
+  color: var(--ink); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 9px;
+  padding: 8px 12px; cursor: pointer;
+  transition: border-color .15s, background .15s;
+  white-space: nowrap;
+}
+.btn:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+.btn.primary {
+  background: linear-gradient(145deg, var(--accent), var(--accent-dim));
+  color: #04201d; border-color: transparent; font-weight: 640;
+}
+.btn.sm { padding: 5px 10px; font-size: 12px; }
+.iconbtn {
+  width: 34px; height: 34px; flex: none;
+  display: inline-grid; place-items: center;
+  font-size: 14px; color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 9px;
+  cursor: pointer;
+}
+.iconbtn:hover { color: var(--ink); border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+.iconbtn.on { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
+
+/* ---------- Badges de famille ---------- */
+.badge {
+  display: inline-block; flex: none;
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  padding: 2px 6px; border-radius: 5px;
+  border: 1px solid var(--line);
+  color: var(--muted); background: var(--panel-2);
+  align-self: center;
+}
+.badge.fam-I    { color: #3987e5; border-color: color-mix(in srgb, #3987e5 40%, var(--line)); }
+.badge.fam-Q    { color: #d95926; border-color: color-mix(in srgb, #d95926 40%, var(--line)); }
+.badge.fam-M    { color: #9085e9; border-color: color-mix(in srgb, #9085e9 40%, var(--line)); }
+.badge.fam-S    { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.badge.fam-MB   { color: #c98500; border-color: color-mix(in srgb, #c98500 45%, var(--line)); }
+.badge.fam-CAPI { color: #199e70; border-color: color-mix(in srgb, #199e70 45%, var(--line)); }
+
+/* ---------- Cartes ---------- */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  box-shadow: var(--shadow);
+}
+.card > h3, .table-card h3 {
+  margin: 0; padding: 12px 14px 8px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: .11em;
+  color: var(--muted); font-weight: 650;
+}
+.table-card h3 span { text-transform: none; letter-spacing: 0; color: var(--faint); font-weight: 500; margin-left: 6px; }
+
+/* ---------- Tableau numérique ---------- */
+.table-card { margin-bottom: 12px; }
+#tableRows { padding: 2px 6px 8px; }
+.vrow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 10px; align-items: center;
+  padding: 7px 8px;
+  border-radius: 9px;
+}
+.vrow:nth-child(odd) { background: color-mix(in srgb, var(--panel-2) 55%, transparent); }
+.v-id { display: grid; min-width: 0; }
+.v-addr { font-family: var(--mono); font-size: 13px; }
+.v-label { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v-val {
+  display: flex; align-items: baseline; gap: 6px;
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  justify-content: flex-end;
+}
+.v-val .val { font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.v-unit { color: var(--faint); font-size: 11px; }
+.v-hex { color: var(--faint); font-size: 11px; }
+.v-trend { width: 14px; text-align: center; font-size: 12px; }
+.v-trend.up { color: var(--good); }
+.v-trend.down { color: #d95926; }
+.v-trend.flat { color: var(--faint); }
+.led {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--panel-2); border: 1px solid var(--line);
+  display: inline-block;
+}
+.led.on { background: var(--good); border-color: var(--good); box-shadow: 0 0 6px color-mix(in srgb, var(--good) 60%, transparent); }
+.v-del {
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  color: var(--faint); background: none;
+  border: 0; border-radius: 7px; cursor: pointer; font-size: 12px;
+}
+.v-del:hover { color: var(--crit); background: var(--panel-2); }
+
+/* ---------- Grille de graphiques ---------- */
+.charts-grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
+
+.chart-card { display: flex; flex-direction: column; min-width: 0; }
+.chart-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px 6px;
+}
+.chart-title {
+  flex: 1; min-width: 0;
+  font: 600 13.5px var(--sans);
+  color: var(--ink);
+  background: none; border: 1px solid transparent; border-radius: 7px;
+  padding: 5px 8px;
+}
+.chart-title:hover { border-color: var(--line); }
+.chart-title:focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); outline: none; background: var(--panel-2); }
+.chart-tools { display: flex; gap: 6px; align-items: center; }
+.chart-window {
+  font: 12px var(--mono);
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 8px;
+  height: 34px; padding: 0 6px;
+}
+.chart-body { position: relative; height: 235px; padding: 0 4px; }
+.chart-body canvas {
+  width: 100%; height: 100%;
+  display: block;
+  touch-action: pan-y;
+  cursor: crosshair;
+}
+.chart-tip {
+  position: absolute; z-index: 30;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 6px 8px;
+  font-family: var(--mono); font-size: 11px;
+  min-width: 130px;
+}
+.tip-time { color: var(--faint); margin-bottom: 4px; }
+.tip-row { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
+.tip-row i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.tip-row .tip-addr { color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+.tip-row b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.chart-hint {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  color: var(--faint); font-size: 12.5px;
+  text-align: center; padding: 20px;
+  pointer-events: none;
+}
+.chart-hint b { color: var(--muted); }
+
+.chart-legend {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 4px 10px 10px;
+  min-height: 18px;
+}
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 11.5px;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 4px 9px; cursor: pointer;
+  max-width: 100%;
+}
+.chip:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.chip .sw { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+.chip-addr { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 34vw; }
+.chip-val { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chip-axis { color: var(--faint); font-size: 10px; }
+.chip.off { opacity: .45; }
+.chip.off .sw { background: transparent !important; border: 1.5px solid var(--faint); }
+
+.popmenu {
+  position: absolute; z-index: 90;
+  display: grid; gap: 2px;
+  background: var(--panel);
+  border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 5px;
+  min-width: 190px;
+}
+.popmenu button {
+  text-align: left;
+  font-size: 13px; color: var(--ink);
+  background: none; border: 0; border-radius: 7px;
+  padding: 9px 10px; cursor: pointer;
+}
+.popmenu button:hover { background: var(--panel-2); }
+.popmenu button.danger { color: var(--crit); }
+
+/* ---------- État vide ---------- */
+.empty {
+  text-align: center;
+  padding: 42px 18px;
+  border: 1px dashed var(--line); border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+  margin-bottom: 12px;
+}
+.empty h2 { margin: 0 0 8px; font-size: 19px; letter-spacing: -.02em; }
+.empty p { margin: 0 auto 6px; color: var(--muted); max-width: 52ch; font-size: 13.5px; }
+.empty .cta { margin-top: 18px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+
+/* ---------- Modal ---------- */
+.modal-back {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(4, 8, 14, .55);
+  display: grid; place-items: end center;
+  padding: 0;
+}
+.modal {
+  width: 100%; max-width: 560px;
+  max-height: 88vh; overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px 16px 0 0;
+  padding: 14px 16px 22px;
+}
+.m-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.m-head h3 { margin: 0; font-size: 16px; }
+.m-section { padding: 10px 0; border-top: 1px solid var(--line); margin-top: 8px; }
+.m-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.m-input {
+  width: 100%;
+  font: 16px var(--sans); color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 9px;
+  padding: 9px 11px;
+  margin-bottom: 10px;
+}
+.m-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.m-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.m-row h4 { margin: 0; font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.m-import { display: inline-flex; align-items: center; }
+.m-note { font-size: 11.5px; color: var(--faint); margin: 12px 0 0; }
+.m-empty { color: var(--faint); font-size: 13px; margin: 6px 0; }
+.m-text {
+  width: 100%; height: 240px;
+  font: 11px var(--mono); color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 9px;
+  padding: 8px;
+  resize: vertical;
+}
+.lay-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 6px;
+  border-radius: 9px;
+}
+.lay-row:nth-child(odd) { background: color-mix(in srgb, var(--panel-2) 55%, transparent); }
+.lay-id { min-width: 0; display: grid; }
+.lay-id b { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lay-date { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.lay-actions { display: flex; gap: 5px; flex: none; }
+.star { color: var(--faint); }
+.star.on { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
+
+/* ---------- Toasts ---------- */
+#toasts {
+  position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+  z-index: 200;
+  display: grid; gap: 8px;
+  width: min(94vw, 480px);
+  pointer-events: none;
+}
+.toast {
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 10px 14px;
+  font-size: 13px;
+  text-align: center;
+  transition: opacity .35s, transform .35s;
+}
+.toast.err { border-color: color-mix(in srgb, var(--crit) 55%, var(--line)); }
+.toast.gone { opacity: 0; transform: translateY(6px); }
+
+/* ---------- Barre d'état ---------- */
+.statusbar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
+  display: flex; justify-content: space-between; gap: 10px;
+  padding: 5px 14px calc(5px + env(safe-area-inset-bottom, 0px));
+  font: 10.5px var(--mono);
+  color: var(--faint);
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  border-top: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.statusbar span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- Écrans moyens et larges ---------- */
+@media (min-width: 700px) {
+  body { font-size: 14.5px; }
+  .wrap { padding: 12px 20px 64px; }
+  .topbar {
+    grid-template-columns: auto minmax(320px, 1fr) auto;
+    gap: 12px;
+  }
+  .searchrow { grid-column: auto; grid-template-columns: minmax(0, 1fr) auto auto auto; }
+  .searchrow .searchbox { grid-column: auto; }
+  .brand h1 { font-size: 17px; }
+  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+  .chart-body { height: 280px; }
+  .modal-back { place-items: center; padding: 20px; }
+  .modal { border-radius: 16px; }
+  .chip-addr { max-width: 240px; }
+}
+@media (min-width: 1700px) {
+  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); }
+  .chart-body { height: 330px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+</style>
+<div class="wrap">
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#04201d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12h4l2-6 4 12 2-6h6"/>
+        </svg>
+      </span>
+      <div>
+        <h1>Diagweb</h1>
+        <p>Diagnostic contrôleur · prototype</p>
+      </div>
+    </div>
+
+    <div class="searchrow">
+      <div class="searchbox">
+        <input id="searchInput" type="text" inputmode="text" autocomplete="off" autocapitalize="off"
+               autocorrect="off" spellcheck="false"
+               placeholder="Variable : I1.2.3.4, MB414, Regulation/mesure/vitesse…"
+               aria-label="Adresse de la variable à ajouter">
+      </div>
+      <select id="targetSel" aria-label="Destination de la variable"></select>
+      <select id="periodSel" aria-label="Période de rafraîchissement" title="Période de rafraîchissement"></select>
+      <button id="addBtn" class="btn primary" type="button">Ajouter</button>
+      <div id="suggestBox" class="suggest hide"></div>
+    </div>
+
+    <div class="topActions">
+      <button id="addChartBtn" class="btn" type="button" title="Ajouter un graphique">+ Graphique</button>
+      <button id="layoutsBtn" class="btn" type="button" title="Enregistrer / charger des dispositions">Dispositions</button>
+      <button id="pauseAllBtn" class="iconbtn" type="button" title="Figer tous les graphiques">⏸</button>
+      <button id="themeBtn" class="iconbtn" type="button" title="Basculer le thème clair/sombre">◐</button>
+    </div>
+  </header>
+
+  <section id="emptyState" class="empty hide">
+    <h2>Aucune variable suivie</h2>
+    <p>Saisissez une adresse dans la barre de recherche pour l'ajouter au tableau
+       numérique ou à un graphique&nbsp;: <b>I1.2.3.4</b>, <b>Q14.15</b>, <b>M1.14</b>,
+       <b>S0.4</b>, <b>MB414</b> ou un signal modèle comme <b>Regulation/mesure/vitesse</b>.</p>
+    <div class="cta">
+      <button id="demoBtn" class="btn primary" type="button">Charger la disposition de démonstration</button>
+    </div>
+  </section>
+
+  <section id="tableCard" class="card table-card hide">
+    <h3>Valeurs numériques <span id="tableCount"></span></h3>
+    <div id="tableRows"></div>
+  </section>
+
+  <div id="chartsGrid" class="charts-grid"></div>
+</div>
+
+<footer class="statusbar">
+  <span id="srcInfo"></span>
+  <span id="statInfo"></span>
+</footer>
+
+<div id="toasts" aria-live="polite"></div>
+<div id="modalRoot"></div>
+
+<script>
+/* Diagweb — configuration globale & catalogue de variables simulées */
+(function () {
+  "use strict";
+  const DW = (window.DW = window.DW || {});
+
+  DW.CONFIG = {
+    defaultPeriodMs: 10,     // période de rafraîchissement par défaut d'une variable
+    periodChoices: [10, 20, 50, 100, 200, 500, 1000],
+    horizonS: 330,           // profondeur d'historique conservée (s)
+    windows: [15, 30, 60, 120, 300],
+    defaultWindowS: 60,
+    maxCharts: 8,
+    maxSeriesPerChart: 8,    // ordre de palette fixe, jamais recyclé
+    chartFps: 20,
+    liveRefreshMs: 200,      // rafraîchissement tableau + légendes
+  };
+
+  // Palette catégorielle validée (ordre fixe — la position code l'identité).
+  DW.SERIES_COLORS = {
+    light: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'],
+    dark:  ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'],
+  };
+
+  DW.isDarkTheme = function () {
+    const t = document.documentElement.getAttribute('data-theme');
+    if (t === 'dark') return true;
+    if (t === 'light') return false;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  };
+  DW.seriesColor = function (idx) {
+    const pal = DW.isDarkTheme() ? DW.SERIES_COLORS.dark : DW.SERIES_COLORS.light;
+    return pal[idx % pal.length];
+  };
+
+  // ------------------------------------------------------------------
+  // Catalogue des variables connues du contrôleur (simulation).
+  // kind : 'bit' | 'word' | 'float'
+  // sim  : paramètres du générateur (voir sim.js)
+  // ------------------------------------------------------------------
+  DW.CATALOG = [
+    // --- Entrées TOR : I<bus>.<module>.<voie>… -----------------------
+    { addr: 'I0.1',      label: "Arrêt d'urgence (pupitre)",              kind: 'bit',  unit: '', sim: { type: 'bit', t0: 120, t1: 4 } },
+    { addr: 'I0.2',      label: 'Sélecteur mode auto',                    kind: 'bit',  unit: '', sim: { type: 'bit', t0: 25, t1: 40 } },
+    { addr: 'I1.2.3.4',  label: 'Entrée TOR — bus 1, module 2, voie 3.4', kind: 'bit',  unit: '', sim: { type: 'bit', t0: 6, t1: 9 } },
+    { addr: 'I1.2.3.5',  label: 'Entrée TOR — bus 1, module 2, voie 3.5', kind: 'bit',  unit: '', sim: { type: 'bit', t0: 11, t1: 5 } },
+    { addr: 'I2.0.1',    label: 'Capteur position A',                     kind: 'bit',  unit: '', sim: { type: 'bit', t0: 8, t1: 8 } },
+
+    // --- Sorties TOR : Q… -------------------------------------------
+    { addr: 'Q0.3',      label: 'Commande contacteur principal',          kind: 'bit',  unit: '', sim: { type: 'bit', t0: 30, t1: 90 } },
+    { addr: 'Q2.1',      label: 'Électrovanne EV1',                       kind: 'bit',  unit: '', sim: { type: 'bit', t0: 14, t1: 7 } },
+    { addr: 'Q14.15',    label: 'Sortie relais K15',                      kind: 'bit',  unit: '', sim: { type: 'bit', t0: 9, t1: 13 } },
+
+    // --- Bits mémoire : M… ------------------------------------------
+    { addr: 'M1.14',     label: 'Marche demandée',                        kind: 'bit',  unit: '', sim: { type: 'bit', t0: 20, t1: 60 } },
+    { addr: 'M1.15',     label: 'Défaut mémorisé',                        kind: 'bit',  unit: '', sim: { type: 'bit', t0: 180, t1: 12 } },
+    { addr: 'M20.0',     label: 'Cycle en cours',                         kind: 'bit',  unit: '', sim: { type: 'bit', t0: 15, t1: 45 } },
+
+    // --- Variables système : S… -------------------------------------
+    { addr: 'S0.4',      label: 'Système prêt',                           kind: 'bit',  unit: '', sim: { type: 'bit', t0: 8, t1: 300 } },
+    { addr: 'S0.5',      label: 'Défaut présent',                         kind: 'bit',  unit: '', sim: { type: 'bit', t0: 240, t1: 15 } },
+    { addr: 'S1.0',      label: 'Heartbeat 1 s',                          kind: 'bit',  unit: '', sim: { type: 'square', period: 2, duty: 0.5 } },
+    { addr: 'S2.1',      label: 'Liaison bus terrain OK',                 kind: 'bit',  unit: '', sim: { type: 'bit', t0: 600, t1: 6 } },
+
+    // --- Mots de bus : MB<registre> ---------------------------------
+    { addr: 'MB400',     label: 'Registre process 400',                   kind: 'word', unit: '', sim: { type: 'sine', base: 12000, amp: 900, period: 47, noise: 60 } },
+    { addr: 'MB414',     label: 'Mesure brute capteur (registre 414)',    kind: 'word', unit: '', sim: { type: 'sine', base: 20870, amp: 350, period: 13, noise: 90 } },
+    { addr: 'MB520',     label: 'Consigne opérateur (registre 520)',      kind: 'word', unit: '', sim: { type: 'steps', values: [800, 1000, 1200, 1500], period: 35 } },
+    { addr: 'MB1000',    label: 'Compteur trames bus',                    kind: 'word', unit: '', sim: { type: 'counter', rate: 87 } },
+
+    // --- Signaux modèles Simulink (C API) ---------------------------
+    { addr: 'Regulation/consigne/vitesse',   label: 'Consigne de vitesse',        kind: 'float', unit: 'tr/min', sim: { type: 'steps', values: [1480, 1500, 1500, 1520, 1550], period: 40 } },
+    { addr: 'Regulation/mesure/vitesse',     label: 'Vitesse mesurée',            kind: 'float', unit: 'tr/min', sim: { type: 'sine', base: 1500, amp: 22, period: 17, noise: 4 } },
+    { addr: 'Regulation/sortie/commande',    label: 'Commande actionneur',        kind: 'float', unit: '%',      sim: { type: 'sine', base: 54, amp: 18, period: 23, noise: 1.5 } },
+    { addr: 'Regulation/erreur',             label: 'Erreur de régulation',       kind: 'float', unit: 'tr/min', sim: { type: 'sine', base: 0, amp: 14, period: 11, noise: 3 } },
+    { addr: 'Thermique/temperature_eau',     label: "Température d'eau",          kind: 'float', unit: '°C',     sim: { type: 'sine', base: 82, amp: 2.2, period: 140, noise: 0.15 } },
+    { addr: 'Thermique/temperature_huile',   label: "Température d'huile",        kind: 'float', unit: '°C',     sim: { type: 'sine', base: 96, amp: 3.1, period: 190, noise: 0.2 } },
+    { addr: 'Thermique/temperature_ambiante',label: 'Température ambiante',       kind: 'float', unit: '°C',     sim: { type: 'walk', base: 24, step: 0.05, min: 15, max: 38 } },
+    { addr: 'Hydraulique/pression_huile',    label: "Pression d'huile",           kind: 'float', unit: 'bar',    sim: { type: 'sine', base: 4.2, amp: 0.25, period: 29, noise: 0.05 } },
+    { addr: 'Hydraulique/pression_circuit',  label: 'Pression circuit',           kind: 'float', unit: 'bar',    sim: { type: 'sine', base: 12.1, amp: 0.8, period: 61, noise: 0.1 } },
+    { addr: 'Elec/tension_bus',              label: 'Tension bus DC',             kind: 'float', unit: 'V',      sim: { type: 'sine', base: 27.4, amp: 0.35, period: 37, noise: 0.06 } },
+    { addr: 'Elec/courant_charge',           label: 'Courant de charge',          kind: 'float', unit: 'A',      sim: { type: 'steps', values: [8, 14, 18, 26, 31], period: 28, noise: 0.5 } },
+    { addr: 'Elec/frequence',                label: 'Fréquence réseau',           kind: 'float', unit: 'Hz',     sim: { type: 'sine', base: 50, amp: 0.06, period: 19, noise: 0.01 } },
+    { addr: 'Elec/puissance_active',         label: 'Puissance active',           kind: 'float', unit: 'kW',     sim: { type: 'steps', values: [42, 60, 75, 96, 118], period: 45, noise: 1.2 } },
+    { addr: 'Capteurs/niveau_reservoir',     label: 'Niveau réservoir',           kind: 'float', unit: '%',      sim: { type: 'walk', base: 78, step: 0.03, min: 5, max: 100, drift: -0.006 } },
+    { addr: 'Capteurs/debit_pompe',          label: 'Débit pompe',                kind: 'float', unit: 'L/min',  sim: { type: 'sine', base: 65, amp: 4, period: 33, noise: 0.6 } },
+    { addr: 'Supervision/temps_cycle',       label: "Temps de cycle de l'appli",  kind: 'float', unit: 'µs',     sim: { type: 'jitter', base: 850, noise: 28, spikeP: 0.015, spikeAmp: 400 } },
+    { addr: 'Supervision/charge_cpu',        label: 'Charge CPU',                 kind: 'float', unit: '%',      sim: { type: 'walk', base: 32, step: 0.8, min: 4, max: 97 } },
+    { addr: 'Supervision/memoire_libre',     label: 'Mémoire libre',              kind: 'float', unit: 'Mo',     sim: { type: 'walk', base: 412, step: 0.6, min: 120, max: 480 } },
+  ];
+
+  // Index par adresse (les adresses PLC sont normalisées en majuscules).
+  DW.CATALOG_INDEX = new Map();
+  for (const e of DW.CATALOG) DW.CATALOG_INDEX.set(e.addr.toUpperCase(), e);
+})();
+
+</script>
+<script>
+/* Diagweb — analyse et validation des adresses de variables */
+(function () {
+  "use strict";
+  const DW = (window.DW = window.DW || {});
+
+  const FAMILIES = {
+    I:    { label: 'Entrée TOR',            kind: 'bit' },
+    Q:    { label: 'Sortie TOR',            kind: 'bit' },
+    M:    { label: 'Bit mémoire',           kind: 'bit' },
+    S:    { label: 'Variable système',      kind: 'bit' },
+    MB:   { label: 'Mot de bus (registre)', kind: 'word' },
+    CAPI: { label: 'Signal modèle (C API)', kind: 'float' },
+  };
+  DW.FAMILIES = FAMILIES;
+
+  const HELP = "Formats acceptés : I1.2.3.4, Q14.15, M1.14, S0.4 (bits), " +
+               "MB414 (mot de bus), Modele/sous_systeme/signal (C API Simulink).";
+
+  /**
+   * Analyse une saisie utilisateur.
+   * @returns {ok:true, addr, family, kind} | {ok:false, error}
+   */
+  DW.parseAddr = function (raw) {
+    const input = String(raw == null ? '' : raw).trim();
+    if (!input) return { ok: false, error: 'Saisissez une adresse de variable. ' + HELP };
+
+    // Mot de bus : MB<registre>
+    let m = /^mb\s*(\d{1,5})$/i.exec(input);
+    if (m) {
+      const reg = parseInt(m[1], 10);
+      if (reg > 65535) return { ok: false, error: 'Registre hors plage : MB0 à MB65535.' };
+      return { ok: true, addr: 'MB' + reg, family: 'MB', kind: 'word' };
+    }
+
+    // Bits PLC : I / Q / M / S suivi de 1 à 4 niveaux numériques
+    m = /^([iqms])\s*(\d{1,4}(?:\.\d{1,4}){0,3})$/i.exec(input);
+    if (m) {
+      const family = m[1].toUpperCase();
+      return { ok: true, addr: family + m[2], family, kind: 'bit' };
+    }
+
+    // Signal C API : chemin Modele/…/signal (au moins un « / »)
+    m = /^[A-Za-z_][A-Za-z0-9_]*(?:\/[A-Za-z_][A-Za-z0-9_]*)+$/.exec(input);
+    if (m) return { ok: true, addr: input, family: 'CAPI', kind: 'float' };
+
+    // Diagnostics ciblés pour les erreurs fréquentes
+    if (/^[iqms]/i.test(input)) {
+      return { ok: false, error: 'Adresse ' + input[0].toUpperCase() + '… incomplète ou mal formée. Exemple : ' +
+        (input[0].toUpperCase() === 'I' ? 'I1.2.3.4' : input[0].toUpperCase() + '1.4') + '.' };
+    }
+    return { ok: false, error: 'Format non reconnu pour « ' + input + ' ». ' + HELP };
+  };
+
+  /** Métadonnées d'une variable : catalogue si connue, sinon générées. */
+  DW.resolveMeta = function (addr, parsed) {
+    const p = parsed || DW.parseAddr(addr);
+    if (!p.ok) return null;
+    const known = DW.CATALOG_INDEX.get(p.addr.toUpperCase());
+    if (known) return Object.assign({ family: p.family, known: true }, known);
+    return {
+      addr: p.addr,
+      family: p.family,
+      kind: p.kind,
+      unit: '',
+      label: FAMILIES[p.family].label + ' (hors catalogue)',
+      known: false,
+      sim: null,
+    };
+  };
+})();
+
+</script>
+<script>
+/* Diagweb — source de données simulée.
+ *
+ * Implémente le contrat DataSource (voir docs/SPECS.md §7) : le back-end
+ * réel (WebSocket vers le contrôleur) devra exposer la même interface.
+ */
+(function () {
+  "use strict";
+  const DW = window.DW;
+  const CFG = DW.CONFIG;
+
+  // --- PRNG déterministe par adresse (comportement stable entre rechargements)
+  function hash32(s) {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // --- Générateurs -----------------------------------------------------
+  function makeGen(meta, addr) {
+    const rnd = mulberry32(hash32(addr));
+    const phase = rnd() * 1000;
+    let sim = meta.sim;
+    if (!sim) sim = defaultSim(meta.kind, rnd);
+
+    switch (sim.type) {
+      case 'sine': {
+        const round = meta.kind === 'word';
+        return (t) => {
+          let v = sim.base + sim.amp * Math.sin((t + phase) * 2 * Math.PI / sim.period) +
+                  (sim.noise || 0) * (rnd() - 0.5) * 2;
+          if (round) v = Math.max(0, Math.min(65535, Math.round(v)));
+          return v;
+        };
+      }
+      case 'walk': {
+        let v = sim.base;
+        return () => {
+          v += (rnd() - 0.5) * 2 * sim.step + (sim.drift || 0);
+          if (v < sim.min) v = sim.min + (sim.min - v);
+          if (v > sim.max) v = sim.max - (v - sim.max);
+          v = Math.max(sim.min, Math.min(sim.max, v));
+          return v;
+        };
+      }
+      case 'steps': {
+        let cur = sim.values[Math.floor(rnd() * sim.values.length)];
+        let nextAt = null;   // initialisé au premier appel (le pré-remplissage part de t négatif)
+        const round = meta.kind === 'word';
+        return (t) => {
+          if (nextAt === null) nextAt = t + sim.period * (0.5 + rnd());
+          if (t >= nextAt) {
+            cur = sim.values[Math.floor(rnd() * sim.values.length)];
+            nextAt = t + sim.period * (0.5 + rnd());
+          }
+          let v = cur + (sim.noise || 0) * (rnd() - 0.5) * 2;
+          return round ? Math.round(v) : v;
+        };
+      }
+      case 'square':
+        return (t) => (((t + phase) % sim.period) < sim.period * sim.duty ? 1 : 0);
+      case 'bit': {
+        // Chaîne de Markov : temps de séjour moyens t0 (état 0) et t1 (état 1)
+        let v = rnd() < sim.t1 / (sim.t0 + sim.t1) ? 1 : 0;
+        let flipAt = null;   // initialisé au premier appel (t peut être négatif)
+        return (t) => {
+          if (flipAt === null) flipAt = t + (v ? sim.t1 : sim.t0) * (0.3 + rnd() * 1.4);
+          if (t >= flipAt) {
+            v = v ? 0 : 1;
+            flipAt = t + (v ? sim.t1 : sim.t0) * (0.3 + rnd() * 1.4);
+          }
+          return v;
+        };
+      }
+      case 'counter': {
+        return (t) => ((Math.round(sim.rate * t) % 65536) + 65536) % 65536;
+      }
+      case 'jitter': {
+        return () => {
+          let v = sim.base + (rnd() - 0.5) * 2 * sim.noise;
+          if (rnd() < sim.spikeP) v += sim.spikeAmp * rnd();
+          return v;
+        };
+      }
+      default:
+        return () => 0;
+    }
+  }
+
+  function defaultSim(kind, rnd) {
+    if (kind === 'bit') return { type: 'bit', t0: 4 + rnd() * 30, t1: 4 + rnd() * 30 };
+    if (kind === 'word') {
+      const base = Math.round(500 + rnd() * 40000);
+      return { type: 'sine', base, amp: base * 0.06 + 20, period: 8 + rnd() * 60, noise: 25 };
+    }
+    const base = Math.round((rnd() * 200 - 40) * 10) / 10;
+    return { type: 'sine', base, amp: 2 + rnd() * 25, period: 8 + rnd() * 50, noise: 0.4 };
+  }
+
+  // --- Registre des abonnements ---------------------------------------
+  // addr -> { meta, gen, ts:[], vs:[], refs, periodS, nextT }
+  const regs = new Map();
+  const t0 = performance.now() / 1000;
+  const now = () => performance.now() / 1000 - t0;
+
+  function clampPeriodMs(p) {
+    p = parseInt(p, 10);
+    if (!isFinite(p) || p <= 0) p = CFG.defaultPeriodMs;
+    return Math.min(10000, Math.max(CFG.defaultPeriodMs, p));
+  }
+
+  /**
+   * @param opts {periodMs?} — période de rafraîchissement (défaut 10 ms).
+   * Une souscription supplémentaire avec une période plus courte resserre
+   * le flux existant (un seul flux par variable).
+   */
+  function subscribe(addr, opts) {
+    const periodS = clampPeriodMs(opts && opts.periodMs) / 1000;
+    let rec = regs.get(addr);
+    if (rec) {
+      rec.refs++;
+      if (periodS < rec.periodS) rec.periodS = periodS;
+      return rec;
+    }
+    const meta = DW.resolveMeta(addr);
+    if (!meta) return null;
+    rec = { meta, gen: makeGen(meta, addr), ts: [], vs: [], refs: 1, periodS, nextT: 0 };
+    // Pré-remplissage de tout l'horizon (les t négatifs sont autorisés)
+    // pour que les courbes soient pleines dès l'ajout d'une variable.
+    const tNow = now();
+    for (let t = tNow - CFG.horizonS; t <= tNow; t += periodS) {
+      rec.ts.push(t); rec.vs.push(rec.gen(t));
+    }
+    rec.nextT = tNow + periodS;
+    regs.set(addr, rec);
+    return rec;
+  }
+
+  function unsubscribe(addr) {
+    const rec = regs.get(addr);
+    if (!rec) return;
+    rec.refs--;
+    if (rec.refs <= 0) regs.delete(addr);
+  }
+
+  function tick() {
+    const t = now();
+    const minT = t - CFG.horizonS;
+    for (const rec of regs.values()) {
+      // Rattrapage borné : si l'onglet a été suspendu, on saute en avant.
+      if (t - rec.nextT > 2) rec.nextT = t;
+      while (rec.nextT <= t) {
+        rec.ts.push(rec.nextT);
+        rec.vs.push(rec.gen(rec.nextT));
+        rec.nextT += rec.periodS;
+      }
+      // Purge de l'historique au-delà de l'horizon
+      let cut = 0;
+      while (cut < rec.ts.length && rec.ts[cut] < minT) cut++;
+      if (cut > 400) { rec.ts.splice(0, cut); rec.vs.splice(0, cut); }
+    }
+  }
+  setInterval(tick, CFG.defaultPeriodMs);
+
+  DW.source = {
+    name: 'Simulation locale',
+    defaultPeriodMs: CFG.defaultPeriodMs,
+    now,
+    subscribe,
+    unsubscribe,
+    count: () => regs.size,
+    latest(addr) {
+      const rec = regs.get(addr);
+      if (!rec || !rec.ts.length) return null;
+      const i = rec.ts.length - 1;
+      return { t: rec.ts[i], v: rec.vs[i] };
+    },
+    /** Valeur ~delta secondes en arrière (pour la tendance). */
+    past(addr, delta) {
+      const rec = regs.get(addr);
+      if (!rec || !rec.ts.length) return null;
+      const target = rec.ts[rec.ts.length - 1] - delta;
+      for (let i = rec.ts.length - 1; i >= 0; i--) {
+        if (rec.ts[i] <= target) return rec.vs[i];
+      }
+      return rec.vs[0];
+    },
+    data(addr) {
+      const rec = regs.get(addr);
+      return rec ? { ts: rec.ts, vs: rec.vs } : { ts: [], vs: [] };
+    },
+    meta(addr) {
+      const rec = regs.get(addr);
+      return rec ? rec.meta : DW.resolveMeta(addr);
+    },
+  };
+})();
+
+</script>
+<script>
+/* Diagweb — moteur de graphiques temps réel (canvas).
+ *
+ * Multi-échelles : les courbes sont regroupées par unité (ou isolées via
+ * « échelle dédiée ») ; chaque groupe possède son propre axe Y, tracé en
+ * alternance à gauche / à droite et coloré comme sa courbe quand il n'en
+ * porte qu'une. Au-delà de 4 axes, les groupes restants sont mis à
+ * l'échelle indépendamment mais sans règle graduée visible.
+ */
+(function () {
+  "use strict";
+  const DW = window.DW;
+  const CFG = DW.CONFIG;
+
+  // ---------- Formatage ------------------------------------------------
+  DW.fmtVal = function (v, meta) {
+    if (v == null || !isFinite(v)) return '—';
+    if (meta && meta.kind === 'bit') return v >= 0.5 ? '1' : '0';
+    if (meta && meta.kind === 'word') return String(Math.round(v));
+    const a = Math.abs(v);
+    if (a >= 1000) return v.toFixed(0);
+    if (a >= 100) return v.toFixed(1);
+    if (a >= 1) return v.toFixed(2);
+    if (a === 0) return '0';
+    return v.toFixed(3);
+  };
+  DW.fmtTick = function (v) {
+    const a = Math.abs(v);
+    if (a >= 100000) return Math.round(v / 1000) + 'k';
+    if (a >= 10000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    if (a >= 100) return String(Math.round(v));
+    if (a >= 10) return String(Math.round(v * 10) / 10);
+    if (a >= 1) return String(Math.round(v * 100) / 100);
+    if (a === 0) return '0';
+    return String(Math.round(v * 1000) / 1000);
+  };
+  /** Graduation d'axe : décimales dérivées du pas pour éviter les doublons. */
+  function fmtAxisTick(v, step) {
+    if (Math.abs(v) >= 10000) {
+      const kStep = step / 1000;
+      const dec = Math.max(0, -Math.floor(Math.log10(kStep)));
+      return (v / 1000).toFixed(Math.min(dec, 2)) + 'k';
+    }
+    const dec = step >= 1 ? 0 : Math.max(0, -Math.floor(Math.log10(step)));
+    return v.toFixed(Math.min(dec, 3));
+  }
+  function fmtTimeTick(negS, windowS) {
+    if (negS === 0) return '0';
+    if (windowS <= 90) return '-' + negS + ' s';
+    const m = Math.floor(negS / 60), s = Math.round(negS % 60);
+    return '-' + m + ':' + String(s).padStart(2, '0');
+  }
+  function niceStep(rough) {
+    const pow = Math.pow(10, Math.floor(Math.log10(rough)));
+    const f = rough / pow;
+    return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * pow;
+  }
+  const TIME_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300];
+  function niceTimeStep(rough) {
+    for (const s of TIME_STEPS) if (s >= rough) return s;
+    return 300;
+  }
+
+  // ---------- Encre du thème (lue depuis les variables CSS) -----------
+  let inkCache = null;
+  DW.invalidateChartTheme = function () { inkCache = null; };
+  function ink() {
+    if (inkCache) return inkCache;
+    const cs = getComputedStyle(document.documentElement);
+    const get = (n, fb) => (cs.getPropertyValue(n) || fb).trim();
+    inkCache = {
+      ink: get('--ink', '#e6edf5'),
+      muted: get('--muted', '#8494a8'),
+      faint: get('--faint', '#5b6a7e'),
+      line: get('--line', '#26303f'),
+      panel: get('--panel', '#141a24'),
+    };
+    return inkCache;
+  }
+
+  const AXIS_W = 44;               // largeur d'une règle d'axe (px)
+  const MAX_AXES = 4;
+
+  // ---------- Popover de légende (partagé) ----------------------------
+  let popEl = null, popOwner = null;
+  function closePopover() {
+    if (popEl) { popEl.remove(); popEl = null; popOwner = null; }
+  }
+  document.addEventListener('pointerdown', (e) => {
+    if (popEl && !popEl.contains(e.target)) closePopover();
+  }, true);
+
+  // ---------- Classe Chart --------------------------------------------
+  let uid = 0;
+
+  class Chart {
+    /**
+     * @param app  { acquire(addr), release(addr), onChange(), toast(msg), removeChart(chart) }
+     */
+    constructor(app, opts) {
+      opts = opts || {};
+      this.app = app;
+      this.id = 'c' + (++uid);
+      this.windowS = opts.windowS || CFG.defaultWindowS;
+      this.paused = false;
+      this.pausedAt = 0;
+      this.series = [];            // {addr, meta, colorIdx, axisMode, visible}
+      this.cursor = null;          // {x} px CSS pendant l'inspection
+      this._cw = 0; this._ch = 0; this._dpr = 0;
+
+      this.root = document.createElement('section');
+      this.root.className = 'card chart-card';
+      this.root.innerHTML =
+        '<header class="chart-head">' +
+          '<input class="chart-title" maxlength="48" aria-label="Titre du graphique">' +
+          '<div class="chart-tools">' +
+            '<select class="chart-window" title="Fenêtre de temps" aria-label="Fenêtre de temps"></select>' +
+            '<button class="iconbtn chart-pause" type="button" title="Figer / reprendre">⏸</button>' +
+            '<button class="iconbtn chart-close" type="button" title="Fermer le graphique">✕</button>' +
+          '</div>' +
+        '</header>' +
+        '<div class="chart-body">' +
+          '<canvas aria-label="Courbes du graphique"></canvas>' +
+          '<div class="chart-tip hide"></div>' +
+          '<div class="chart-hint">Ajoutez une variable via la barre de recherche, cible « ' +
+            '<b class="hint-name"></b> ».</div>' +
+        '</div>' +
+        '<div class="chart-legend" role="list"></div>';
+
+      this.titleEl = this.root.querySelector('.chart-title');
+      this.titleEl.value = opts.title || 'Graphique';
+      this.canvas = this.root.querySelector('canvas');
+      this.ctx = this.canvas.getContext('2d');
+      this.tipEl = this.root.querySelector('.chart-tip');
+      this.hintEl = this.root.querySelector('.chart-hint');
+      this.legendEl = this.root.querySelector('.chart-legend');
+      this.winSel = this.root.querySelector('.chart-window');
+      this.pauseBtn = this.root.querySelector('.chart-pause');
+
+      for (const w of CFG.windows) {
+        const o = document.createElement('option');
+        o.value = w;
+        o.textContent = w < 60 ? w + ' s' : (w / 60) + ' min';
+        this.winSel.appendChild(o);
+      }
+      this.winSel.value = String(this.windowS);
+
+      this.root.querySelector('.hint-name').textContent = this.titleEl.value;
+
+      // Événements
+      this.titleEl.addEventListener('change', () => {
+        this.root.querySelector('.hint-name').textContent = this.title;
+        app.onChange();
+        app.refreshTargets();
+      });
+      this.winSel.addEventListener('change', () => {
+        this.windowS = parseInt(this.winSel.value, 10) || CFG.defaultWindowS;
+        app.onChange();
+      });
+      this.pauseBtn.addEventListener('click', () => this.setPaused(!this.paused));
+      this.root.querySelector('.chart-close').addEventListener('click', () => app.removeChart(this));
+
+      const cv = this.canvas;
+      cv.addEventListener('pointerdown', (e) => {
+        cv.setPointerCapture(e.pointerId);
+        this.cursor = { x: e.offsetX };
+      });
+      cv.addEventListener('pointermove', (e) => {
+        if (this.cursor) this.cursor.x = e.offsetX;
+      });
+      const end = () => { this.cursor = null; this.tipEl.classList.add('hide'); };
+      cv.addEventListener('pointerup', end);
+      cv.addEventListener('pointercancel', end);
+    }
+
+    get title() { return this.titleEl.value.trim() || 'Graphique'; }
+
+    setPaused(p) {
+      this.paused = p;
+      if (p) this.pausedAt = DW.source.now();
+      this.pauseBtn.textContent = p ? '▶' : '⏸';
+      this.pauseBtn.classList.toggle('on', p);
+    }
+
+    hasSeries(addr) { return this.series.some((s) => s.addr === addr); }
+
+    addSeries(addr, opts) {
+      opts = opts || {};
+      if (this.hasSeries(addr)) return { ok: false, error: addr + ' est déjà tracée dans « ' + this.title + ' ».' };
+      if (this.series.length >= CFG.maxSeriesPerChart) {
+        return { ok: false, error: 'Limite de ' + CFG.maxSeriesPerChart + ' courbes par graphique atteinte — ajoutez un autre graphique.' };
+      }
+      const meta = this.app.acquire(addr, opts.periodMs);
+      if (!meta) return { ok: false, error: 'Adresse invalide : ' + addr };
+      // Attribution de couleur : plus petit index libre (ordre fixe)
+      const used = new Set(this.series.map((s) => s.colorIdx));
+      let colorIdx = 0;
+      while (used.has(colorIdx)) colorIdx++;
+      this.series.push({
+        addr, meta, colorIdx,
+        axisMode: opts.axisMode === 'solo' ? 'solo' : 'auto',
+        visible: opts.visible !== false,
+        periodMs: opts.periodMs || undefined,
+      });
+      this.rebuildLegend();
+      return { ok: true };
+    }
+
+    removeSeries(addr) {
+      const i = this.series.findIndex((s) => s.addr === addr);
+      if (i < 0) return;
+      this.app.release(addr);
+      this.series.splice(i, 1);
+      this.rebuildLegend();
+      this.app.onChange();
+    }
+
+    // ---------- Légende ------------------------------------------------
+    rebuildLegend() {
+      closePopover();
+      this.legendEl.innerHTML = '';
+      for (const s of this.series) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'chip' + (s.visible ? '' : ' off');
+        chip.setAttribute('role', 'listitem');
+        chip.dataset.addr = s.addr;
+        chip.innerHTML =
+          '<i class="sw"></i>' +
+          '<span class="chip-addr"></span>' +
+          '<span class="chip-val">—</span>' +
+          '<span class="chip-axis"></span>';
+        chip.querySelector('.chip-addr').textContent = s.addr;
+        chip.querySelector('.sw').style.background = DW.seriesColor(s.colorIdx);
+        chip.title = s.meta.label + (s.meta.unit ? ' (' + s.meta.unit + ')' : '') +
+          ' · rafr. ' + (s.periodMs || DW.CONFIG.defaultPeriodMs) + ' ms';
+        chip.addEventListener('click', (e) => this.openMenu(s, chip, e));
+        this.legendEl.appendChild(chip);
+      }
+      this.hintEl.classList.toggle('hide', this.series.length > 0);
+    }
+
+    openMenu(s, chip) {
+      if (popOwner === s) { closePopover(); return; }
+      closePopover();
+      popOwner = s;
+      popEl = document.createElement('div');
+      popEl.className = 'popmenu';
+      const mk = (label, fn) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.innerHTML = label;
+        b.addEventListener('click', () => { closePopover(); fn(); });
+        popEl.appendChild(b);
+        return b;
+      };
+      mk(s.visible ? 'Masquer la courbe' : 'Afficher la courbe', () => {
+        s.visible = !s.visible;
+        this.rebuildLegend();
+        this.app.onChange();
+      });
+      mk((s.axisMode === 'solo' ? '✓ ' : '') + 'Échelle dédiée', () => {
+        s.axisMode = s.axisMode === 'solo' ? 'auto' : 'solo';
+        this.app.onChange();
+        this.app.toast(s.addr + ' : ' + (s.axisMode === 'solo' ? 'échelle dédiée' : 'échelle partagée par unité') + '.');
+      });
+      const del = mk('Retirer du graphique', () => this.removeSeries(s.addr));
+      del.classList.add('danger');
+      document.body.appendChild(popEl);
+      const r = chip.getBoundingClientRect();
+      const pw = popEl.offsetWidth;
+      let x = Math.min(r.left, window.innerWidth - pw - 8);
+      popEl.style.left = Math.max(8, x) + 'px';
+      popEl.style.top = (r.bottom + 6 + window.scrollY) + 'px';
+    }
+
+    /** Mise à jour des valeurs vivantes de la légende (~5 Hz). */
+    updateLive() {
+      const chips = this.legendEl.children;
+      for (let i = 0; i < this.series.length && i < chips.length; i++) {
+        const s = this.series[i];
+        const last = DW.source.latest(s.addr);
+        const valEl = chips[i].querySelector('.chip-val');
+        valEl.textContent = last ? DW.fmtVal(last.v, s.meta) + (s.meta.unit ? ' ' + s.meta.unit : '') : '—';
+        const axEl = chips[i].querySelector('.chip-axis');
+        axEl.textContent = (this._axisCount > 1 && this._axisBadge && this._axisBadge[s.addr]) || '';
+      }
+    }
+
+    // ---------- Échelles ----------------------------------------------
+    axisKey(s) {
+      if (s.axisMode === 'solo') return 'solo:' + s.addr;
+      if (s.meta.kind === 'bit') return 'bool';
+      if (s.meta.unit) return 'u:' + s.meta.unit;
+      return s.meta.kind === 'word' ? 'mot' : 'sans-unité';
+    }
+
+    computeGroups(tStart, tEnd) {
+      const groups = new Map();
+      for (const s of this.series) {
+        if (!s.visible) continue;
+        const key = this.axisKey(s);
+        let g = groups.get(key);
+        if (!g) {
+          g = {
+            key,
+            label: s.meta.kind === 'bit' && s.axisMode !== 'solo' ? 'TOR'
+              : (s.meta.unit || (s.meta.kind === 'word' ? 'mot' : '')),
+            series: [], min: Infinity, max: -Infinity, isBool: s.meta.kind === 'bit',
+          };
+          groups.set(key, g);
+        }
+        g.series.push(s);
+        if (g.isBool && s.meta.kind !== 'bit') g.isBool = false;
+      }
+      const list = [...groups.values()];
+      for (const g of list) {
+        if (g.isBool) { g.min = -0.07; g.max = 1.07; g.ticks = [0, 1]; continue; }
+        for (const s of g.series) {
+          const d = DW.source.data(s.addr);
+          const [i0, i1] = rangeIdx(d.ts, tStart, tEnd);
+          for (let i = i0; i <= i1; i++) {
+            const v = d.vs[i];
+            if (v < g.min) g.min = v;
+            if (v > g.max) g.max = v;
+          }
+        }
+        if (!isFinite(g.min)) { g.min = 0; g.max = 1; }
+        if (g.min === g.max) {
+          const e = Math.max(Math.abs(g.min) * 0.05, 0.5);
+          g.min -= e; g.max += e;
+        }
+        const pad = (g.max - g.min) * 0.07;
+        g.min -= pad; g.max += pad;
+        const step = niceStep((g.max - g.min) / 4);
+        g.tickStep = step;
+        g.ticks = [];
+        for (let v = Math.ceil(g.min / step) * step; v <= g.max + 1e-9; v += step) {
+          g.ticks.push(Math.abs(v) < step * 1e-6 ? 0 : v);
+        }
+      }
+      // Chaque groupe garde la couleur de sa courbe s'il n'en porte qu'une
+      for (const g of list) {
+        g.color = g.series.length === 1 ? DW.seriesColor(g.series[0].colorIdx) : ink().muted;
+      }
+      return list;
+    }
+
+    // ---------- Rendu ---------------------------------------------------
+    render() {
+      const cw = this.canvas.clientWidth, chh = this.canvas.clientHeight;
+      if (!cw || !chh) return;
+      const dpr = window.devicePixelRatio || 1;
+      if (cw !== this._cw || chh !== this._ch || dpr !== this._dpr) {
+        this._cw = cw; this._ch = chh; this._dpr = dpr;
+        this.canvas.width = Math.round(cw * dpr);
+        this.canvas.height = Math.round(chh * dpr);
+      }
+      const ctx = this.ctx;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cw, chh);
+      const IK = ink();
+
+      const tEnd = this.paused ? this.pausedAt : DW.source.now();
+      const tStart = tEnd - this.windowS;
+      const groups = this.computeGroups(tStart, tEnd);
+
+      // Badges d'échelle pour la légende (É1…É4, É· = sans règle visible)
+      this._axisBadge = {};
+      this._axisCount = groups.length;
+      groups.forEach((g, i) => {
+        const tag = i < MAX_AXES ? 'É' + (i + 1) : 'É·';
+        for (const s of g.series) this._axisBadge[s.addr] = tag;
+      });
+
+      // Répartition des axes : g0→gauche, g1→droite, g2→gauche ext., g3→droite ext.
+      const shown = groups.slice(0, MAX_AXES);
+      const leftAxes = shown.filter((_, i) => i % 2 === 0);
+      const rightAxes = shown.filter((_, i) => i % 2 === 1);
+      const mL = 8 + (leftAxes.length ? leftAxes.length * AXIS_W : 26);
+      const mR = 8 + rightAxes.length * AXIS_W;
+      const mT = 18, mB = 22;
+      const pw = Math.max(10, cw - mL - mR), ph = Math.max(10, chh - mT - mB);
+      const X = (t) => mL + ((t - tStart) / this.windowS) * pw;
+      const yOf = (g) => (v) => mT + ph * (1 - (v - g.min) / (g.max - g.min));
+
+      ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+
+      // Grille temporelle
+      const tickS = niceTimeStep(this.windowS / 5);
+      ctx.strokeStyle = IK.line;
+      ctx.fillStyle = IK.faint;
+      ctx.lineWidth = 1;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      for (let k = 0; k * tickS <= this.windowS; k++) {
+        const t = tEnd - k * tickS;
+        const x = Math.round(X(t)) + 0.5;
+        ctx.beginPath(); ctx.moveTo(x, mT); ctx.lineTo(x, mT + ph); ctx.stroke();
+        ctx.fillText(fmtTimeTick(k * tickS, this.windowS), Math.min(Math.max(x, mL + 12), cw - mR - 14), mT + ph + 6);
+      }
+
+      // Grille horizontale : celle du premier groupe uniquement
+      if (shown[0]) {
+        const g0 = shown[0], y0 = yOf(g0);
+        ctx.strokeStyle = IK.line;
+        for (const v of g0.ticks) {
+          const y = Math.round(y0(v)) + 0.5;
+          ctx.beginPath(); ctx.moveTo(mL, y); ctx.lineTo(mL + pw, y); ctx.stroke();
+        }
+      }
+
+      // Règles d'axes
+      shown.forEach((g, i) => {
+        const side = i % 2 === 0 ? 'L' : 'R';
+        const slot = Math.floor(i / 2);
+        const xr = side === 'L' ? mL - slot * AXIS_W : cw - mR + slot * AXIS_W;
+        const yG = yOf(g);
+        ctx.strokeStyle = g.color; ctx.globalAlpha = 0.55; ctx.lineWidth = 1;
+        const xl = Math.round(xr) + (side === 'L' ? -0.5 : 0.5);
+        ctx.beginPath(); ctx.moveTo(xl, mT); ctx.lineTo(xl, mT + ph); ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = g.color;
+        ctx.textAlign = side === 'L' ? 'right' : 'left';
+        ctx.textBaseline = 'middle';
+        const tx = side === 'L' ? xr - 4 : xr + 4;
+        for (const v of g.ticks) ctx.fillText(fmtAxisTick(v, g.tickStep || 1), tx, yG(v));
+        if (g.label) {
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(g.label, tx, mT - 4);
+        }
+      });
+
+      // Groupes sans règle (au-delà de MAX_AXES) : mis à l'échelle quand même
+      // Courbes
+      ctx.save();
+      ctx.beginPath(); ctx.rect(mL, mT - 4, pw, ph + 8); ctx.clip();
+      for (const g of groups) {
+        const yG = yOf(g);
+        for (const s of g.series) {
+          const d = DW.source.data(s.addr);
+          const [i0, i1] = rangeIdx(d.ts, tStart, tEnd);
+          if (i1 < i0) continue;
+          const discrete = s.meta.kind === 'bit' || s.meta.kind === 'word';
+          ctx.strokeStyle = DW.seriesColor(s.colorIdx);
+          ctx.lineWidth = 2;
+          ctx.lineJoin = 'round';
+          ctx.lineCap = 'round';
+          drawPath(ctx, d.ts, d.vs, i0, i1, X, yG, discrete, pw);
+          // Point d'extrémité accentué
+          const xe = X(d.ts[i1]), ye = yG(d.vs[i1]);
+          ctx.beginPath(); ctx.arc(xe, ye, 3, 0, Math.PI * 2);
+          ctx.fillStyle = DW.seriesColor(s.colorIdx); ctx.fill();
+        }
+      }
+      ctx.restore();
+
+      // Curseur d'inspection
+      if (this.cursor && groups.length) {
+        this.drawCursor(ctx, groups, tStart, tEnd, X, yOf, mL, mT, pw, ph);
+      } else {
+        this.tipEl.classList.add('hide');
+      }
+    }
+
+    drawCursor(ctx, groups, tStart, tEnd, X, yOf, mL, mT, pw, ph) {
+      const IK = ink();
+      const x = Math.min(Math.max(this.cursor.x, mL), mL + pw);
+      const tCur = tStart + ((x - mL) / pw) * this.windowS;
+      ctx.strokeStyle = IK.muted;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.moveTo(x + 0.5, mT); ctx.lineTo(x + 0.5, mT + ph); ctx.stroke();
+      ctx.setLineDash([]);
+
+      let rows = '';
+      for (const g of groups) {
+        const yG = yOf(g);
+        for (const s of g.series) {
+          const d = DW.source.data(s.addr);
+          const i = nearestIdx(d.ts, tCur);
+          if (i < 0) continue;
+          const v = d.vs[i];
+          const y = yG(v);
+          ctx.beginPath(); ctx.arc(X(d.ts[i]), y, 4, 0, Math.PI * 2);
+          ctx.strokeStyle = DW.seriesColor(s.colorIdx); ctx.lineWidth = 2; ctx.stroke();
+          rows += '<div class="tip-row"><i style="background:' + DW.seriesColor(s.colorIdx) + '"></i>' +
+            '<span class="tip-addr">' + escapeHtml(s.addr) + '</span>' +
+            '<b>' + DW.fmtVal(v, s.meta) + (s.meta.unit ? ' ' + escapeHtml(s.meta.unit) : '') + '</b></div>';
+        }
+      }
+      const dt = tEnd - tCur;
+      this.tipEl.innerHTML = '<div class="tip-time">t − ' + dt.toFixed(1) + ' s</div>' + rows;
+      this.tipEl.classList.remove('hide');
+      const bw = this.canvas.clientWidth;
+      const tw = this.tipEl.offsetWidth;
+      const left = x + 12 + tw > bw ? Math.max(4, x - tw - 12) : x + 12;
+      this.tipEl.style.left = left + 'px';
+      this.tipEl.style.top = (mT + 4) + 'px';
+    }
+
+    serialize() {
+      return {
+        title: this.title,
+        windowS: this.windowS,
+        series: this.series.map((s) => ({ addr: s.addr, axisMode: s.axisMode, visible: s.visible, periodMs: s.periodMs })),
+      };
+    }
+
+    destroy() {
+      for (const s of this.series) this.app.release(s.addr);
+      this.series = [];
+      closePopover();
+      this.root.remove();
+    }
+  }
+
+  // ---------- Aides géométriques --------------------------------------
+  /** Indices [i0, i1] couvrant [tStart, tEnd] (i0 recule d'un cran pour la continuité). */
+  function rangeIdx(ts, tStart, tEnd) {
+    const n = ts.length;
+    if (!n) return [0, -1];
+    let lo = 0, hi = n - 1;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (ts[m] < tStart) lo = m + 1; else hi = m; }
+    const i0 = Math.max(0, lo - 1);
+    let l2 = i0, h2 = n - 1;
+    while (l2 < h2) { const m = (l2 + h2 + 1) >> 1; if (ts[m] <= tEnd) l2 = m; else h2 = m - 1; }
+    return [i0, l2];
+  }
+  function nearestIdx(ts, t) {
+    const n = ts.length;
+    if (!n) return -1;
+    let lo = 0, hi = n - 1;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (ts[m] < t) lo = m + 1; else hi = m; }
+    if (lo > 0 && Math.abs(ts[lo - 1] - t) < Math.abs(ts[lo] - t)) return lo - 1;
+    return lo;
+  }
+
+  /** Tracé avec décimation min/max par seau quand les points dépassent ~2/px. */
+  function drawPath(ctx, ts, vs, i0, i1, X, Y, discrete, plotW) {
+    const n = i1 - i0 + 1;
+    ctx.beginPath();
+    if (n <= plotW * 2 || discrete) {
+      let prevY = null;
+      for (let i = i0; i <= i1; i++) {
+        const x = X(ts[i]), y = Y(vs[i]);
+        if (prevY === null) ctx.moveTo(x, y);
+        else if (discrete) { ctx.lineTo(x, prevY); ctx.lineTo(x, y); }
+        else ctx.lineTo(x, y);
+        prevY = y;
+      }
+    } else {
+      const step = Math.ceil(n / (plotW * 2));
+      let first = true;
+      for (let b = i0; b <= i1; b += step) {
+        const bEnd = Math.min(b + step - 1, i1);
+        let iMin = b, iMax = b;
+        for (let i = b + 1; i <= bEnd; i++) {
+          if (vs[i] < vs[iMin]) iMin = i;
+          if (vs[i] > vs[iMax]) iMax = i;
+        }
+        const a = Math.min(iMin, iMax), z = Math.max(iMin, iMax);
+        if (first) { ctx.moveTo(X(ts[a]), Y(vs[a])); first = false; }
+        else ctx.lineTo(X(ts[a]), Y(vs[a]));
+        if (z !== a) ctx.lineTo(X(ts[z]), Y(vs[z]));
+      }
+    }
+    ctx.stroke();
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  DW.escapeHtml = escapeHtml;
+
+  DW.Chart = Chart;
+})();
+
+</script>
+<script>
+/* Diagweb — persistance des dispositions.
+ *
+ * Trois destinations :
+ *  - navigateur (localStorage) : liste nommée + chargement auto,
+ *  - fichier .json : export / import pour partage,
+ *  - contrôleur : PUT /api/layouts/<nom> — stub tant que le back-end
+ *    n'existe pas (voir docs/SPECS.md §6).
+ */
+(function () {
+  "use strict";
+  const DW = window.DW;
+
+  const KEY_LAYOUTS = 'diagweb.layouts.v1';
+  const KEY_SESSION = 'diagweb.session.v1';
+  const KEY_AUTO = 'diagweb.autoload.v1';
+
+  let available = true;
+  function lsGet(key) {
+    try { return window.localStorage.getItem(key); }
+    catch (e) { available = false; return null; }
+  }
+  function lsSet(key, val) {
+    try { window.localStorage.setItem(key, val); return true; }
+    catch (e) { available = false; return false; }
+  }
+  function lsDel(key) {
+    try { window.localStorage.removeItem(key); } catch (e) { available = false; }
+  }
+
+  function readLayouts() {
+    const raw = lsGet(KEY_LAYOUTS);
+    if (!raw) return {};
+    try { const o = JSON.parse(raw); return o && typeof o === 'object' ? o : {}; }
+    catch (e) { return {}; }
+  }
+  function writeLayouts(obj) { return lsSet(KEY_LAYOUTS, JSON.stringify(obj)); }
+
+  function validateLayout(data) {
+    if (!data || typeof data !== 'object') return 'structure absente';
+    if (!Array.isArray(data.charts)) return 'liste de graphiques absente';
+    if (!Array.isArray(data.table)) return 'liste du tableau absente';
+    for (const c of data.charts) {
+      if (!Array.isArray(c.series)) return 'graphique sans liste de courbes';
+    }
+    return null;
+  }
+
+  DW.store = {
+    get available() { return available; },
+
+    // ---- Dispositions nommées (navigateur) --------------------------
+    list() {
+      const all = readLayouts();
+      return Object.values(all).sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+    },
+    get(name) { return readLayouts()[name] || null; },
+    save(name, data) {
+      const all = readLayouts();
+      all[name] = { name, savedAt: Date.now(), data };
+      return writeLayouts(all);
+    },
+    remove(name) {
+      const all = readLayouts();
+      delete all[name];
+      writeLayouts(all);
+      if (this.getAutoload() === name) this.setAutoload(null);
+    },
+    getAutoload() { return lsGet(KEY_AUTO) || null; },
+    setAutoload(name) { name ? lsSet(KEY_AUTO, name) : lsDel(KEY_AUTO); },
+
+    // ---- Session courante (restaurée au rechargement) ---------------
+    saveSession(data) { lsSet(KEY_SESSION, JSON.stringify(data)); },
+    loadSession() {
+      const raw = lsGet(KEY_SESSION);
+      if (!raw) return null;
+      try {
+        const d = JSON.parse(raw);
+        return validateLayout(d) ? null : d;
+      } catch (e) { return null; }
+    },
+    clearSession() { lsDel(KEY_SESSION); },
+
+    // ---- Export / import fichier ------------------------------------
+    exportText(name, data) {
+      return JSON.stringify({ app: 'diagweb', version: 1, name, exportedAt: new Date().toISOString(), data }, null, 2);
+    },
+    download(name, text) {
+      try {
+        const blob = new Blob([text], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = (name || 'disposition').replace(/[^\wÀ-ſ -]+/g, '_') + '.diagweb.json';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+        return true;
+      } catch (e) { return false; }
+    },
+    parseImport(text) {
+      let o;
+      try { o = JSON.parse(text); }
+      catch (e) { return { ok: false, error: 'Fichier illisible : JSON invalide.' }; }
+      const data = o && o.app === 'diagweb' ? o.data : o;
+      const err = validateLayout(data);
+      if (err) return { ok: false, error: 'Ce fichier ne contient pas une disposition Diagweb (' + err + ').' };
+      return { ok: true, name: (o && o.name) || 'Import', data };
+    },
+
+    // ---- Contrôleur (back-end à venir) ------------------------------
+    async saveToController(name, data) {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 2500);
+      try {
+        const r = await fetch('/api/layouts/' + encodeURIComponent(name), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, data }),
+          signal: ctl.signal,
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return true;
+      } finally { clearTimeout(timer); }
+    },
+    async listFromController() {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 2500);
+      try {
+        const r = await fetch('/api/layouts', { signal: ctl.signal });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return await r.json();
+      } finally { clearTimeout(timer); }
+    },
+  };
+})();
+
+</script>
+<script>
+/* Diagweb — logique applicative & interface */
+(function () {
+  "use strict";
+  const DW = window.DW;
+  const CFG = DW.CONFIG;
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- État ----------------------------------------------------
+  const state = {
+    table: [],        // [{addr, meta}]
+    charts: [],       // instances DW.Chart
+    chartSeq: 0,
+  };
+
+  // ---------- Notifications -------------------------------------------
+  function toast(msg, type) {
+    const box = $('toasts');
+    const el = document.createElement('div');
+    el.className = 'toast' + (type === 'err' ? ' err' : '');
+    el.textContent = msg;
+    box.appendChild(el);
+    setTimeout(() => el.classList.add('gone'), type === 'err' ? 5200 : 3200);
+    setTimeout(() => el.remove(), type === 'err' ? 5600 : 3600);
+  }
+
+  // ---------- Sauvegarde de session (debounce) ------------------------
+  let saveTimer = null;
+  function onChange() {
+    updateEmptyState();
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => DW.store.saveSession(serializeWorkspace()), 500);
+  }
+
+  // ---------- API passée aux graphiques -------------------------------
+  const appApi = {
+    acquire(addr, periodMs) {
+      const rec = DW.source.subscribe(addr, { periodMs });
+      return rec ? rec.meta : null;
+    },
+    release(addr) { DW.source.unsubscribe(addr); },
+    onChange,
+    toast,
+    removeChart(chart) {
+      const i = state.charts.indexOf(chart);
+      if (i >= 0) state.charts.splice(i, 1);
+      chart.destroy();
+      refreshTargets();
+      onChange();
+    },
+    refreshTargets,
+  };
+
+  // ---------- Graphiques ----------------------------------------------
+  function createChart(opts) {
+    if (state.charts.length >= CFG.maxCharts) {
+      toast('Limite de ' + CFG.maxCharts + ' graphiques atteinte.', 'err');
+      return null;
+    }
+    opts = opts || {};
+    state.chartSeq++;
+    const chart = new DW.Chart(appApi, {
+      title: opts.title || 'Graphique ' + state.chartSeq,
+      windowS: opts.windowS,
+    });
+    state.charts.push(chart);
+    $('chartsGrid').appendChild(chart.root);
+    refreshTargets();
+    onChange();
+    return chart;
+  }
+
+  // ---------- Tableau numérique ---------------------------------------
+  function inTable(addr) { return state.table.some((e) => e.addr === addr); }
+
+  function addToTable(addr, periodMs) {
+    if (inTable(addr)) return { ok: false, error: addr + ' est déjà dans le tableau.' };
+    const meta = appApi.acquire(addr, periodMs);
+    if (!meta) return { ok: false, error: 'Adresse invalide : ' + addr };
+    state.table.push({ addr, meta, periodMs: periodMs || undefined });
+    renderTable();
+    return { ok: true };
+  }
+
+  function removeFromTable(addr) {
+    const i = state.table.findIndex((e) => e.addr === addr);
+    if (i < 0) return;
+    appApi.release(addr);
+    state.table.splice(i, 1);
+    renderTable();
+    onChange();
+  }
+
+  function renderTable() {
+    const card = $('tableCard');
+    const rows = $('tableRows');
+    rows.innerHTML = '';
+    for (const e of state.table) {
+      const row = document.createElement('div');
+      row.className = 'vrow';
+      row.dataset.addr = e.addr;
+      row.innerHTML =
+        '<span class="badge fam-' + e.meta.family + '">' + e.meta.family + '</span>' +
+        '<div class="v-id"><span class="v-addr"></span><span class="v-label"></span></div>' +
+        '<div class="v-val"><b class="val">—</b><span class="v-unit"></span><span class="v-trend"></span></div>' +
+        '<button class="v-del" type="button" title="Retirer du tableau">✕</button>';
+      row.querySelector('.v-addr').textContent = e.addr;
+      row.querySelector('.v-label').textContent = e.meta.label +
+        (e.periodMs && e.periodMs !== CFG.defaultPeriodMs ? ' · rafr. ' + e.periodMs + ' ms' : '');
+      row.querySelector('.v-unit').textContent = e.meta.unit || '';
+      row.querySelector('.v-del').addEventListener('click', () => removeFromTable(e.addr));
+      rows.appendChild(row);
+    }
+    $('tableCount').textContent = state.table.length ? state.table.length + ' variable' + (state.table.length > 1 ? 's' : '') : '';
+    card.classList.toggle('hide', state.table.length === 0);
+    updateEmptyState();
+  }
+
+  function updateTableValues() {
+    const rows = $('tableRows').children;
+    for (let i = 0; i < state.table.length && i < rows.length; i++) {
+      const e = state.table[i];
+      const last = DW.source.latest(e.addr);
+      const valEl = rows[i].querySelector('.val');
+      if (!last) { valEl.textContent = '—'; continue; }
+      if (e.meta.kind === 'bit') {
+        const on = last.v >= 0.5;
+        valEl.innerHTML = '<i class="led' + (on ? ' on' : '') + '"></i>' + (on ? '1' : '0');
+      } else if (e.meta.family === 'MB') {
+        const n = Math.round(last.v) & 0xFFFF;
+        valEl.innerHTML = DW.fmtVal(last.v, e.meta) +
+          ' <span class="v-hex">0x' + n.toString(16).toUpperCase().padStart(4, '0') + '</span>';
+      } else {
+        valEl.textContent = DW.fmtVal(last.v, e.meta);
+      }
+      // Tendance sur ~2,5 s
+      const trendEl = rows[i].querySelector('.v-trend');
+      const past = DW.source.past(e.addr, 2.5);
+      if (past == null || e.meta.kind === 'bit') { trendEl.textContent = ''; trendEl.className = 'v-trend'; continue; }
+      const eps = Math.max(Math.abs(last.v) * 0.004, 1e-6);
+      const d = last.v - past;
+      trendEl.textContent = d > eps ? '↗' : d < -eps ? '↘' : '→';
+      trendEl.className = 'v-trend ' + (d > eps ? 'up' : d < -eps ? 'down' : 'flat');
+    }
+  }
+
+  // ---------- Cible d'ajout -------------------------------------------
+  function refreshTargets() {
+    const sel = $('targetSel');
+    const prev = sel.value;
+    sel.innerHTML = '';
+    const opt = (v, label) => {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = label;
+      sel.appendChild(o);
+    };
+    opt('table', '→ Tableau numérique');
+    for (const c of state.charts) opt('chart:' + c.id, '→ ' + c.title);
+    opt('new', '→ Nouveau graphique');
+    sel.value = [...sel.options].some((o) => o.value === prev) ? prev : 'table';
+  }
+
+  // ---------- Ajout d'une variable ------------------------------------
+  function addVariable(rawAddr) {
+    const p = DW.parseAddr(rawAddr != null ? rawAddr : $('searchInput').value);
+    if (!p.ok) { toast(p.error, 'err'); return false; }
+    const target = $('targetSel').value;
+    const periodMs = parseInt($('periodSel').value, 10) || CFG.defaultPeriodMs;
+    let destLabel = '';
+    if (target === 'table') {
+      const r = addToTable(p.addr, periodMs);
+      if (!r.ok) { toast(r.error, 'err'); return false; }
+      destLabel = 'Tableau numérique';
+    } else {
+      let chart = null;
+      if (target === 'new') {
+        chart = createChart();
+        if (!chart) return false;
+      } else {
+        chart = state.charts.find((c) => 'chart:' + c.id === target);
+        if (!chart) { refreshTargets(); toast('Ce graphique n’existe plus.', 'err'); return false; }
+      }
+      const r = chart.addSeries(p.addr, { periodMs });
+      if (!r.ok) {
+        toast(r.error, 'err');
+        if (target === 'new') appApi.removeChart(chart);
+        return false;
+      }
+      if (target === 'new') $('targetSel').value = 'chart:' + chart.id;
+      destLabel = chart.title;
+    }
+    $('searchInput').value = '';
+    hideSuggest();
+    onChange();
+    toast(p.addr + ' → ' + destLabel);
+    return true;
+  }
+
+  // ---------- Autocomplétion ------------------------------------------
+  let sugIndex = -1;
+  function hideSuggest() { $('suggestBox').classList.add('hide'); sugIndex = -1; }
+
+  function buildSugRow(entry) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'sug';
+    b.innerHTML =
+      '<span class="badge fam-' + entry.family + '">' + entry.family + '</span>' +
+      '<span class="sug-addr"></span><span class="sug-label"></span><span class="sug-unit"></span>';
+    b.querySelector('.sug-addr').textContent = entry.addr;
+    b.querySelector('.sug-label').textContent = entry.label || '';
+    b.querySelector('.sug-unit').textContent = entry.unit || '';
+    // pointerdown pour devancer le blur de l'input
+    b.addEventListener('pointerdown', (ev) => {
+      ev.preventDefault();
+      $('searchInput').value = entry.addr;
+      addVariable(entry.addr);
+    });
+    return b;
+  }
+
+  function catalogWithFamily() {
+    return DW.CATALOG.map((e) => {
+      const p = DW.parseAddr(e.addr);
+      return Object.assign({ family: p.ok ? p.family : 'CAPI' }, e);
+    });
+  }
+  const CATALOG_F = catalogWithFamily();
+
+  function updateSuggest() {
+    const box = $('suggestBox');
+    const q = $('searchInput').value.trim().toLowerCase();
+    box.innerHTML = '';
+    let list;
+    if (!q) {
+      const help = document.createElement('div');
+      help.className = 'sug-help';
+      help.innerHTML = 'Formats : <code>I1.2.3.4</code> <code>Q14.15</code> <code>M1.14</code> ' +
+        '<code>S0.4</code> <code>MB414</code> <code>Modele/signal</code>';
+      box.appendChild(help);
+      list = CATALOG_F.slice(0, 8);
+    } else {
+      const starts = [], contains = [];
+      for (const e of CATALOG_F) {
+        const a = e.addr.toLowerCase(), l = (e.label || '').toLowerCase();
+        if (a.startsWith(q)) starts.push(e);
+        else if (a.includes(q) || l.includes(q)) contains.push(e);
+      }
+      list = starts.concat(contains).slice(0, 9);
+    }
+    for (const e of list) box.appendChild(buildSugRow(e));
+    if (q) {
+      const p = DW.parseAddr(q);
+      if (p.ok && !list.some((e) => e.addr.toUpperCase() === p.addr.toUpperCase())) {
+        const e = { addr: p.addr, family: p.family, label: DW.FAMILIES[p.family].label + ' — hors catalogue', unit: '' };
+        box.appendChild(buildSugRow(e));
+      }
+    }
+    box.classList.toggle('hide', !box.children.length);
+    sugIndex = -1;
+  }
+
+  function moveSug(delta) {
+    const box = $('suggestBox');
+    const rows = [...box.querySelectorAll('.sug')];
+    if (!rows.length) return;
+    sugIndex = (sugIndex + delta + rows.length) % rows.length;
+    rows.forEach((r, i) => r.classList.toggle('sel', i === sugIndex));
+    rows[sugIndex].scrollIntoView({ block: 'nearest' });
+  }
+
+  // ---------- Sérialisation -------------------------------------------
+  function serializeWorkspace() {
+    return {
+      version: 1,
+      table: state.table.map((e) => ({ addr: e.addr, periodMs: e.periodMs })),
+      charts: state.charts.map((c) => c.serialize()),
+    };
+  }
+
+  function clearAll() {
+    for (const c of [...state.charts]) { c.destroy(); }
+    state.charts = [];
+    for (const e of state.table) appApi.release(e.addr);
+    state.table = [];
+    state.chartSeq = 0;
+    renderTable();
+    refreshTargets();
+  }
+
+  function applyWorkspace(data) {
+    clearAll();
+    for (const entry of data.table || []) {
+      // Rétro-compatibilité : entrée sous forme de chaîne (format initial)
+      const addr = typeof entry === 'string' ? entry : entry.addr;
+      const periodMs = typeof entry === 'string' ? undefined : entry.periodMs;
+      const p = DW.parseAddr(addr);
+      if (p.ok) addToTable(p.addr, periodMs);
+    }
+    for (const c of data.charts || []) {
+      const chart = createChart({ title: c.title, windowS: c.windowS });
+      if (!chart) break;
+      for (const s of c.series || []) {
+        const p = DW.parseAddr(s.addr);
+        if (p.ok) chart.addSeries(p.addr, { axisMode: s.axisMode, visible: s.visible !== false, periodMs: s.periodMs });
+      }
+    }
+    refreshTargets();
+    updateEmptyState();
+    onChange();
+  }
+
+  // ---------- Disposition de démonstration ----------------------------
+  const DEMO = {
+    version: 1,
+    table: ['I1.2.3.4', 'Q14.15', 'S0.4', 'MB414', 'Elec/tension_bus', 'Supervision/temps_cycle'],
+    charts: [
+      {
+        title: 'Régulation vitesse', windowS: 60,
+        series: [
+          { addr: 'Regulation/mesure/vitesse' },
+          { addr: 'Regulation/consigne/vitesse' },
+          { addr: 'Elec/puissance_active' },
+        ],
+      },
+      {
+        title: 'Thermique & pression', windowS: 120,
+        series: [
+          { addr: 'Thermique/temperature_eau' },
+          { addr: 'Hydraulique/pression_huile' },
+          { addr: 'M20.0' },
+        ],
+      },
+    ],
+  };
+
+  // ---------- État vide ------------------------------------------------
+  function updateEmptyState() {
+    const empty = state.table.length === 0 && state.charts.length === 0;
+    $('emptyState').classList.toggle('hide', !empty);
+  }
+
+  // ---------- Modal Dispositions ---------------------------------------
+  function openLayoutsModal() {
+    const root = $('modalRoot');
+    root.innerHTML = '';
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    back.innerHTML =
+      '<div class="modal" role="dialog" aria-label="Dispositions">' +
+        '<header class="m-head"><h3>Dispositions</h3><button class="iconbtn m-close" type="button" title="Fermer">✕</button></header>' +
+        '<div class="m-section">' +
+          '<label class="m-label" for="layName">Enregistrer la disposition actuelle</label>' +
+          '<input id="layName" class="m-input" maxlength="60">' +
+          '<div class="m-actions">' +
+            '<button class="btn primary" id="laySaveLocal" type="button">Enregistrer (navigateur)</button>' +
+            '<button class="btn" id="layDownload" type="button">Télécharger .json</button>' +
+            '<button class="btn" id="layCopy" type="button">Copier le JSON</button>' +
+            '<button class="btn" id="laySaveCtl" type="button">Enregistrer dans le contrôleur</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="m-section">' +
+          '<div class="m-row"><h4>Enregistrées dans ce navigateur</h4>' +
+          '<label class="btn m-import">Importer un fichier<input type="file" id="layImport" accept=".json,application/json" hidden></label></div>' +
+          '<div class="lay-list" id="layList"></div>' +
+        '</div>' +
+        '<p class="m-note">★ = chargée automatiquement à l’ouverture. « Contrôleur » nécessite le back-end embarqué ' +
+        '(à venir) : sans contrôleur joignable, le prototype affiche une erreur.</p>' +
+      '</div>';
+    root.appendChild(back);
+
+    const close = () => { root.innerHTML = ''; };
+    back.addEventListener('pointerdown', (e) => { if (e.target === back) close(); });
+    back.querySelector('.m-close').addEventListener('click', close);
+
+    const d = new Date();
+    back.querySelector('#layName').value =
+      'Disposition ' + String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') +
+      ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+
+    const getName = () => back.querySelector('#layName').value.trim() || 'Sans nom';
+
+    back.querySelector('#laySaveLocal').addEventListener('click', () => {
+      if (!DW.store.available) { toast('Stockage local indisponible dans ce navigateur.', 'err'); return; }
+      DW.store.save(getName(), serializeWorkspace());
+      renderLayList();
+      toast('Disposition « ' + getName() + ' » enregistrée dans le navigateur.');
+    });
+    back.querySelector('#layDownload').addEventListener('click', () => {
+      const ok = DW.store.download(getName(), DW.store.exportText(getName(), serializeWorkspace()));
+      toast(ok ? 'Téléchargement lancé.' : 'Téléchargement bloqué ici — utilisez « Copier le JSON ».', ok ? '' : 'err');
+    });
+    back.querySelector('#layCopy').addEventListener('click', async () => {
+      const text = DW.store.exportText(getName(), serializeWorkspace());
+      const ok = await copyText(text);
+      if (ok) toast('JSON copié dans le presse-papiers.');
+      else showTextModal('Copie manuelle', text);
+    });
+    back.querySelector('#laySaveCtl').addEventListener('click', async () => {
+      const btn = back.querySelector('#laySaveCtl');
+      btn.disabled = true;
+      try {
+        await DW.store.saveToController(getName(), serializeWorkspace());
+        toast('Disposition enregistrée dans le contrôleur.');
+      } catch (e) {
+        toast('Contrôleur injoignable — cette action sera disponible avec le back-end embarqué (prototype front-end).', 'err');
+      } finally { btn.disabled = false; }
+    });
+    back.querySelector('#layImport').addEventListener('change', (ev) => {
+      const f = ev.target.files && ev.target.files[0];
+      if (!f) return;
+      const rd = new FileReader();
+      rd.onload = () => {
+        const r = DW.store.parseImport(String(rd.result));
+        if (!r.ok) { toast(r.error, 'err'); return; }
+        DW.store.save(r.name, r.data);
+        renderLayList();
+        applyWorkspace(r.data);
+        toast('Disposition « ' + r.name + ' » importée et chargée.');
+      };
+      rd.readAsText(f);
+    });
+
+    function renderLayList() {
+      const listEl = back.querySelector('#layList');
+      const items = DW.store.list();
+      const auto = DW.store.getAutoload();
+      listEl.innerHTML = items.length ? '' : '<p class="m-empty">Aucune disposition enregistrée pour l’instant.</p>';
+      for (const it of items) {
+        const row = document.createElement('div');
+        row.className = 'lay-row';
+        const when = new Date(it.savedAt || 0);
+        row.innerHTML =
+          '<div class="lay-id"><b></b><span class="lay-date">' +
+          String(when.getDate()).padStart(2, '0') + '/' + String(when.getMonth() + 1).padStart(2, '0') + ' ' +
+          String(when.getHours()).padStart(2, '0') + ':' + String(when.getMinutes()).padStart(2, '0') +
+          '</span></div>' +
+          '<div class="lay-actions">' +
+            '<button class="btn sm" data-a="load" type="button">Charger</button>' +
+            '<button class="iconbtn" data-a="dl" type="button" title="Télécharger">⬇</button>' +
+            '<button class="iconbtn star' + (auto === it.name ? ' on' : '') + '" data-a="auto" type="button" title="Charger automatiquement à l’ouverture">★</button>' +
+            '<button class="iconbtn" data-a="del" type="button" title="Supprimer">🗑</button>' +
+          '</div>';
+        row.querySelector('.lay-id b').textContent = it.name;
+        row.addEventListener('click', (e) => {
+          const a = e.target.closest('[data-a]');
+          if (!a) return;
+          if (a.dataset.a === 'load') { applyWorkspace(it.data); close(); toast('Disposition « ' + it.name + ' » chargée.'); }
+          if (a.dataset.a === 'dl') {
+            const ok = DW.store.download(it.name, DW.store.exportText(it.name, it.data));
+            if (!ok) showTextModal('Copie manuelle', DW.store.exportText(it.name, it.data));
+          }
+          if (a.dataset.a === 'auto') {
+            DW.store.setAutoload(auto === it.name ? null : it.name);
+            renderLayList();
+          }
+          if (a.dataset.a === 'del') { DW.store.remove(it.name); renderLayList(); toast('« ' + it.name + ' » supprimée.'); }
+        });
+        listEl.appendChild(row);
+      }
+    }
+    renderLayList();
+  }
+
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (e) { /* on tente le repli */ }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch (e) { return false; }
+  }
+
+  function showTextModal(title, text) {
+    const root = $('modalRoot');
+    root.innerHTML = '';
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    back.innerHTML =
+      '<div class="modal"><header class="m-head"><h3></h3>' +
+      '<button class="iconbtn m-close" type="button" title="Fermer">✕</button></header>' +
+      '<p class="m-note">Sélectionnez tout puis copiez.</p>' +
+      '<textarea class="m-text" readonly></textarea></div>';
+    back.querySelector('h3').textContent = title;
+    const ta = back.querySelector('.m-text');
+    ta.value = text;
+    back.querySelector('.m-close').addEventListener('click', () => { root.innerHTML = ''; });
+    back.addEventListener('pointerdown', (e) => { if (e.target === back) root.innerHTML = ''; });
+    root.appendChild(back);
+    ta.focus(); ta.select();
+  }
+
+  // ---------- Boucle de rendu -----------------------------------------
+  let lastChartT = 0, lastLiveT = 0;
+  function loop(t) {
+    if (t - lastChartT >= 1000 / CFG.chartFps) {
+      lastChartT = t;
+      for (const c of state.charts) c.render();
+    }
+    if (t - lastLiveT >= CFG.liveRefreshMs) {
+      lastLiveT = t;
+      for (const c of state.charts) c.updateLive();
+      updateTableValues();
+      $('statInfo').textContent = DW.source.count() + ' variable' + (DW.source.count() > 1 ? 's' : '') + ' active' + (DW.source.count() > 1 ? 's' : '');
+    }
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- Événements globaux --------------------------------------
+  function bindUi() {
+    const input = $('searchInput');
+    input.addEventListener('input', updateSuggest);
+    input.addEventListener('focus', updateSuggest);
+    input.addEventListener('blur', () => setTimeout(hideSuggest, 150));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); moveSug(1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); moveSug(-1); }
+      else if (e.key === 'Enter') {
+        e.preventDefault();
+        const rows = $('suggestBox').querySelectorAll('.sug');
+        if (sugIndex >= 0 && rows[sugIndex]) {
+          const addr = rows[sugIndex].querySelector('.sug-addr').textContent;
+          input.value = addr;
+          addVariable(addr);
+        } else addVariable();
+      } else if (e.key === 'Escape') hideSuggest();
+    });
+
+    $('addBtn').addEventListener('click', () => addVariable());
+    $('addChartBtn').addEventListener('click', () => {
+      const c = createChart();
+      if (c) {
+        $('targetSel').value = 'chart:' + c.id;
+        toast('« ' + c.title + ' » ajouté — c’est la cible d’ajout actuelle.');
+      }
+    });
+    $('layoutsBtn').addEventListener('click', openLayoutsModal);
+
+    $('pauseAllBtn').addEventListener('click', () => {
+      const anyRunning = state.charts.some((c) => !c.paused);
+      for (const c of state.charts) c.setPaused(anyRunning);
+      $('pauseAllBtn').textContent = anyRunning ? '▶' : '⏸';
+      $('pauseAllBtn').title = anyRunning ? 'Reprendre tous les graphiques' : 'Figer tous les graphiques';
+    });
+
+    $('themeBtn').addEventListener('click', () => {
+      const cur = document.documentElement.getAttribute('data-theme');
+      const next = cur === 'dark' ? 'light' : cur === 'light' ? 'dark'
+        : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', next);
+      DW.invalidateChartTheme();
+      for (const c of state.charts) c.rebuildLegend();
+    });
+
+    $('demoBtn').addEventListener('click', () => { applyWorkspace(DEMO); toast('Disposition de démonstration chargée.'); });
+
+    const perSel = $('periodSel');
+    for (const p of CFG.periodChoices) {
+      const o = document.createElement('option');
+      o.value = p;
+      o.textContent = p >= 1000 ? (p / 1000) + ' s' : p + ' ms';
+      if (p === CFG.defaultPeriodMs) o.textContent += ' (défaut)';
+      perSel.appendChild(o);
+    }
+    perSel.value = String(CFG.defaultPeriodMs);
+
+    $('srcInfo').textContent = 'Source : ' + DW.source.name + ' · défaut ' + DW.source.defaultPeriodMs + ' ms';
+  }
+
+  // ---------- Démarrage ------------------------------------------------
+  function boot() {
+    bindUi();
+    refreshTargets();
+    const sess = DW.store.loadSession();
+    if (sess && ((sess.table && sess.table.length) || (sess.charts && sess.charts.length))) {
+      applyWorkspace(sess);
+    } else {
+      const auto = DW.store.getAutoload();
+      const saved = auto ? DW.store.get(auto) : null;
+      if (saved) applyWorkspace(saved.data);
+      else applyWorkspace(DEMO);
+    }
+    requestAnimationFrame(loop);
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+
+</script>
