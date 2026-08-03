@@ -9,7 +9,10 @@ locale (10 Hz) ; le back-end embarqué viendra en phase 2.
 
 ## Essayer
 
-- Ouvrir `dist/index.html` dans un navigateur (fichier autonome, aucun
+- **En ligne (GitHub Pages)** : https://david85fr.github.io/Diagweb/
+  (branche `gh-pages`, copie de `dist/index.html` — dépôt public, donc page
+  publique).
+- Ou ouvrir `dist/index.html` dans un navigateur (fichier autonome, aucun
   serveur ni dépendance requis).
 - Saisir une adresse dans la barre de recherche : `I1.2.3.4`, `Q14.15`,
   `M1.14`, `S0.4`, `MB414` ou un signal modèle `Regulation/mesure/vitesse`,

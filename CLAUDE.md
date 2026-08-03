@@ -47,7 +47,10 @@ Espace de noms JS global : `window.DW`. Scripts en IIFE, pas de modules ES
 3. Tester `dist/index.html` (Playwright + captures mobile 390×844 et desktop).
 4. Republier l'Artifact **au même URL** (redéployer `dist/artifact.html`,
    favicon stable 📈).
-5. Commit + push sur la branche de travail indiquée par la session.
+5. Mettre à jour GitHub Pages : recopier `dist/index.html` en racine de la
+   branche `gh-pages` (avec `.nojekyll`) et pousser — la page publique est
+   https://david85fr.github.io/Diagweb/.
+6. Commit + push sur la branche de travail indiquée par la session.
 
 ## Points d'architecture à respecter
 
