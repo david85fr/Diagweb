@@ -49,6 +49,21 @@ pour les familles PLC, normalisé en majuscules) :
 - Doublons refusés (même adresse dans le tableau, même courbe dans un même
   graphique) avec message.
 
+## 2 bis. Onglets (espaces de travail)
+
+- L'espace de travail est composé d'**onglets**, chacun portant sa propre
+  **configuration** (tableau numérique + graphiques) et ses réglages de
+  journalisation. Barre d'onglets sous la barre supérieure : « ＋ » crée un
+  onglet vide, « ✕ » ferme (le dernier onglet fermé est remplacé par un
+  onglet vide), un appui sur l'onglet **actif** renomme en place.
+- Les abonnements des onglets inactifs **restent vivants** : l'historique
+  des courbes et la journalisation continuent en arrière-plan, rien n'est
+  perdu en changeant d'onglet. Seul l'onglet actif est rendu à l'écran.
+- La recherche, la cible d'ajout, « + Graphique », la pause et le Journal
+  agissent sur l'onglet actif.
+- La session (v2) mémorise tous les onglets, l'onglet actif et l'état de
+  journalisation de chacun.
+
 ## 3. Tableau numérique
 
 - Colonnes : badge famille, adresse (mono), libellé, valeur vivante, unité,
@@ -97,25 +112,54 @@ pour les familles PLC, normalisé en majuscules) :
    pour lui donner son propre axe.
 6. La grille horizontale est celle du **premier** groupe uniquement.
 
-## 6. Dispositions (liste des variables + agencement)
+## 6. Configurations (liste des variables + agencement)
 
-Objet sérialisé : `{version: 1, table: [{addr, periodMs?}], charts: [{title,
-windowS, series: [{addr, axisMode: 'auto'|'solo', visible, periodMs?}]}]}`.
-`periodMs` absent = 10 ms. Le lecteur accepte aussi les entrées de tableau
-sous forme de simple chaîne (format initial) pour rester rétro-compatible.
+Configuration (une par onglet) : `{version: 1, table: [{addr, periodMs?}],
+charts: [{title, windowS, series: [{addr, axisMode: 'auto'|'solo', visible,
+periodMs?}]}]}`. `periodMs` absent = 10 ms. Le lecteur accepte aussi les
+entrées de tableau sous forme de simple chaîne (format initial).
+
+Session (navigateur) : `{version: 2, active, tabs: [{name, log: {enabled,
+dest}, data: <configuration v1>}]}` ; une session v1 (une seule
+configuration à la racine) est acceptée et convertie en un onglet.
 
 - **Session** : l'espace de travail courant est sauvegardé en continu
   (localStorage, debounce 500 ms) et restauré au rechargement.
 - **Navigateur** : dispositions nommées en localStorage — enregistrer,
   charger, supprimer, télécharger ; « ★ » désigne la disposition chargée
   automatiquement à l'ouverture (à défaut : session, sinon démo).
-- **Fichier** : export `*.diagweb.json` (enveloppe `{app:'diagweb', version,
-  name, exportedAt, data}`) pour envoi à un tiers ; import par sélection de
-  fichier (validation + message d'erreur clair) ; repli « Copier le JSON » /
-  collage manuel si le téléchargement est bloqué par l'environnement.
+- Une configuration nommée = **un onglet**. « Charger » et l'import ouvrent
+  la configuration dans un **nouvel onglet** (non destructif) ; « ★ » est
+  chargée au premier démarrage (sans session).
+- **Fichier JSON** : export `*.diagweb.json` (enveloppe `{app:'diagweb',
+  version, name, exportedAt, data}`) pour envoi à un tiers ; import par
+  sélection de fichier (validation + message d'erreur clair) ; repli
+  « Copier le JSON » / collage manuel si le téléchargement est bloqué.
+- **Fichier CSV** (export de consultation, non importable) : séparateur
+  « ; », en-tête `emplacement;graphique;fenetre_s;adresse;periode_ms;`
+  `echelle;visible` — une ligne par variable du tableau et par courbe.
 - **Contrôleur** : `PUT /api/layouts/<nom>` et `GET /api/layouts` (timeout
   2,5 s). Tant que le back-end n'existe pas, échec propre avec message
   explicite. À brancher en phase 2.
+
+## 6 bis. Journalisation des données (par onglet, optionnelle)
+
+- Bouton « Journal » (indicateur ⏺ rouge sur le bouton et sur l'onglet
+  quand elle est active). Chaque onglet journalise **toutes ses variables**
+  (tableau + courbes), chaque échantillon à la période propre de la
+  variable, y compris onglet inactif.
+- **Destination** au choix :
+  - **Navigateur** : tampon en mémoire de la page, plafond
+    **100 000 lignes** (les plus anciennes éliminées, signalé dans l'état).
+    Perdu au rechargement — à télécharger avant.
+  - **Contrôleur** : `POST /api/datalog` (back-end à venir) ; tant qu'il est
+    injoignable, avertissement et repli sur le tampon navigateur.
+- État affiché : en cours/arrêt, nb d'échantillons, nb de variables, durée
+  couverte, taille CSV estimée. Actions : démarrer/arrêter, télécharger
+  **CSV** (`horodatage_iso;t_s;adresse;valeur`) ou **JSON**
+  (`{app:'diagweb-journal', version, tab, rows:[[t,addr,v]…]}`), vider.
+- L'activation et la destination sont mémorisées dans la session (la
+  journalisation redémarre au rechargement si elle était active).
 
 ## 7. Contrat DataSource (frontière front/back)
 
@@ -157,7 +201,10 @@ est transmise au serveur de diag, qui échantillonne le cœur en conséquence.
 - [x] Grammaire d'adresses + autocomplétion + gestion d'erreurs
 - [x] Tableau numérique (LED, hexa, tendance)
 - [x] Graphiques multi-échelles, curseur, pause, fenêtres de temps
-- [x] Dispositions : session, navigateur, export/import, ★ auto, stub contrôleur
+- [x] Onglets multiples (une configuration par onglet, session v2)
+- [x] Configurations : session, navigateur, export JSON + CSV, import JSON,
+      ★ auto, stub contrôleur
+- [x] Journalisation par onglet (navigateur ; contrôleur en stub)
 - [x] Période de rafraîchissement par variable (défaut 10 ms)
 - [x] Simulation (catalogue ~37 variables + hors catalogue, période honorée)
 - [x] Thèmes clair/sombre, responsive téléphone → 32″

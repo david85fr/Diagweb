@@ -69,12 +69,18 @@
     setAutoload(name) { name ? lsSet(KEY_AUTO, name) : lsDel(KEY_AUTO); },
 
     // ---- Session courante (restaurée au rechargement) ---------------
+    // v2 : {version:2, active, tabs:[{name, log, data:<config v1>}]} ;
+    // v1 (une seule configuration) accepté en rétro-compatibilité.
     saveSession(data) { lsSet(KEY_SESSION, JSON.stringify(data)); },
     loadSession() {
       const raw = lsGet(KEY_SESSION);
       if (!raw) return null;
       try {
         const d = JSON.parse(raw);
+        if (d && d.version === 2 && Array.isArray(d.tabs)) {
+          d.tabs = d.tabs.filter((t) => t && !validateLayout(t.data));
+          return d.tabs.length ? d : null;
+        }
         return validateLayout(d) ? null : d;
       } catch (e) { return null; }
     },
@@ -84,17 +90,53 @@
     exportText(name, data) {
       return JSON.stringify({ app: 'diagweb', version: 1, name, exportedAt: new Date().toISOString(), data }, null, 2);
     },
-    download(name, text) {
+    /** Téléchargement générique. ext ex. 'diagweb.json' | 'csv'. */
+    download(name, text, ext, mime) {
       try {
-        const blob = new Blob([text], { type: 'application/json' });
+        const blob = new Blob([text], { type: mime || 'application/json' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = (name || 'disposition').replace(/[^\wÀ-ſ -]+/g, '_') + '.diagweb.json';
+        a.download = (name || 'diagweb').replace(/[^\wÀ-ſ -]+/g, '_') + '.' + (ext || 'diagweb.json');
         document.body.appendChild(a);
         a.click();
         setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
         return true;
       } catch (e) { return false; }
+    },
+
+    // ---- Exports CSV (séparateur « ; », compatible tableurs FR) ------
+    csvField(v) {
+      const s = String(v == null ? '' : v);
+      return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    },
+    /** CSV d'une configuration (liste des variables + agencement). */
+    configCsv(data) {
+      const F = this.csvField;
+      const L = ['emplacement;graphique;fenetre_s;adresse;periode_ms;echelle;visible'];
+      for (const e of data.table || []) {
+        const addr = typeof e === 'string' ? e : e.addr;
+        const p = (typeof e === 'object' && e.periodMs) || 10;
+        L.push(['tableau', '', '', F(addr), p, '', ''].join(';'));
+      }
+      for (const c of data.charts || []) {
+        for (const s of c.series || []) {
+          L.push(['graphique', F(c.title || ''), c.windowS || '', F(s.addr),
+            s.periodMs || 10, s.axisMode === 'solo' ? 'dediee' : 'auto',
+            s.visible === false ? 0 : 1].join(';'));
+        }
+      }
+      return L.join('\r\n') + '\r\n';
+    },
+    /** CSV d'un journal de données [t, addr, v]. */
+    logCsv(rows) {
+      const F = this.csvField;
+      const wall0 = Date.now() - (DW.source ? DW.source.now() * 1000 : 0);
+      const L = ['horodatage_iso;t_s;adresse;valeur'];
+      for (const r of rows) {
+        L.push(new Date(wall0 + r[0] * 1000).toISOString() + ';' +
+          r[0].toFixed(3) + ';' + F(r[1]) + ';' + r[2]);
+      }
+      return L.join('\r\n') + '\r\n';
     },
     parseImport(text) {
       let o;

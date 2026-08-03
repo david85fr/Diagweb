@@ -38,14 +38,20 @@
 
     <div class="topActions">
       <button id="addChartBtn" class="btn" type="button" title="Ajouter un graphique">+ Graphique</button>
-      <button id="layoutsBtn" class="btn" type="button" title="Enregistrer / charger des dispositions">Dispositions</button>
-      <button id="pauseAllBtn" class="iconbtn" type="button" title="Figer tous les graphiques">⏸</button>
+      <button id="layoutsBtn" class="btn" type="button" title="Enregistrer / charger des configurations">Configs</button>
+      <button id="logBtn" class="btn" type="button" title="Journalisation des données de l'onglet">Journal<i id="logInd" class="recdot hide"></i></button>
+      <button id="pauseAllBtn" class="iconbtn" type="button" title="Figer les graphiques de l'onglet">⏸</button>
       <button id="themeBtn" class="iconbtn" type="button" title="Basculer le thème clair/sombre">◐</button>
     </div>
   </header>
 
+  <div class="tabbar">
+    <div id="tabs" class="tabs" role="tablist"></div>
+    <button id="tabAdd" class="iconbtn" type="button" title="Nouvel onglet">＋</button>
+  </div>
+
   <section id="emptyState" class="empty hide">
-    <h2>Aucune variable suivie</h2>
+    <h2>Aucune variable dans cet onglet</h2>
     <p>Saisissez une adresse dans la barre de recherche pour l'ajouter au tableau
        numérique ou à un graphique&nbsp;: <b>I1.2.3.4</b>, <b>Q14.15</b>, <b>M1.14</b>,
        <b>S0.4</b>, <b>MB414</b> ou un signal modèle comme <b>Regulation.mesure.vitesse</b>.</p>
@@ -54,12 +60,7 @@
     </div>
   </section>
 
-  <section id="tableCard" class="card table-card hide">
-    <h3>Valeurs numériques <span id="tableCount"></span></h3>
-    <div id="tableRows"></div>
-  </section>
-
-  <div id="chartsGrid" class="charts-grid"></div>
+  <div id="panes"></div>
 </div>
 
 <footer class="statusbar">

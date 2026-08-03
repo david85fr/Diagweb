@@ -1,16 +1,23 @@
-/* Diagweb — logique applicative & interface */
+/* Diagweb — logique applicative & interface.
+ *
+ * Espace de travail multi-onglets : chaque onglet porte sa propre
+ * configuration (tableau numérique + graphiques) et, en option, une
+ * journalisation de données. Les abonnements des onglets inactifs restent
+ * vivants : l'historique des courbes n'est pas perdu en changeant d'onglet.
+ */
 (function () {
   "use strict";
   const DW = window.DW;
   const CFG = DW.CONFIG;
   const $ = (id) => document.getElementById(id);
 
+  const LOG_MAX_ROWS = 100000;   // plafond mémoire du journal par onglet
+
   // ---------- État ----------------------------------------------------
-  const state = {
-    table: [],        // [{addr, meta}]
-    charts: [],       // instances DW.Chart
-    chartSeq: 0,
-  };
+  // tab : { id, name, table:[{addr,meta,periodMs}], charts:[Chart],
+  //         chartSeq, paneEl, tableCardEl, tableRowsEl, tableCountEl,
+  //         chartsGridEl, log }
+  const state = { tabs: [], active: null, tabSeq: 0 };
 
   // ---------- Notifications -------------------------------------------
   function toast(msg, type) {
@@ -28,7 +35,7 @@
   function onChange() {
     updateEmptyState();
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => DW.store.saveSession(serializeWorkspace()), 500);
+    saveTimer = setTimeout(() => DW.store.saveSession(serializeSession()), 500);
   }
 
   // ---------- API passée aux graphiques -------------------------------
@@ -41,8 +48,10 @@
     onChange,
     toast,
     removeChart(chart) {
-      const i = state.charts.indexOf(chart);
-      if (i >= 0) state.charts.splice(i, 1);
+      for (const tab of state.tabs) {
+        const i = tab.charts.indexOf(chart);
+        if (i >= 0) { tab.charts.splice(i, 1); break; }
+      }
       chart.destroy();
       refreshTargets();
       onChange();
@@ -50,51 +59,157 @@
     refreshTargets,
   };
 
-  // ---------- Graphiques ----------------------------------------------
-  function createChart(opts) {
-    if (state.charts.length >= CFG.maxCharts) {
-      toast('Limite de ' + CFG.maxCharts + ' graphiques atteinte.', 'err');
-      return null;
+  // ---------- Onglets --------------------------------------------------
+  function createTab(name, data, logOpts) {
+    state.tabSeq++;
+    const pane = document.createElement('div');
+    pane.className = 'tabpane';
+    pane.innerHTML =
+      '<section class="card table-card hide">' +
+        '<h3>Valeurs numériques <span class="tcount"></span></h3>' +
+        '<div class="trows"></div>' +
+      '</section>' +
+      '<div class="charts-grid"></div>';
+    $('panes').appendChild(pane);
+
+    const tab = {
+      id: 't' + state.tabSeq,
+      name: name || 'Onglet ' + state.tabSeq,
+      table: [], charts: [], chartSeq: 0,
+      paneEl: pane,
+      tableCardEl: pane.querySelector('.table-card'),
+      tableRowsEl: pane.querySelector('.trows'),
+      tableCountEl: pane.querySelector('.tcount'),
+      chartsGridEl: pane.querySelector('.charts-grid'),
+      log: {
+        enabled: false, dest: 'browser',
+        rows: [], lastT: {}, enableT: 0,
+        truncated: false, ctlWarned: false,
+      },
+    };
+    state.tabs.push(tab);
+    switchTab(tab);
+    if (data) applyConfigToActive(data);
+    if (logOpts) {
+      tab.log.dest = logOpts.dest === 'controller' ? 'controller' : 'browser';
+      if (logOpts.enabled) startLogging(tab);
     }
-    opts = opts || {};
-    state.chartSeq++;
-    const chart = new DW.Chart(appApi, {
-      title: opts.title || 'Graphique ' + state.chartSeq,
-      windowS: opts.windowS,
-    });
-    state.charts.push(chart);
-    $('chartsGrid').appendChild(chart.root);
-    refreshTargets();
+    rebuildTabbar();
     onChange();
-    return chart;
+    return tab;
   }
 
-  // ---------- Tableau numérique ---------------------------------------
-  function inTable(addr) { return state.table.some((e) => e.addr === addr); }
+  function switchTab(tab) {
+    if (state.active === tab) return;
+    if (state.active) state.active.paneEl.classList.remove('on');
+    state.active = tab;
+    tab.paneEl.classList.add('on');
+    hideSuggest();
+    rebuildTabbar();
+    refreshTargets();
+    updatePauseBtn();
+    updateLogUi();
+    updateEmptyState();
+  }
+
+  function closeTab(tab) {
+    const i = state.tabs.indexOf(tab);
+    if (i < 0) return;
+    clearTab(tab);
+    tab.paneEl.remove();
+    state.tabs.splice(i, 1);
+    if (!state.tabs.length) {
+      createTab();
+    } else if (state.active === tab) {
+      state.active = null;
+      switchTab(state.tabs[Math.max(0, i - 1)]);
+    }
+    rebuildTabbar();
+    onChange();
+  }
+
+  function clearTab(tab) {
+    for (const c of [...tab.charts]) c.destroy();
+    tab.charts = [];
+    for (const e of tab.table) appApi.release(e.addr);
+    tab.table = [];
+    tab.chartSeq = 0;
+    renderTable(tab);
+  }
+
+  function rebuildTabbar() {
+    const bar = $('tabs');
+    bar.innerHTML = '';
+    for (const tab of state.tabs) {
+      const el = document.createElement('div');
+      el.className = 'tab' + (tab === state.active ? ' on' : '');
+      el.setAttribute('role', 'tab');
+      el.innerHTML =
+        '<span class="tab-name"></span>' +
+        (tab.log.enabled ? '<i class="recdot" title="Journalisation en cours"></i>' : '') +
+        '<span class="tab-close" title="Fermer l’onglet">✕</span>';
+      const nameEl = el.querySelector('.tab-name');
+      nameEl.textContent = tab.name;
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('.tab-close')) { closeTab(tab); return; }
+        if (tab === state.active) { startRename(tab, nameEl); return; }
+        switchTab(tab);
+      });
+      bar.appendChild(el);
+    }
+  }
+
+  /** Renommage en place : le libellé de l'onglet actif devient un champ. */
+  function startRename(tab, nameEl) {
+    if (nameEl.querySelector('input')) return;
+    const input = document.createElement('input');
+    input.className = 'tab-name-input';
+    input.value = tab.name;
+    input.maxLength = 40;
+    nameEl.textContent = '';
+    nameEl.appendChild(input);
+    input.focus();
+    input.select();
+    const commit = () => {
+      tab.name = input.value.trim() || tab.name;
+      rebuildTabbar();
+      refreshTargets();
+      onChange();
+    };
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') input.blur();
+      if (e.key === 'Escape') { input.value = tab.name; input.blur(); }
+    });
+    input.addEventListener('click', (e) => e.stopPropagation());
+  }
+
+  // ---------- Tableau numérique (onglet actif) ------------------------
+  function inTable(tab, addr) { return tab.table.some((e) => e.addr === addr); }
 
   function addToTable(addr, periodMs) {
-    if (inTable(addr)) return { ok: false, error: addr + ' est déjà dans le tableau.' };
+    const tab = state.active;
+    if (inTable(tab, addr)) return { ok: false, error: addr + ' est déjà dans le tableau de cet onglet.' };
     const meta = appApi.acquire(addr, periodMs);
     if (!meta) return { ok: false, error: 'Adresse invalide : ' + addr };
-    state.table.push({ addr, meta, periodMs: periodMs || undefined });
-    renderTable();
+    tab.table.push({ addr, meta, periodMs: periodMs || undefined });
+    renderTable(tab);
     return { ok: true };
   }
 
-  function removeFromTable(addr) {
-    const i = state.table.findIndex((e) => e.addr === addr);
+  function removeFromTable(tab, addr) {
+    const i = tab.table.findIndex((e) => e.addr === addr);
     if (i < 0) return;
     appApi.release(addr);
-    state.table.splice(i, 1);
-    renderTable();
+    tab.table.splice(i, 1);
+    renderTable(tab);
     onChange();
   }
 
-  function renderTable() {
-    const card = $('tableCard');
-    const rows = $('tableRows');
+  function renderTable(tab) {
+    const rows = tab.tableRowsEl;
     rows.innerHTML = '';
-    for (const e of state.table) {
+    for (const e of tab.table) {
       const row = document.createElement('div');
       row.className = 'vrow';
       row.dataset.addr = e.addr;
@@ -107,19 +222,21 @@
       row.querySelector('.v-label').textContent = e.meta.label +
         (e.periodMs && e.periodMs !== CFG.defaultPeriodMs ? ' · rafr. ' + e.periodMs + ' ms' : '');
       row.querySelector('.v-unit').textContent = e.meta.unit || '';
-      row.querySelector('.v-del').addEventListener('click', () => removeFromTable(e.addr));
+      row.querySelector('.v-del').addEventListener('click', () => removeFromTable(tab, e.addr));
       rows.appendChild(row);
     }
-    $('tableCount').textContent = state.table.length ? state.table.length + ' variable' + (state.table.length > 1 ? 's' : '') : '';
-    card.classList.toggle('hide', state.table.length === 0);
+    tab.tableCountEl.textContent = tab.table.length ? tab.table.length + ' variable' + (tab.table.length > 1 ? 's' : '') : '';
+    tab.tableCardEl.classList.toggle('hide', tab.table.length === 0);
     updateEmptyState();
   }
 
   function updateTableValues() {
-    const rows = $('tableRows').children;
+    const tab = state.active;
+    if (!tab) return;
+    const rows = tab.tableRowsEl.children;
     const nowT = DW.source.now();
-    for (let i = 0; i < state.table.length && i < rows.length; i++) {
-      const e = state.table[i];
+    for (let i = 0; i < tab.table.length && i < rows.length; i++) {
+      const e = tab.table[i];
       const last = DW.source.latest(e.addr);
       const valEl = rows[i].querySelector('.val');
       if (!last) { valEl.textContent = '—'; continue; }
@@ -156,6 +273,26 @@
     }
   }
 
+  // ---------- Graphiques (onglet actif) -------------------------------
+  function createChart(opts) {
+    const tab = state.active;
+    if (tab.charts.length >= CFG.maxCharts) {
+      toast('Limite de ' + CFG.maxCharts + ' graphiques par onglet atteinte.', 'err');
+      return null;
+    }
+    opts = opts || {};
+    tab.chartSeq++;
+    const chart = new DW.Chart(appApi, {
+      title: opts.title || 'Graphique ' + tab.chartSeq,
+      windowS: opts.windowS,
+    });
+    tab.charts.push(chart);
+    tab.chartsGridEl.appendChild(chart.root);
+    refreshTargets();
+    onChange();
+    return chart;
+  }
+
   // ---------- Cible d'ajout -------------------------------------------
   function refreshTargets() {
     const sel = $('targetSel');
@@ -167,7 +304,7 @@
       sel.appendChild(o);
     };
     opt('table', '→ Tableau numérique');
-    for (const c of state.charts) opt('chart:' + c.id, '→ ' + c.title);
+    if (state.active) for (const c of state.active.charts) opt('chart:' + c.id, '→ ' + c.title);
     opt('new', '→ Nouveau graphique');
     sel.value = [...sel.options].some((o) => o.value === prev) ? prev : 'table';
   }
@@ -189,7 +326,7 @@
         chart = createChart();
         if (!chart) return false;
       } else {
-        chart = state.charts.find((c) => 'chart:' + c.id === target);
+        chart = state.active.charts.find((c) => 'chart:' + c.id === target);
         if (!chart) { refreshTargets(); toast('Ce graphique n’existe plus.', 'err'); return false; }
       }
       const r = chart.addSeries(p.addr, { periodMs });
@@ -321,26 +458,30 @@
   }
 
   // ---------- Sérialisation -------------------------------------------
-  function serializeWorkspace() {
+  function serializeConfig(tab) {
     return {
       version: 1,
-      table: state.table.map((e) => ({ addr: e.addr, periodMs: e.periodMs })),
-      charts: state.charts.map((c) => c.serialize()),
+      table: tab.table.map((e) => ({ addr: e.addr, periodMs: e.periodMs })),
+      charts: tab.charts.map((c) => c.serialize()),
     };
   }
 
-  function clearAll() {
-    for (const c of [...state.charts]) { c.destroy(); }
-    state.charts = [];
-    for (const e of state.table) appApi.release(e.addr);
-    state.table = [];
-    state.chartSeq = 0;
-    renderTable();
-    refreshTargets();
+  function serializeSession() {
+    return {
+      version: 2,
+      active: Math.max(0, state.tabs.indexOf(state.active)),
+      tabs: state.tabs.map((tab) => ({
+        name: tab.name,
+        log: { enabled: tab.log.enabled, dest: tab.log.dest },
+        data: serializeConfig(tab),
+      })),
+    };
   }
 
-  function applyWorkspace(data) {
-    clearAll();
+  /** Applique une configuration (format v1) dans l'onglet actif (vidé avant). */
+  function applyConfigToActive(data) {
+    const tab = state.active;
+    clearTab(tab);
     for (const entry of data.table || []) {
       // Rétro-compatibilité : entrée sous forme de chaîne (format initial)
       const addr = typeof entry === 'string' ? entry : entry.addr;
@@ -359,6 +500,156 @@
     refreshTargets();
     updateEmptyState();
     onChange();
+  }
+
+  // ---------- Journalisation des données ------------------------------
+  function tabAddrs(tab) {
+    const set = new Set();
+    for (const e of tab.table) set.add(e.addr);
+    for (const c of tab.charts) for (const s of c.series) set.add(s.addr);
+    return set;
+  }
+
+  function startLogging(tab) {
+    tab.log.enabled = true;
+    tab.log.enableT = DW.source.now();
+    tab.log.lastT = {};
+    rebuildTabbar();
+    updateLogUi();
+    onChange();
+  }
+  function stopLogging(tab) {
+    tab.log.enabled = false;
+    rebuildTabbar();
+    updateLogUi();
+    onChange();
+  }
+
+  function lowerBound(arr, x) {
+    let lo = 0, hi = arr.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] <= x) lo = m + 1; else hi = m; }
+    return lo;
+  }
+
+  function logTick() {
+    for (const tab of state.tabs) {
+      const lg = tab.log;
+      if (!lg.enabled) continue;
+      let appended = 0;
+      for (const addr of tabAddrs(tab)) {
+        const d = DW.source.data(addr);
+        if (!d.ts.length) continue;
+        const from = (addr in lg.lastT) ? lg.lastT[addr] : lg.enableT;
+        const i0 = lowerBound(d.ts, from);
+        for (let i = i0; i < d.ts.length; i++) {
+          lg.rows.push([d.ts[i], addr, d.vs[i]]);
+        }
+        if (i0 < d.ts.length) { lg.lastT[addr] = d.ts[d.ts.length - 1]; appended += d.ts.length - i0; }
+      }
+      if (lg.rows.length > LOG_MAX_ROWS) {
+        lg.rows.splice(0, lg.rows.length - LOG_MAX_ROWS);
+        lg.truncated = true;
+      }
+      // Destination « contrôleur » : tentative d'envoi, repli navigateur.
+      if (lg.dest === 'controller' && appended && !lg.ctlWarned) {
+        lg.ctlWarned = true;
+        fetch('/api/datalog', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tab: tab.name, count: appended }),
+        }).catch(() => {
+          toast('Contrôleur injoignable — le journal reste en mémoire navigateur (prototype front-end).', 'err');
+        });
+      }
+    }
+  }
+  setInterval(logTick, 500);
+
+  function openLogModal() {
+    const tab = state.active;
+    const lg = tab.log;
+    const root = $('modalRoot');
+    root.innerHTML = '';
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    back.innerHTML =
+      '<div class="modal" role="dialog" aria-label="Journalisation">' +
+        '<header class="m-head"><h3>Journal de données — <span id="logTabName"></span></h3>' +
+        '<button class="iconbtn m-close" type="button" title="Fermer">✕</button></header>' +
+        '<div class="log-opts">' +
+          '<label><input type="radio" name="logdest" value="browser"> Navigateur (mémoire de la page)</label>' +
+          '<label><input type="radio" name="logdest" value="controller"> Contrôleur (back-end à venir)' +
+          ' <span class="opt-note">repli navigateur si injoignable</span></label>' +
+        '</div>' +
+        '<div class="log-status" id="logStatus">—</div>' +
+        '<div class="m-actions">' +
+          '<button class="btn primary" id="logToggle" type="button"></button>' +
+          '<button class="btn" id="logDlCsv" type="button">Télécharger CSV</button>' +
+          '<button class="btn" id="logDlJson" type="button">Télécharger JSON</button>' +
+          '<button class="btn" id="logClear" type="button">Vider</button>' +
+        '</div>' +
+        '<p class="m-note">Le journal enregistre chaque échantillon des variables de l’onglet ' +
+        '(période propre à chaque variable), dans la limite de 100 000 lignes (les plus anciennes ' +
+        'sont éliminées). Il est conservé en mémoire : téléchargez-le avant de fermer ou recharger la page.</p>' +
+      '</div>';
+    root.appendChild(back);
+    back.querySelector('#logTabName').textContent = tab.name;
+
+    const close = () => { clearInterval(statusTimer); root.innerHTML = ''; };
+    back.addEventListener('pointerdown', (e) => { if (e.target === back) close(); });
+    back.querySelector('.m-close').addEventListener('click', close);
+
+    for (const r of back.querySelectorAll('input[name="logdest"]')) {
+      r.checked = r.value === lg.dest;
+      r.addEventListener('change', () => {
+        lg.dest = r.value;
+        lg.ctlWarned = false;
+        onChange();
+      });
+    }
+
+    const toggleBtn = back.querySelector('#logToggle');
+    const refresh = () => {
+      toggleBtn.textContent = lg.enabled ? '⏹ Arrêter la journalisation' : '⏺ Démarrer la journalisation';
+      const n = lg.rows.length;
+      const nVars = tabAddrs(tab).size;
+      const durS = n ? (lg.rows[n - 1][0] - lg.rows[0][0]) : 0;
+      const sizeMo = (n * 34 / 1048576);
+      back.querySelector('#logStatus').innerHTML =
+        (lg.enabled ? '⏺ En cours' : '⏸ À l’arrêt') + ' · ' +
+        n.toLocaleString('fr-FR') + ' échantillon' + (n > 1 ? 's' : '') + ' · ' +
+        nVars + ' variable' + (nVars > 1 ? 's' : '') + ' · ' +
+        durS.toFixed(0) + ' s couvertes · ~' + sizeMo.toFixed(1) + ' Mo CSV' +
+        (lg.truncated ? '<br>⚠ plafond atteint : les lignes les plus anciennes ont été éliminées' : '');
+    };
+    refresh();
+    const statusTimer = setInterval(refresh, 1000);
+
+    toggleBtn.addEventListener('click', () => {
+      lg.enabled ? stopLogging(tab) : startLogging(tab);
+      refresh();
+    });
+    back.querySelector('#logDlCsv').addEventListener('click', () => {
+      if (!lg.rows.length) { toast('Journal vide.', 'err'); return; }
+      const ok = DW.store.download('journal_' + tab.name, DW.store.logCsv(lg.rows), 'csv', 'text/csv');
+      if (!ok) toast('Téléchargement bloqué dans cet environnement.', 'err');
+    });
+    back.querySelector('#logDlJson').addEventListener('click', () => {
+      if (!lg.rows.length) { toast('Journal vide.', 'err'); return; }
+      const payload = JSON.stringify({ app: 'diagweb-journal', version: 1, tab: tab.name, rows: lg.rows });
+      const ok = DW.store.download('journal_' + tab.name, payload, 'json', 'application/json');
+      if (!ok) toast('Téléchargement bloqué dans cet environnement.', 'err');
+    });
+    back.querySelector('#logClear').addEventListener('click', () => {
+      lg.rows = []; lg.truncated = false; lg.lastT = {}; lg.enableT = DW.source.now();
+      refresh();
+      toast('Journal vidé.');
+    });
+  }
+
+  function updateLogUi() {
+    const on = state.active && state.active.log.enabled;
+    $('logInd').classList.toggle('hide', !on);
   }
 
   // ---------- Disposition de démonstration ----------------------------
@@ -387,25 +678,27 @@
 
   // ---------- État vide ------------------------------------------------
   function updateEmptyState() {
-    const empty = state.table.length === 0 && state.charts.length === 0;
+    const tab = state.active;
+    const empty = !tab || (tab.table.length === 0 && tab.charts.length === 0);
     $('emptyState').classList.toggle('hide', !empty);
   }
 
-  // ---------- Modal Dispositions ---------------------------------------
+  // ---------- Modal Configurations ------------------------------------
   function openLayoutsModal() {
     const root = $('modalRoot');
     root.innerHTML = '';
     const back = document.createElement('div');
     back.className = 'modal-back';
     back.innerHTML =
-      '<div class="modal" role="dialog" aria-label="Dispositions">' +
-        '<header class="m-head"><h3>Dispositions</h3><button class="iconbtn m-close" type="button" title="Fermer">✕</button></header>' +
+      '<div class="modal" role="dialog" aria-label="Configurations">' +
+        '<header class="m-head"><h3>Configurations</h3><button class="iconbtn m-close" type="button" title="Fermer">✕</button></header>' +
         '<div class="m-section">' +
-          '<label class="m-label" for="layName">Enregistrer la disposition actuelle</label>' +
+          '<label class="m-label" for="layName">Enregistrer la configuration de l’onglet actif</label>' +
           '<input id="layName" class="m-input" maxlength="60">' +
           '<div class="m-actions">' +
             '<button class="btn primary" id="laySaveLocal" type="button">Enregistrer (navigateur)</button>' +
-            '<button class="btn" id="layDownload" type="button">Télécharger .json</button>' +
+            '<button class="btn" id="layDownload" type="button">Télécharger JSON</button>' +
+            '<button class="btn" id="layDownloadCsv" type="button">Télécharger CSV</button>' +
             '<button class="btn" id="layCopy" type="button">Copier le JSON</button>' +
             '<button class="btn" id="laySaveCtl" type="button">Enregistrer dans le contrôleur</button>' +
           '</div>' +
@@ -415,8 +708,9 @@
           '<label class="btn m-import">Importer un fichier<input type="file" id="layImport" accept=".json,application/json" hidden></label></div>' +
           '<div class="lay-list" id="layList"></div>' +
         '</div>' +
-        '<p class="m-note">★ = chargée automatiquement à l’ouverture. « Contrôleur » nécessite le back-end embarqué ' +
-        '(à venir) : sans contrôleur joignable, le prototype affiche une erreur.</p>' +
+        '<p class="m-note">« Charger » et l’import ouvrent la configuration dans un <b>nouvel onglet</b>. ' +
+        '★ = chargée automatiquement à l’ouverture. L’import se fait au format JSON ; le CSV est un export ' +
+        'de consultation (tableur). « Contrôleur » nécessite le back-end embarqué (à venir).</p>' +
       '</div>';
     root.appendChild(back);
 
@@ -424,25 +718,26 @@
     back.addEventListener('pointerdown', (e) => { if (e.target === back) close(); });
     back.querySelector('.m-close').addEventListener('click', close);
 
-    const d = new Date();
-    back.querySelector('#layName').value =
-      'Disposition ' + String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') +
-      ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    back.querySelector('#layName').value = state.active.name;
 
     const getName = () => back.querySelector('#layName').value.trim() || 'Sans nom';
 
     back.querySelector('#laySaveLocal').addEventListener('click', () => {
       if (!DW.store.available) { toast('Stockage local indisponible dans ce navigateur.', 'err'); return; }
-      DW.store.save(getName(), serializeWorkspace());
+      DW.store.save(getName(), serializeConfig(state.active));
       renderLayList();
-      toast('Disposition « ' + getName() + ' » enregistrée dans le navigateur.');
+      toast('Configuration « ' + getName() + ' » enregistrée dans le navigateur.');
     });
     back.querySelector('#layDownload').addEventListener('click', () => {
-      const ok = DW.store.download(getName(), DW.store.exportText(getName(), serializeWorkspace()));
+      const ok = DW.store.download(getName(), DW.store.exportText(getName(), serializeConfig(state.active)));
       toast(ok ? 'Téléchargement lancé.' : 'Téléchargement bloqué ici — utilisez « Copier le JSON ».', ok ? '' : 'err');
     });
+    back.querySelector('#layDownloadCsv').addEventListener('click', () => {
+      const ok = DW.store.download(getName(), DW.store.configCsv(serializeConfig(state.active)), 'csv', 'text/csv');
+      toast(ok ? 'Téléchargement CSV lancé.' : 'Téléchargement bloqué dans cet environnement.', ok ? '' : 'err');
+    });
     back.querySelector('#layCopy').addEventListener('click', async () => {
-      const text = DW.store.exportText(getName(), serializeWorkspace());
+      const text = DW.store.exportText(getName(), serializeConfig(state.active));
       const ok = await copyText(text);
       if (ok) toast('JSON copié dans le presse-papiers.');
       else showTextModal('Copie manuelle', text);
@@ -451,8 +746,8 @@
       const btn = back.querySelector('#laySaveCtl');
       btn.disabled = true;
       try {
-        await DW.store.saveToController(getName(), serializeWorkspace());
-        toast('Disposition enregistrée dans le contrôleur.');
+        await DW.store.saveToController(getName(), serializeConfig(state.active));
+        toast('Configuration enregistrée dans le contrôleur.');
       } catch (e) {
         toast('Contrôleur injoignable — cette action sera disponible avec le back-end embarqué (prototype front-end).', 'err');
       } finally { btn.disabled = false; }
@@ -465,9 +760,9 @@
         const r = DW.store.parseImport(String(rd.result));
         if (!r.ok) { toast(r.error, 'err'); return; }
         DW.store.save(r.name, r.data);
-        renderLayList();
-        applyWorkspace(r.data);
-        toast('Disposition « ' + r.name + ' » importée et chargée.');
+        createTab(r.name, r.data);
+        close();
+        toast('Configuration « ' + r.name + ' » importée dans un nouvel onglet.');
       };
       rd.readAsText(f);
     });
@@ -476,7 +771,7 @@
       const listEl = back.querySelector('#layList');
       const items = DW.store.list();
       const auto = DW.store.getAutoload();
-      listEl.innerHTML = items.length ? '' : '<p class="m-empty">Aucune disposition enregistrée pour l’instant.</p>';
+      listEl.innerHTML = items.length ? '' : '<p class="m-empty">Aucune configuration enregistrée pour l’instant.</p>';
       for (const it of items) {
         const row = document.createElement('div');
         row.className = 'lay-row';
@@ -488,7 +783,7 @@
           '</span></div>' +
           '<div class="lay-actions">' +
             '<button class="btn sm" data-a="load" type="button">Charger</button>' +
-            '<button class="iconbtn" data-a="dl" type="button" title="Télécharger">⬇</button>' +
+            '<button class="iconbtn" data-a="dl" type="button" title="Télécharger JSON">⬇</button>' +
             '<button class="iconbtn star' + (auto === it.name ? ' on' : '') + '" data-a="auto" type="button" title="Charger automatiquement à l’ouverture">★</button>' +
             '<button class="iconbtn" data-a="del" type="button" title="Supprimer">🗑</button>' +
           '</div>';
@@ -496,7 +791,11 @@
         row.addEventListener('click', (e) => {
           const a = e.target.closest('[data-a]');
           if (!a) return;
-          if (a.dataset.a === 'load') { applyWorkspace(it.data); close(); toast('Disposition « ' + it.name + ' » chargée.'); }
+          if (a.dataset.a === 'load') {
+            createTab(it.name, it.data);
+            close();
+            toast('Configuration « ' + it.name + ' » ouverte dans un nouvel onglet.');
+          }
           if (a.dataset.a === 'dl') {
             const ok = DW.store.download(it.name, DW.store.exportText(it.name, it.data));
             if (!ok) showTextModal('Copie manuelle', DW.store.exportText(it.name, it.data));
@@ -554,17 +853,26 @@
   // ---------- Boucle de rendu -----------------------------------------
   let lastChartT = 0, lastLiveT = 0;
   function loop(t) {
-    if (t - lastChartT >= 1000 / CFG.chartFps) {
+    const tab = state.active;
+    if (tab && t - lastChartT >= 1000 / CFG.chartFps) {
       lastChartT = t;
-      for (const c of state.charts) c.render();
+      for (const c of tab.charts) c.render();
     }
     if (t - lastLiveT >= CFG.liveRefreshMs) {
       lastLiveT = t;
-      for (const c of state.charts) c.updateLive();
+      if (tab) for (const c of tab.charts) c.updateLive();
       updateTableValues();
-      $('statInfo').textContent = DW.source.count() + ' variable' + (DW.source.count() > 1 ? 's' : '') + ' active' + (DW.source.count() > 1 ? 's' : '');
+      const n = DW.source.count();
+      $('statInfo').textContent = n + ' variable' + (n > 1 ? 's' : '') + ' active' + (n > 1 ? 's' : '') +
+        ' · ' + state.tabs.length + ' onglet' + (state.tabs.length > 1 ? 's' : '');
     }
     requestAnimationFrame(loop);
+  }
+
+  function updatePauseBtn() {
+    const tab = state.active;
+    const anyRunning = tab && tab.charts.some((c) => !c.paused);
+    $('pauseAllBtn').textContent = anyRunning === false && tab && tab.charts.length ? '▶' : '⏸';
   }
 
   // ---------- Événements globaux --------------------------------------
@@ -596,12 +904,16 @@
       }
     });
     $('layoutsBtn').addEventListener('click', openLayoutsModal);
+    $('logBtn').addEventListener('click', openLogModal);
+    $('tabAdd').addEventListener('click', () => { createTab(); });
 
     $('pauseAllBtn').addEventListener('click', () => {
-      const anyRunning = state.charts.some((c) => !c.paused);
-      for (const c of state.charts) c.setPaused(anyRunning);
+      const tab = state.active;
+      if (!tab) return;
+      const anyRunning = tab.charts.some((c) => !c.paused);
+      for (const c of tab.charts) c.setPaused(anyRunning);
       $('pauseAllBtn').textContent = anyRunning ? '▶' : '⏸';
-      $('pauseAllBtn').title = anyRunning ? 'Reprendre tous les graphiques' : 'Figer tous les graphiques';
+      $('pauseAllBtn').title = anyRunning ? 'Reprendre les graphiques de l’onglet' : 'Figer les graphiques de l’onglet';
     });
 
     $('themeBtn').addEventListener('click', () => {
@@ -610,10 +922,13 @@
         : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'light' : 'dark');
       document.documentElement.setAttribute('data-theme', next);
       DW.invalidateChartTheme();
-      for (const c of state.charts) c.rebuildLegend();
+      for (const tab of state.tabs) for (const c of tab.charts) c.rebuildLegend();
     });
 
-    $('demoBtn').addEventListener('click', () => { applyWorkspace(DEMO); toast('Disposition de démonstration chargée.'); });
+    $('demoBtn').addEventListener('click', () => {
+      applyConfigToActive(DEMO);
+      toast('Disposition de démonstration chargée dans cet onglet.');
+    });
 
     const perSel = $('periodSel');
     for (const p of CFG.periodChoices) {
@@ -631,16 +946,21 @@
   // ---------- Démarrage ------------------------------------------------
   function boot() {
     bindUi();
-    refreshTargets();
     const sess = DW.store.loadSession();
-    if (sess && ((sess.table && sess.table.length) || (sess.charts && sess.charts.length))) {
-      applyWorkspace(sess);
+    if (sess && sess.version === 2) {
+      for (const t of sess.tabs) createTab(t.name, t.data, t.log);
+      const idx = Math.min(Math.max(0, sess.active || 0), state.tabs.length - 1);
+      switchTab(state.tabs[idx]);
+    } else if (sess && ((sess.table && sess.table.length) || (sess.charts && sess.charts.length))) {
+      createTab('Onglet 1', sess);
     } else {
       const auto = DW.store.getAutoload();
       const saved = auto ? DW.store.get(auto) : null;
-      if (saved) applyWorkspace(saved.data);
-      else applyWorkspace(DEMO);
+      if (saved) createTab(saved.name, saved.data);
+      else createTab('Démo', DEMO);
     }
+    refreshTargets();
+    updateEmptyState();
     requestAnimationFrame(loop);
   }
 

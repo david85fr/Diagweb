@@ -67,9 +67,11 @@ responsive, tactile en priorité).
 
 1. **Prototype front-end** (ce dépôt, en cours) — itérations sur l'UX.
 2. **Back-end embarqué** : service sur le contrôleur exposant
-   - un WebSocket de streaming des valeurs (abonnement par adresse),
+   - un WebSocket de streaming des valeurs (abonnement par adresse, période
+     par variable),
    - la résolution des adresses (mapping PLC, registres, C API Simulink),
-   - le stockage des dispositions (`/api/layouts`).
+   - le stockage des configurations (`/api/layouts`),
+   - la journalisation côté contrôleur (`/api/datalog`).
 3. **Branchement** : remplacer la simulation par ce back-end via le contrat
    `DataSource` (voir `docs/SPECS.md` §7) — le reste de l'UI ne change pas.
 4. Ensuite : enregistrement/relecture de séquences, export CSV, alarmes/seuils.
