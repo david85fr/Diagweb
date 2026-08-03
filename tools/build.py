@@ -12,11 +12,32 @@ Usage : python3 tools/build.py [--artifact-out CHEMIN]
 import argparse
 import pathlib
 import re
+import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 WEB = ROOT / "web"
 DIST = ROOT / "dist"
+
+
+def git_version() -> str:
+    """« hash court · #n » du HEAD courant (identifie le commit des sources)."""
+    try:
+        h = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, text=True).strip()
+        n = subprocess.check_output(
+            ["git", "rev-list", "--count", "HEAD"], cwd=ROOT, text=True).strip()
+        return f"{h} · #{n}"
+    except Exception:
+        return "dev"
+
+
+def stamp_version(html: str) -> str:
+    return re.sub(
+        r'(<span id="buildTag"[^>]*>)[^<]*(</span>)',
+        lambda m: m.group(1) + git_version() + m.group(2),
+        html,
+    )
 
 
 def inline_assets(html: str) -> str:
@@ -48,7 +69,7 @@ def main():
     args = ap.parse_args()
 
     src = (WEB / "index.html").read_text(encoding="utf-8")
-    full = inline_assets(src)
+    full = stamp_version(inline_assets(src))
 
     DIST.mkdir(exist_ok=True)
     (DIST / "index.html").write_text(full, encoding="utf-8")

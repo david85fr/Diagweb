@@ -33,6 +33,10 @@ pour les familles PLC, normalisé en majuscules) :
   Champ vide → rappel des formats + début du catalogue. Navigation clavier
   ↑/↓/Entrée/Échap ; au tact, un appui sur une suggestion ajoute
   immédiatement.
+- **Filtres par type** en tête des suggestions : « Toutes », « PLC »
+  (familles I/Q/M/S), « Modbus » (registres MB), « Simulink » (signaux
+  C API). Sélection exclusive, conservée pendant la saisie ; le filtre
+  s'applique aussi à la ligne « hors catalogue ».
 - Sélecteur de **cible** : « Tableau numérique », chacun des graphiques
   existants, « Nouveau graphique ». Après création d'un graphique via
   « Nouveau graphique » ou « + Graphique », il devient la cible courante.
@@ -134,6 +138,11 @@ est transmise au serveur de diag, qui échantillonne le cœur en conséquence.
 
 - Responsive mobile d'abord ; barre supérieure collante (marque, recherche,
   cible, actions), barre d'état fixe en bas (source, nb de variables).
+- **Identification de version** en haut à droite : `hash court · #n`
+  (hash git abrégé + numéro de commit dans la branche), injectée par
+  `tools/build.py` au moment du build — elle identifie le **commit des
+  sources** dont la page est issue (la page de dev `web/index.html`
+  affiche « dev »).
 - Thèmes sombre (défaut selon l'OS) et clair, bascule manuelle ◐ ;
   `prefers-reduced-motion` respecté ; libellés en français.
 - Palette de courbes : 8 teintes catégorielles validées (déclinaisons claire

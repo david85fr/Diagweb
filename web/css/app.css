@@ -91,7 +91,15 @@ button { font-family: var(--sans); }
 .brand h1 { font-size: 16px; margin: 0; letter-spacing: -.02em; font-weight: 680; }
 .brand p { margin: 0; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.topActions { display: flex; gap: 6px; justify-content: flex-end; }
+.topActions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+.build-tag {
+  font: 10px var(--mono);
+  color: var(--faint);
+  text-align: right;
+  line-height: 1.3;
+  white-space: nowrap;
+  margin-right: 2px;
+}
 
 .searchrow {
   position: relative;
@@ -137,6 +145,27 @@ button { font-family: var(--sans); }
 .sug-addr { font-family: var(--mono); font-size: 13px; }
 .sug-label { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sug-unit { color: var(--faint); font-family: var(--mono); font-size: 11px; }
+.sug-filters {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  padding: 6px 8px 8px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+}
+.fbtn {
+  font: 600 11.5px var(--sans);
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 11px;
+  cursor: pointer;
+}
+.fbtn.on {
+  color: #04201d;
+  background: linear-gradient(145deg, var(--accent), var(--accent-dim));
+  border-color: transparent;
+}
+.sug-none { padding: 10px; font-size: 12.5px; color: var(--faint); }
 .sug-help { padding: 8px 10px 6px; font-size: 11.5px; color: var(--muted); border-bottom: 1px solid var(--line); margin-bottom: 4px; }
 .sug-help code { font-family: var(--mono); background: var(--panel-2); border-radius: 4px; padding: 1px 4px; font-size: 11px; }
 

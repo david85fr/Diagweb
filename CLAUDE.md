@@ -43,14 +43,19 @@ Espace de noms JS global : `window.DW`. Scripts en IIFE, pas de modules ES
 ## Cycle de travail
 
 1. Modifier les sources sous `web/`.
-2. `node --check web/js/*.js` puis `python3 tools/build.py`.
-3. Tester `dist/index.html` (Playwright + captures mobile 390×844 et desktop).
-4. Republier l'Artifact **au même URL** (redéployer `dist/artifact.html`,
+2. `node --check web/js/*.js` puis `python3 tools/build.py`, et tester
+   `dist/index.html` (Playwright + captures mobile 390×844 et desktop).
+3. **Commit des sources** (sans `dist/`), puis relancer
+   `python3 tools/build.py` : il injecte dans la page la version
+   `hash court · #n` du commit de sources fraîchement créé.
+4. **Commit de `dist/`** (« build : <hash> ») — ne pas amender le commit de
+   sources, sinon le hash affiché ne correspondrait plus.
+5. Republier l'Artifact **au même URL** (redéployer `dist/artifact.html`,
    favicon stable 📈).
-5. Mettre à jour GitHub Pages : recopier `dist/index.html` en racine de la
+6. Mettre à jour GitHub Pages : recopier `dist/index.html` en racine de la
    branche `gh-pages` (avec `.nojekyll`) et pousser — la page publique est
    https://david85fr.github.io/Diagweb/.
-6. Commit + push sur la branche de travail indiquée par la session.
+7. Push sur la branche de travail indiquée par la session.
 
 ## Points d'architecture à respecter
 

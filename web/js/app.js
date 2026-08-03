@@ -210,6 +210,18 @@
 
   // ---------- Autocomplétion ------------------------------------------
   let sugIndex = -1;
+  let famFilter = 'all';   // 'all' | 'PLC' (I/Q/M/S) | 'MB' | 'CAPI'
+  const FAM_FILTERS = [
+    ['all', 'Toutes'],
+    ['PLC', 'PLC'],
+    ['MB', 'Modbus'],
+    ['CAPI', 'Simulink'],
+  ];
+  function matchFilter(family) {
+    if (famFilter === 'all') return true;
+    if (famFilter === 'PLC') return family === 'I' || family === 'Q' || family === 'M' || family === 'S';
+    return family === famFilter;
+  }
   function hideSuggest() { $('suggestBox').classList.add('hide'); sugIndex = -1; }
 
   function buildSugRow(entry) {
@@ -243,6 +255,26 @@
     const box = $('suggestBox');
     const q = $('searchInput').value.trim().toLowerCase();
     box.innerHTML = '';
+
+    // Filtres par type de variable (PLC / Modbus / Simulink)
+    const bar = document.createElement('div');
+    bar.className = 'sug-filters';
+    for (const [key, label] of FAM_FILTERS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'fbtn' + (famFilter === key ? ' on' : '');
+      b.textContent = label;
+      // pointerdown pour ne pas faire perdre le focus à l'input
+      b.addEventListener('pointerdown', (ev) => {
+        ev.preventDefault();
+        famFilter = key;
+        updateSuggest();
+      });
+      bar.appendChild(b);
+    }
+    box.appendChild(bar);
+
+    const pool = CATALOG_F.filter((e) => matchFilter(e.family));
     let list;
     if (!q) {
       const help = document.createElement('div');
@@ -250,10 +282,10 @@
       help.innerHTML = 'Formats : <code>I1.2.3.4</code> <code>Q14.15</code> <code>M1.14</code> ' +
         '<code>S0.4</code> <code>MB414</code> <code>Modele.signal</code>';
       box.appendChild(help);
-      list = CATALOG_F.slice(0, 8);
+      list = pool.slice(0, 8);
     } else {
       const starts = [], contains = [];
-      for (const e of CATALOG_F) {
+      for (const e of pool) {
         const a = e.addr.toLowerCase(), l = (e.label || '').toLowerCase();
         if (a.startsWith(q)) starts.push(e);
         else if (a.includes(q) || l.includes(q)) contains.push(e);
@@ -263,12 +295,19 @@
     for (const e of list) box.appendChild(buildSugRow(e));
     if (q) {
       const p = DW.parseAddr(q);
-      if (p.ok && !list.some((e) => e.addr.toUpperCase() === p.addr.toUpperCase())) {
+      if (p.ok && matchFilter(p.family) && !list.some((e) => e.addr.toUpperCase() === p.addr.toUpperCase())) {
         const e = { addr: p.addr, family: p.family, label: DW.FAMILIES[p.family].label + ' — hors catalogue', unit: '' };
         box.appendChild(buildSugRow(e));
+        list.push(e);
       }
     }
-    box.classList.toggle('hide', !box.children.length);
+    if (!list.length) {
+      const none = document.createElement('div');
+      none.className = 'sug-none';
+      none.textContent = q ? 'Aucune variable ne correspond à ce filtre.' : 'Aucune variable dans ce filtre.';
+      box.appendChild(none);
+    }
+    box.classList.remove('hide');
     sugIndex = -1;
   }
 
