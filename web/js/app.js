@@ -650,6 +650,7 @@
   function updateLogUi() {
     const on = state.active && state.active.log.enabled;
     $('logInd').classList.toggle('hide', !on);
+    $('menuInd').classList.toggle('hide', !on);
   }
 
   // ---------- Disposition de démonstration ----------------------------
@@ -915,8 +916,8 @@
 
   function updatePauseBtn() {
     const tab = state.active;
-    const anyRunning = tab && tab.charts.some((c) => !c.paused);
-    $('pauseAllBtn').textContent = anyRunning === false && tab && tab.charts.length ? '▶' : '⏸';
+    const allPaused = tab && tab.charts.length && tab.charts.every((c) => c.paused);
+    $('pauseAllBtn').textContent = allPaused ? '▶ Reprendre les graphiques' : '⏸ Figer les graphiques';
   }
 
   // ---------- Événements globaux --------------------------------------
@@ -956,9 +957,39 @@
       if (!tab) return;
       const anyRunning = tab.charts.some((c) => !c.paused);
       for (const c of tab.charts) c.setPaused(anyRunning);
-      $('pauseAllBtn').textContent = anyRunning ? '▶' : '⏸';
-      $('pauseAllBtn').title = anyRunning ? 'Reprendre les graphiques de l’onglet' : 'Figer les graphiques de l’onglet';
+      updatePauseBtn();
     });
+
+    // Menu burger
+    const menuBtn = $('menuBtn'), menuPanel = $('menuPanel');
+    const closeMenu = () => menuPanel.classList.add('hide');
+    menuBtn.addEventListener('click', () => {
+      updatePauseBtn();
+      menuPanel.classList.toggle('hide');
+    });
+    document.addEventListener('pointerdown', (e) => {
+      if (!menuPanel.classList.contains('hide') &&
+          !menuPanel.contains(e.target) && !menuBtn.contains(e.target)) closeMenu();
+    });
+    for (const b of menuPanel.querySelectorAll('button')) b.addEventListener('click', closeMenu);
+
+    // Repli de la zone de configuration (mémorisé)
+    const CFG_HIDDEN_KEY = 'diagweb.cfghidden.v1';
+    const topbar = document.querySelector('.topbar');
+    function setCfgHidden(hidden) {
+      topbar.classList.toggle('cfg-hidden', hidden);
+      const b = $('cfgToggle');
+      b.textContent = hidden ? '⌄' : '⌃';
+      b.title = hidden ? 'Afficher la zone de configuration' : 'Masquer la zone de configuration';
+      if (!hidden) return;
+      hideSuggest();
+    }
+    $('cfgToggle').addEventListener('click', () => {
+      const hidden = !topbar.classList.contains('cfg-hidden');
+      setCfgHidden(hidden);
+      try { window.localStorage.setItem(CFG_HIDDEN_KEY, hidden ? '1' : '0'); } catch (e) { /* stockage indisponible */ }
+    });
+    try { setCfgHidden(window.localStorage.getItem(CFG_HIDDEN_KEY) === '1'); } catch (e) { /* stockage indisponible */ }
 
     $('themeBtn').addEventListener('click', () => {
       const cur = document.documentElement.getAttribute('data-theme');

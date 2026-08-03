@@ -11,12 +11,29 @@
 <div class="wrap">
   <header class="topbar">
     <div class="tabbar">
+      <span class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#04201d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12h4l2-6 4 12 2-6h6"/>
+        </svg>
+      </span>
       <div id="tabs" class="tabs" role="tablist"></div>
       <button id="tabAdd" class="iconbtn" type="button" title="Nouvel onglet">＋</button>
     </div>
-    <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">dev</span>
 
-    <div class="searchrow">
+    <div class="topIcons">
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">dev</span>
+      <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
+      <button id="menuBtn" class="iconbtn" type="button" title="Menu" aria-haspopup="true">☰<i id="menuInd" class="recdot hide"></i></button>
+      <div id="menuPanel" class="menu-panel hide" role="menu">
+        <button id="addChartBtn" type="button">＋ Nouveau graphique</button>
+        <button id="layoutsBtn" type="button">Configurations…</button>
+        <button id="logBtn" type="button">Journal des données<i id="logInd" class="recdot hide"></i></button>
+        <button id="pauseAllBtn" type="button">⏸ Figer les graphiques</button>
+        <button id="themeBtn" type="button">◐ Basculer le thème</button>
+      </div>
+    </div>
+
+    <div class="searchrow" id="cfgZone">
       <div class="searchbox">
         <input id="searchInput" type="text" inputmode="text" autocomplete="off" autocapitalize="off"
                autocorrect="off" spellcheck="false"
@@ -27,14 +44,6 @@
       <select id="periodSel" aria-label="Période de rafraîchissement" title="Période de rafraîchissement"></select>
       <button id="addBtn" class="btn primary" type="button">Ajouter</button>
       <div id="suggestBox" class="suggest hide"></div>
-    </div>
-
-    <div class="topActions">
-      <button id="addChartBtn" class="btn" type="button" title="Ajouter un graphique">+ Graphique</button>
-      <button id="layoutsBtn" class="btn" type="button" title="Enregistrer / charger des configurations">Configs</button>
-      <button id="logBtn" class="btn" type="button" title="Journalisation des données de l'onglet">Journal<i id="logInd" class="recdot hide"></i></button>
-      <button id="pauseAllBtn" class="iconbtn" type="button" title="Figer les graphiques de l'onglet">⏸</button>
-      <button id="themeBtn" class="iconbtn" type="button" title="Basculer le thème clair/sombre">◐</button>
     </div>
   </header>
 

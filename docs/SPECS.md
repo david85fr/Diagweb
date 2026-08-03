@@ -189,11 +189,19 @@ est transmise au serveur de diag, qui échantillonne le cœur en conséquence.
 
 - Responsive mobile d'abord ; barre supérieure collante, barre d'état fixe
   en bas (source, nb de variables, nb d'onglets). **Pas de ligne de
-  titre** : la première ligne de la barre porte les onglets (＋ inclus)
-  avec le tag de version en face, à droite. La barre reste **empilée**
-  (onglets+version / recherche / actions) jusqu'à 1100 px — y compris
-  téléphone en paysage — et ne passe sur une seule ligne qu'au-delà ;
-  sous 480 px les boutons d'action sont compactés pour tenir sur une ligne.
+  titre** : la première ligne porte l'**icône de l'application** puis les
+  onglets (＋ inclus), et à droite le tag de version, le bouton de **repli
+  de la zone de configuration** (⌃/⌄) et le **menu burger ☰**.
+- **Menu burger ☰** : ＋ Nouveau graphique · Configurations… · Journal des
+  données (avec point ⏺ si journalisation active — repris sur le bouton ☰
+  lui-même) · Figer/Reprendre les graphiques · Basculer le thème. Fermé par
+  sélection ou appui à l'extérieur.
+- **Repli de la zone de configuration** (recherche + cible + période +
+  Ajouter) via ⌃/⌄ ; l'état est mémorisé dans le navigateur. Replié, la
+  barre se réduit à la seule ligne des onglets (~63 px sur téléphone).
+- La barre reste **empilée** (onglets / zone de configuration) jusqu'à
+  1100 px — y compris téléphone en paysage — et passe sur une seule ligne
+  au-delà.
 - **Identification de version** tout en haut à droite, en face de la barre
   d'onglets : `hash court · #n`
   (hash git abrégé + numéro de commit dans la branche), injectée par
