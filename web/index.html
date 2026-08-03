@@ -23,13 +23,12 @@
     <div class="topIcons">
       <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">dev</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
-      <button id="menuBtn" class="iconbtn" type="button" title="Menu" aria-haspopup="true">☰<i id="menuInd" class="recdot hide"></i></button>
+      <button id="menuBtn" class="iconbtn" type="button" title="Menu général" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
-        <button id="addChartBtn" type="button">＋ Nouveau graphique</button>
-        <button id="layoutsBtn" type="button">Configurations…</button>
-        <button id="logBtn" type="button">Journal des données<i id="logInd" class="recdot hide"></i></button>
-        <button id="pauseAllBtn" type="button">⏸ Figer les graphiques</button>
         <button id="themeBtn" type="button">◐ Basculer le thème</button>
+        <button id="aboutBtn" type="button">À propos de Diagweb…</button>
+        <button type="button" disabled>Capture d’interfaces réseau (à venir)</button>
+        <button type="button" disabled>Notes de version (à venir)</button>
       </div>
     </div>
 
@@ -46,6 +45,13 @@
       <div id="suggestBox" class="suggest hide"></div>
     </div>
   </header>
+
+  <div class="tabActions">
+    <button id="addChartBtn" class="btn" type="button" title="Ajouter un graphique dans cet onglet">+ Graphique</button>
+    <button id="layoutsBtn" class="btn" type="button" title="Enregistrer / charger la configuration de cet onglet">Configs</button>
+    <button id="logBtn" class="btn" type="button" title="Journalisation des données de cet onglet">Journal<i id="logInd" class="recdot hide"></i></button>
+    <button id="pauseAllBtn" class="btn" type="button" title="Figer / reprendre les graphiques de cet onglet">⏸ Figer</button>
+  </div>
 
   <section id="emptyState" class="empty hide">
     <h2>Aucune variable dans cet onglet</h2>

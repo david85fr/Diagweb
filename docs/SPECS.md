@@ -192,10 +192,14 @@ est transmise au serveur de diag, qui échantillonne le cœur en conséquence.
   titre** : la première ligne porte l'**icône de l'application** puis les
   onglets (＋ inclus), et à droite le tag de version, le bouton de **repli
   de la zone de configuration** (⌃/⌄) et le **menu burger ☰**.
-- **Menu burger ☰** : ＋ Nouveau graphique · Configurations… · Journal des
-  données (avec point ⏺ si journalisation active — repris sur le bouton ☰
-  lui-même) · Figer/Reprendre les graphiques · Basculer le thème. Fermé par
-  sélection ou appui à l'extérieur.
+- **Menu burger ☰ = fonctions globales** (indépendantes des onglets) :
+  aujourd'hui Basculer le thème et À propos (version, mode) ; réservé aux
+  futures fonctions globales (capture d'interfaces réseau, notes de
+  version…, affichées « à venir »). Fermé par sélection ou appui à
+  l'extérieur.
+- **Actions de l'onglet actif**, dans une rangée sous la barre d'onglets
+  (elle défile avec le contenu) : + Graphique · Configs · Journal (point ⏺
+  si journalisation active) · Figer/Reprendre.
 - **Repli de la zone de configuration** (recherche + cible + période +
   Ajouter) via ⌃/⌄ ; l'état est mémorisé dans le navigateur. Replié, la
   barre se réduit à la seule ligne des onglets (~63 px sur téléphone).

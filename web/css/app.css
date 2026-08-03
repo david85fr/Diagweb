@@ -115,7 +115,15 @@ button { font-family: var(--sans); }
   padding: 11px 12px;
   cursor: pointer;
 }
-.menu-panel button:hover { background: var(--panel-2); }
+.menu-panel button:hover:not(:disabled) { background: var(--panel-2); }
+.menu-panel button:disabled { color: var(--faint); cursor: default; }
+
+/* Actions liées au contenu de l'onglet actif */
+.tabActions {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-bottom: 12px;
+}
+.tabActions .btn { font-size: 12.5px; padding: 7px 11px; }
 
 .build-tag {
   font: 10.5px var(--mono);

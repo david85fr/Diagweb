@@ -650,7 +650,6 @@
   function updateLogUi() {
     const on = state.active && state.active.log.enabled;
     $('logInd').classList.toggle('hide', !on);
-    $('menuInd').classList.toggle('hide', !on);
   }
 
   // ---------- Disposition de démonstration ----------------------------
@@ -917,7 +916,7 @@
   function updatePauseBtn() {
     const tab = state.active;
     const allPaused = tab && tab.charts.length && tab.charts.every((c) => c.paused);
-    $('pauseAllBtn').textContent = allPaused ? '▶ Reprendre les graphiques' : '⏸ Figer les graphiques';
+    $('pauseAllBtn').textContent = allPaused ? '▶ Reprendre' : '⏸ Figer';
   }
 
   // ---------- Événements globaux --------------------------------------
@@ -972,6 +971,26 @@
           !menuPanel.contains(e.target) && !menuBtn.contains(e.target)) closeMenu();
     });
     for (const b of menuPanel.querySelectorAll('button')) b.addEventListener('click', closeMenu);
+
+    $('aboutBtn').addEventListener('click', () => {
+      const root = $('modalRoot');
+      root.innerHTML = '';
+      const back = document.createElement('div');
+      back.className = 'modal-back';
+      back.innerHTML =
+        '<div class="modal" role="dialog" aria-label="À propos">' +
+          '<header class="m-head"><h3>À propos de Diagweb</h3>' +
+          '<button class="iconbtn m-close" type="button" title="Fermer">✕</button></header>' +
+          '<p style="margin:6px 0">Diagnostic web des variables et signaux internes du contrôleur : ' +
+          'valeurs numériques en direct et courbes multi-échelles, configurations par onglets, ' +
+          'journalisation des données.</p>' +
+          '<div class="log-status">Version : ' + DW.escapeHtml($('buildTag').textContent) +
+          '<br>Mode : prototype front-end — données simulées (10 ms par défaut)</div>' +
+        '</div>';
+      back.querySelector('.m-close').addEventListener('click', () => { root.innerHTML = ''; });
+      back.addEventListener('pointerdown', (e) => { if (e.target === back) root.innerHTML = ''; });
+      root.appendChild(back);
+    });
 
     // Repli de la zone de configuration (mémorisé)
     const CFG_HIDDEN_KEY = 'diagweb.cfghidden.v1';
