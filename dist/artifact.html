@@ -73,9 +73,8 @@ button { font-family: var(--sans); }
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
-    "tabs tag"
-    "search search"
-    "actions actions";
+    "tabs icons"
+    "search search";
   gap: 8px 10px;
   align-items: center;
   padding: 8px 0 10px;
@@ -85,17 +84,47 @@ button { font-family: var(--sans); }
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
+.logo {
+  width: 30px; height: 30px; border-radius: 8px; flex: none;
+  background: linear-gradient(145deg, var(--accent), var(--accent-dim));
+  display: grid; place-items: center;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.logo svg { width: 18px; height: 18px; display: block; }
 
-.topActions { grid-area: actions; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; }
+.topIcons {
+  grid-area: icons;
+  position: relative;
+  display: flex; gap: 6px; align-items: center;
+}
+.menu-panel {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 80;
+  display: grid; gap: 2px;
+  min-width: 230px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 6px;
+}
+.menu-panel button {
+  display: flex; align-items: center; gap: 6px;
+  text-align: left;
+  font: 500 13.5px var(--sans);
+  color: var(--ink);
+  background: none; border: 0; border-radius: 8px;
+  padding: 11px 12px;
+  cursor: pointer;
+}
+.menu-panel button:hover { background: var(--panel-2); }
+
 .build-tag {
-  grid-area: tag;
-  align-self: center;
-  justify-self: end;
   font: 10.5px var(--mono);
   color: var(--faint);
   text-align: right;
   line-height: 1.3;
   white-space: nowrap;
+  margin-right: 2px;
 }
 
 .searchrow {
@@ -568,13 +597,6 @@ button { font-family: var(--sans); }
 }
 .statusbar span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* Très petits écrans : actions compactes pour tenir sur une ligne */
-@media (max-width: 480px) {
-  .topActions { gap: 4px; }
-  .topActions .btn { padding: 7px 9px; font-size: 12px; }
-  .topActions .iconbtn { width: 30px; height: 30px; font-size: 13px; }
-}
-
 /* ---------- Écrans moyens et larges ---------- */
 @media (min-width: 700px) {
   body { font-size: 14.5px; }
@@ -589,12 +611,14 @@ button { font-family: var(--sans); }
 /* Barre supérieure sur une seule ligne : uniquement quand tout tient */
 @media (min-width: 1100px) {
   .topbar {
-    grid-template-columns: minmax(150px, 430px) minmax(340px, 1fr) auto auto;
-    grid-template-areas: "tabs search actions tag";
+    grid-template-columns: minmax(180px, 460px) minmax(340px, 1fr) auto;
+    grid-template-areas: "tabs search icons";
     gap: 12px;
   }
   .searchrow .searchbox { grid-column: auto; }
+  .topbar.cfg-hidden { grid-template-columns: minmax(180px, 1fr) auto; grid-template-areas: "tabs icons"; }
 }
+.topbar.cfg-hidden .searchrow { display: none; }
 @media (min-width: 1700px) {
   .charts-grid { grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); }
   .chart-body { height: 330px; }
@@ -608,12 +632,29 @@ button { font-family: var(--sans); }
 <div class="wrap">
   <header class="topbar">
     <div class="tabbar">
+      <span class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#04201d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12h4l2-6 4 12 2-6h6"/>
+        </svg>
+      </span>
       <div id="tabs" class="tabs" role="tablist"></div>
       <button id="tabAdd" class="iconbtn" type="button" title="Nouvel onglet">＋</button>
     </div>
-    <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">c5d517f · #14</span>
 
-    <div class="searchrow">
+    <div class="topIcons">
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">d23461d · #16</span>
+      <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
+      <button id="menuBtn" class="iconbtn" type="button" title="Menu" aria-haspopup="true">☰<i id="menuInd" class="recdot hide"></i></button>
+      <div id="menuPanel" class="menu-panel hide" role="menu">
+        <button id="addChartBtn" type="button">＋ Nouveau graphique</button>
+        <button id="layoutsBtn" type="button">Configurations…</button>
+        <button id="logBtn" type="button">Journal des données<i id="logInd" class="recdot hide"></i></button>
+        <button id="pauseAllBtn" type="button">⏸ Figer les graphiques</button>
+        <button id="themeBtn" type="button">◐ Basculer le thème</button>
+      </div>
+    </div>
+
+    <div class="searchrow" id="cfgZone">
       <div class="searchbox">
         <input id="searchInput" type="text" inputmode="text" autocomplete="off" autocapitalize="off"
                autocorrect="off" spellcheck="false"
@@ -624,14 +665,6 @@ button { font-family: var(--sans); }
       <select id="periodSel" aria-label="Période de rafraîchissement" title="Période de rafraîchissement"></select>
       <button id="addBtn" class="btn primary" type="button">Ajouter</button>
       <div id="suggestBox" class="suggest hide"></div>
-    </div>
-
-    <div class="topActions">
-      <button id="addChartBtn" class="btn" type="button" title="Ajouter un graphique">+ Graphique</button>
-      <button id="layoutsBtn" class="btn" type="button" title="Enregistrer / charger des configurations">Configs</button>
-      <button id="logBtn" class="btn" type="button" title="Journalisation des données de l'onglet">Journal<i id="logInd" class="recdot hide"></i></button>
-      <button id="pauseAllBtn" class="iconbtn" type="button" title="Figer les graphiques de l'onglet">⏸</button>
-      <button id="themeBtn" class="iconbtn" type="button" title="Basculer le thème clair/sombre">◐</button>
     </div>
   </header>
 
@@ -2448,6 +2481,7 @@ button { font-family: var(--sans); }
   function updateLogUi() {
     const on = state.active && state.active.log.enabled;
     $('logInd').classList.toggle('hide', !on);
+    $('menuInd').classList.toggle('hide', !on);
   }
 
   // ---------- Disposition de démonstration ----------------------------
@@ -2713,8 +2747,8 @@ button { font-family: var(--sans); }
 
   function updatePauseBtn() {
     const tab = state.active;
-    const anyRunning = tab && tab.charts.some((c) => !c.paused);
-    $('pauseAllBtn').textContent = anyRunning === false && tab && tab.charts.length ? '▶' : '⏸';
+    const allPaused = tab && tab.charts.length && tab.charts.every((c) => c.paused);
+    $('pauseAllBtn').textContent = allPaused ? '▶ Reprendre les graphiques' : '⏸ Figer les graphiques';
   }
 
   // ---------- Événements globaux --------------------------------------
@@ -2754,9 +2788,39 @@ button { font-family: var(--sans); }
       if (!tab) return;
       const anyRunning = tab.charts.some((c) => !c.paused);
       for (const c of tab.charts) c.setPaused(anyRunning);
-      $('pauseAllBtn').textContent = anyRunning ? '▶' : '⏸';
-      $('pauseAllBtn').title = anyRunning ? 'Reprendre les graphiques de l’onglet' : 'Figer les graphiques de l’onglet';
+      updatePauseBtn();
     });
+
+    // Menu burger
+    const menuBtn = $('menuBtn'), menuPanel = $('menuPanel');
+    const closeMenu = () => menuPanel.classList.add('hide');
+    menuBtn.addEventListener('click', () => {
+      updatePauseBtn();
+      menuPanel.classList.toggle('hide');
+    });
+    document.addEventListener('pointerdown', (e) => {
+      if (!menuPanel.classList.contains('hide') &&
+          !menuPanel.contains(e.target) && !menuBtn.contains(e.target)) closeMenu();
+    });
+    for (const b of menuPanel.querySelectorAll('button')) b.addEventListener('click', closeMenu);
+
+    // Repli de la zone de configuration (mémorisé)
+    const CFG_HIDDEN_KEY = 'diagweb.cfghidden.v1';
+    const topbar = document.querySelector('.topbar');
+    function setCfgHidden(hidden) {
+      topbar.classList.toggle('cfg-hidden', hidden);
+      const b = $('cfgToggle');
+      b.textContent = hidden ? '⌄' : '⌃';
+      b.title = hidden ? 'Afficher la zone de configuration' : 'Masquer la zone de configuration';
+      if (!hidden) return;
+      hideSuggest();
+    }
+    $('cfgToggle').addEventListener('click', () => {
+      const hidden = !topbar.classList.contains('cfg-hidden');
+      setCfgHidden(hidden);
+      try { window.localStorage.setItem(CFG_HIDDEN_KEY, hidden ? '1' : '0'); } catch (e) { /* stockage indisponible */ }
+    });
+    try { setCfgHidden(window.localStorage.getItem(CFG_HIDDEN_KEY) === '1'); } catch (e) { /* stockage indisponible */ }
 
     $('themeBtn').addEventListener('click', () => {
       const cur = document.documentElement.getAttribute('data-theme');
