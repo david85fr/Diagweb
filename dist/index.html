@@ -99,7 +99,15 @@ button { font-family: var(--sans); }
 .brand h1 { font-size: 16px; margin: 0; letter-spacing: -.02em; font-weight: 680; }
 .brand p { margin: 0; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.topActions { display: flex; gap: 6px; justify-content: flex-end; }
+.topActions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+.build-tag {
+  font: 10px var(--mono);
+  color: var(--faint);
+  text-align: right;
+  line-height: 1.3;
+  white-space: nowrap;
+  margin-right: 2px;
+}
 
 .searchrow {
   position: relative;
@@ -145,6 +153,27 @@ button { font-family: var(--sans); }
 .sug-addr { font-family: var(--mono); font-size: 13px; }
 .sug-label { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sug-unit { color: var(--faint); font-family: var(--mono); font-size: 11px; }
+.sug-filters {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  padding: 6px 8px 8px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+}
+.fbtn {
+  font: 600 11.5px var(--sans);
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 11px;
+  cursor: pointer;
+}
+.fbtn.on {
+  color: #04201d;
+  background: linear-gradient(145deg, var(--accent), var(--accent-dim));
+  border-color: transparent;
+}
+.sug-none { padding: 10px; font-size: 12.5px; color: var(--faint); }
 .sug-help { padding: 8px 10px 6px; font-size: 11.5px; color: var(--muted); border-bottom: 1px solid var(--line); margin-bottom: 4px; }
 .sug-help code { font-family: var(--mono); background: var(--panel-2); border-radius: 4px; padding: 1px 4px; font-size: 11px; }
 
@@ -518,6 +547,7 @@ button { font-family: var(--sans); }
     </div>
 
     <div class="topActions">
+      <span id="buildTag" class="build-tag" title="Version : commit court · n° de commit dans la branche">1713a0f · #6</span>
       <button id="addChartBtn" class="btn" type="button" title="Ajouter un graphique">+ Graphique</button>
       <button id="layoutsBtn" class="btn" type="button" title="Enregistrer / charger des dispositions">Dispositions</button>
       <button id="pauseAllBtn" class="iconbtn" type="button" title="Figer tous les graphiques">⏸</button>
@@ -1861,6 +1891,18 @@ button { font-family: var(--sans); }
 
   // ---------- Autocomplétion ------------------------------------------
   let sugIndex = -1;
+  let famFilter = 'all';   // 'all' | 'PLC' (I/Q/M/S) | 'MB' | 'CAPI'
+  const FAM_FILTERS = [
+    ['all', 'Toutes'],
+    ['PLC', 'PLC'],
+    ['MB', 'Modbus'],
+    ['CAPI', 'Simulink'],
+  ];
+  function matchFilter(family) {
+    if (famFilter === 'all') return true;
+    if (famFilter === 'PLC') return family === 'I' || family === 'Q' || family === 'M' || family === 'S';
+    return family === famFilter;
+  }
   function hideSuggest() { $('suggestBox').classList.add('hide'); sugIndex = -1; }
 
   function buildSugRow(entry) {
@@ -1894,6 +1936,26 @@ button { font-family: var(--sans); }
     const box = $('suggestBox');
     const q = $('searchInput').value.trim().toLowerCase();
     box.innerHTML = '';
+
+    // Filtres par type de variable (PLC / Modbus / Simulink)
+    const bar = document.createElement('div');
+    bar.className = 'sug-filters';
+    for (const [key, label] of FAM_FILTERS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'fbtn' + (famFilter === key ? ' on' : '');
+      b.textContent = label;
+      // pointerdown pour ne pas faire perdre le focus à l'input
+      b.addEventListener('pointerdown', (ev) => {
+        ev.preventDefault();
+        famFilter = key;
+        updateSuggest();
+      });
+      bar.appendChild(b);
+    }
+    box.appendChild(bar);
+
+    const pool = CATALOG_F.filter((e) => matchFilter(e.family));
     let list;
     if (!q) {
       const help = document.createElement('div');
@@ -1901,10 +1963,10 @@ button { font-family: var(--sans); }
       help.innerHTML = 'Formats : <code>I1.2.3.4</code> <code>Q14.15</code> <code>M1.14</code> ' +
         '<code>S0.4</code> <code>MB414</code> <code>Modele.signal</code>';
       box.appendChild(help);
-      list = CATALOG_F.slice(0, 8);
+      list = pool.slice(0, 8);
     } else {
       const starts = [], contains = [];
-      for (const e of CATALOG_F) {
+      for (const e of pool) {
         const a = e.addr.toLowerCase(), l = (e.label || '').toLowerCase();
         if (a.startsWith(q)) starts.push(e);
         else if (a.includes(q) || l.includes(q)) contains.push(e);
@@ -1914,12 +1976,19 @@ button { font-family: var(--sans); }
     for (const e of list) box.appendChild(buildSugRow(e));
     if (q) {
       const p = DW.parseAddr(q);
-      if (p.ok && !list.some((e) => e.addr.toUpperCase() === p.addr.toUpperCase())) {
+      if (p.ok && matchFilter(p.family) && !list.some((e) => e.addr.toUpperCase() === p.addr.toUpperCase())) {
         const e = { addr: p.addr, family: p.family, label: DW.FAMILIES[p.family].label + ' — hors catalogue', unit: '' };
         box.appendChild(buildSugRow(e));
+        list.push(e);
       }
     }
-    box.classList.toggle('hide', !box.children.length);
+    if (!list.length) {
+      const none = document.createElement('div');
+      none.className = 'sug-none';
+      none.textContent = q ? 'Aucune variable ne correspond à ce filtre.' : 'Aucune variable dans ce filtre.';
+      box.appendChild(none);
+    }
+    box.classList.remove('hide');
     sugIndex = -1;
   }
 
