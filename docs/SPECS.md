@@ -187,13 +187,15 @@ est transmise au serveur de diag, qui échantillonne le cœur en conséquence.
 
 ## 8. Interface générale
 
-- Responsive mobile d'abord ; barre supérieure collante (marque, recherche,
-  cible, actions), barre d'état fixe en bas (source, nb de variables).
-  La barre supérieure reste **empilée** (marque+version / recherche /
-  actions) jusqu'à 1100 px — y compris téléphone en paysage — et ne passe
-  sur une seule ligne qu'au-delà.
-- **Identification de version** tout en haut à droite, sur la ligne de la
-  marque (en face de « Diagweb ») : `hash court · #n`
+- Responsive mobile d'abord ; barre supérieure collante, barre d'état fixe
+  en bas (source, nb de variables, nb d'onglets). **Pas de ligne de
+  titre** : la première ligne de la barre porte les onglets (＋ inclus)
+  avec le tag de version en face, à droite. La barre reste **empilée**
+  (onglets+version / recherche / actions) jusqu'à 1100 px — y compris
+  téléphone en paysage — et ne passe sur une seule ligne qu'au-delà ;
+  sous 480 px les boutons d'action sont compactés pour tenir sur une ligne.
+- **Identification de version** tout en haut à droite, en face de la barre
+  d'onglets : `hash court · #n`
   (hash git abrégé + numéro de commit dans la branche), injectée par
   `tools/build.py` au moment du build — elle identifie le **commit des
   sources** dont la page est issue (la page de dev `web/index.html`

@@ -10,18 +10,11 @@
 <body>
 <div class="wrap">
   <header class="topbar">
-    <div class="brand">
-      <span class="logo" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#04201d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 12h4l2-6 4 12 2-6h6"/>
-        </svg>
-      </span>
-      <div>
-        <h1>Diagweb</h1>
-        <p>Diagnostic contrôleur · prototype</p>
-      </div>
+    <div class="tabbar">
+      <div id="tabs" class="tabs" role="tablist"></div>
+      <button id="tabAdd" class="iconbtn" type="button" title="Nouvel onglet">＋</button>
     </div>
-    <span id="buildTag" class="build-tag" title="Version : commit court · n° de commit dans la branche">dev</span>
+    <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">dev</span>
 
     <div class="searchrow">
       <div class="searchbox">
@@ -44,11 +37,6 @@
       <button id="themeBtn" class="iconbtn" type="button" title="Basculer le thème clair/sombre">◐</button>
     </div>
   </header>
-
-  <div class="tabbar">
-    <div id="tabs" class="tabs" role="tablist"></div>
-    <button id="tabAdd" class="iconbtn" type="button" title="Nouvel onglet">＋</button>
-  </div>
 
   <section id="emptyState" class="empty hide">
     <h2>Aucune variable dans cet onglet</h2>
