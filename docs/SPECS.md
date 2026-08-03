@@ -138,7 +138,11 @@ est transmise au serveur de diag, qui échantillonne le cœur en conséquence.
 
 - Responsive mobile d'abord ; barre supérieure collante (marque, recherche,
   cible, actions), barre d'état fixe en bas (source, nb de variables).
-- **Identification de version** en haut à droite : `hash court · #n`
+  La barre supérieure reste **empilée** (marque+version / recherche /
+  actions) jusqu'à 1100 px — y compris téléphone en paysage — et ne passe
+  sur une seule ligne qu'au-delà.
+- **Identification de version** tout en haut à droite, sur la ligne de la
+  marque (en face de « Diagweb ») : `hash court · #n`
   (hash git abrégé + numéro de commit dans la branche), injectée par
   `tools/build.py` au moment du build — elle identifie le **commit des
   sources** dont la page est issue (la page de dev `web/index.html`
