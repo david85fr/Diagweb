@@ -116,7 +116,15 @@ button { font-family: var(--sans); }
   padding: 11px 12px;
   cursor: pointer;
 }
-.menu-panel button:hover { background: var(--panel-2); }
+.menu-panel button:hover:not(:disabled) { background: var(--panel-2); }
+.menu-panel button:disabled { color: var(--faint); cursor: default; }
+
+/* Actions liées au contenu de l'onglet actif */
+.tabActions {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-bottom: 12px;
+}
+.tabActions .btn { font-size: 12.5px; padding: 7px 11px; }
 
 .build-tag {
   font: 10.5px var(--mono);
@@ -642,15 +650,14 @@ button { font-family: var(--sans); }
     </div>
 
     <div class="topIcons">
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">d23461d · #16</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">9101aa6 · #18</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
-      <button id="menuBtn" class="iconbtn" type="button" title="Menu" aria-haspopup="true">☰<i id="menuInd" class="recdot hide"></i></button>
+      <button id="menuBtn" class="iconbtn" type="button" title="Menu général" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
-        <button id="addChartBtn" type="button">＋ Nouveau graphique</button>
-        <button id="layoutsBtn" type="button">Configurations…</button>
-        <button id="logBtn" type="button">Journal des données<i id="logInd" class="recdot hide"></i></button>
-        <button id="pauseAllBtn" type="button">⏸ Figer les graphiques</button>
         <button id="themeBtn" type="button">◐ Basculer le thème</button>
+        <button id="aboutBtn" type="button">À propos de Diagweb…</button>
+        <button type="button" disabled>Capture d’interfaces réseau (à venir)</button>
+        <button type="button" disabled>Notes de version (à venir)</button>
       </div>
     </div>
 
@@ -667,6 +674,13 @@ button { font-family: var(--sans); }
       <div id="suggestBox" class="suggest hide"></div>
     </div>
   </header>
+
+  <div class="tabActions">
+    <button id="addChartBtn" class="btn" type="button" title="Ajouter un graphique dans cet onglet">+ Graphique</button>
+    <button id="layoutsBtn" class="btn" type="button" title="Enregistrer / charger la configuration de cet onglet">Configs</button>
+    <button id="logBtn" class="btn" type="button" title="Journalisation des données de cet onglet">Journal<i id="logInd" class="recdot hide"></i></button>
+    <button id="pauseAllBtn" class="btn" type="button" title="Figer / reprendre les graphiques de cet onglet">⏸ Figer</button>
+  </div>
 
   <section id="emptyState" class="empty hide">
     <h2>Aucune variable dans cet onglet</h2>
@@ -2481,7 +2495,6 @@ button { font-family: var(--sans); }
   function updateLogUi() {
     const on = state.active && state.active.log.enabled;
     $('logInd').classList.toggle('hide', !on);
-    $('menuInd').classList.toggle('hide', !on);
   }
 
   // ---------- Disposition de démonstration ----------------------------
@@ -2748,7 +2761,7 @@ button { font-family: var(--sans); }
   function updatePauseBtn() {
     const tab = state.active;
     const allPaused = tab && tab.charts.length && tab.charts.every((c) => c.paused);
-    $('pauseAllBtn').textContent = allPaused ? '▶ Reprendre les graphiques' : '⏸ Figer les graphiques';
+    $('pauseAllBtn').textContent = allPaused ? '▶ Reprendre' : '⏸ Figer';
   }
 
   // ---------- Événements globaux --------------------------------------
@@ -2803,6 +2816,26 @@ button { font-family: var(--sans); }
           !menuPanel.contains(e.target) && !menuBtn.contains(e.target)) closeMenu();
     });
     for (const b of menuPanel.querySelectorAll('button')) b.addEventListener('click', closeMenu);
+
+    $('aboutBtn').addEventListener('click', () => {
+      const root = $('modalRoot');
+      root.innerHTML = '';
+      const back = document.createElement('div');
+      back.className = 'modal-back';
+      back.innerHTML =
+        '<div class="modal" role="dialog" aria-label="À propos">' +
+          '<header class="m-head"><h3>À propos de Diagweb</h3>' +
+          '<button class="iconbtn m-close" type="button" title="Fermer">✕</button></header>' +
+          '<p style="margin:6px 0">Diagnostic web des variables et signaux internes du contrôleur : ' +
+          'valeurs numériques en direct et courbes multi-échelles, configurations par onglets, ' +
+          'journalisation des données.</p>' +
+          '<div class="log-status">Version : ' + DW.escapeHtml($('buildTag').textContent) +
+          '<br>Mode : prototype front-end — données simulées (10 ms par défaut)</div>' +
+        '</div>';
+      back.querySelector('.m-close').addEventListener('click', () => { root.innerHTML = ''; });
+      back.addEventListener('pointerdown', (e) => { if (e.target === back) root.innerHTML = ''; });
+      root.appendChild(back);
+    });
 
     // Repli de la zone de configuration (mémorisé)
     const CFG_HIDDEN_KEY = 'diagweb.cfghidden.v1';
