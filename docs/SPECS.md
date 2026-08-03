@@ -128,6 +128,13 @@ configuration à la racine) est acceptée et convertie en un onglet.
 - **Navigateur** : dispositions nommées en localStorage — enregistrer,
   charger, supprimer, télécharger ; « ★ » désigne la disposition chargée
   automatiquement à l'ouverture (à défaut : session, sinon démo).
+- Panneau « Configs » : champ nom + **4 actions principales dépliant leurs
+  déclinaisons** (accordéon, note contextuelle sous le volet) :
+  **Enregistrer** → Navigateur / Contrôleur ; **Télécharger** → JSON / CSV ;
+  **Charger** → liste du navigateur (Charger / ⬇ / ★ / 🗑) + Importer un
+  fichier ; **Copier** → JSON / CSV. À l'ouverture, le volet « Charger »
+  est déplié s'il existe des configurations enregistrées, sinon
+  « Enregistrer ».
 - Une configuration nommée = **un onglet**. « Charger » et l'import ouvrent
   la configuration dans un **nouvel onglet** (non destructif) ; « ★ » est
   chargée au premier démarrage (sans session).

@@ -684,6 +684,8 @@
   }
 
   // ---------- Modal Configurations ------------------------------------
+  // 4 actions principales — Enregistrer / Télécharger / Charger / Copier —
+  // chacune dépliant ses déclinaisons (accordéon, un seul volet ouvert).
   function openLayoutsModal() {
     const root = $('modalRoot');
     root.innerHTML = '';
@@ -692,25 +694,16 @@
     back.innerHTML =
       '<div class="modal" role="dialog" aria-label="Configurations">' +
         '<header class="m-head"><h3>Configurations</h3><button class="iconbtn m-close" type="button" title="Fermer">✕</button></header>' +
-        '<div class="m-section">' +
-          '<label class="m-label" for="layName">Enregistrer la configuration de l’onglet actif</label>' +
-          '<input id="layName" class="m-input" maxlength="60">' +
-          '<div class="m-actions">' +
-            '<button class="btn primary" id="laySaveLocal" type="button">Enregistrer (navigateur)</button>' +
-            '<button class="btn" id="layDownload" type="button">Télécharger JSON</button>' +
-            '<button class="btn" id="layDownloadCsv" type="button">Télécharger CSV</button>' +
-            '<button class="btn" id="layCopy" type="button">Copier le JSON</button>' +
-            '<button class="btn" id="laySaveCtl" type="button">Enregistrer dans le contrôleur</button>' +
-          '</div>' +
+        '<label class="m-label" for="layName">Nom de la configuration (onglet actif)</label>' +
+        '<input id="layName" class="m-input" maxlength="60">' +
+        '<div class="m-actions acc-row">' +
+          '<button class="btn acc-btn" data-acc="save" type="button">Enregistrer ▾</button>' +
+          '<button class="btn acc-btn" data-acc="download" type="button">Télécharger ▾</button>' +
+          '<button class="btn acc-btn" data-acc="load" type="button">Charger ▾</button>' +
+          '<button class="btn acc-btn" data-acc="copy" type="button">Copier ▾</button>' +
         '</div>' +
-        '<div class="m-section">' +
-          '<div class="m-row"><h4>Enregistrées dans ce navigateur</h4>' +
-          '<label class="btn m-import">Importer un fichier<input type="file" id="layImport" accept=".json,application/json" hidden></label></div>' +
-          '<div class="lay-list" id="layList"></div>' +
-        '</div>' +
-        '<p class="m-note">« Charger » et l’import ouvrent la configuration dans un <b>nouvel onglet</b>. ' +
-        '★ = chargée automatiquement à l’ouverture. L’import se fait au format JSON ; le CSV est un export ' +
-        'de consultation (tableur). « Contrôleur » nécessite le back-end embarqué (à venir).</p>' +
+        '<div id="accPanel" class="acc-panel hide"></div>' +
+        '<p class="m-note" id="accNote"></p>' +
       '</div>';
     root.appendChild(back);
 
@@ -719,56 +712,104 @@
     back.querySelector('.m-close').addEventListener('click', close);
 
     back.querySelector('#layName').value = state.active.name;
-
     const getName = () => back.querySelector('#layName').value.trim() || 'Sans nom';
+    const panel = back.querySelector('#accPanel');
+    const note = back.querySelector('#accNote');
+    let current = null;
 
-    back.querySelector('#laySaveLocal').addEventListener('click', () => {
-      if (!DW.store.available) { toast('Stockage local indisponible dans ce navigateur.', 'err'); return; }
-      DW.store.save(getName(), serializeConfig(state.active));
-      renderLayList();
-      toast('Configuration « ' + getName() + ' » enregistrée dans le navigateur.');
-    });
-    back.querySelector('#layDownload').addEventListener('click', () => {
-      const ok = DW.store.download(getName(), DW.store.exportText(getName(), serializeConfig(state.active)));
-      toast(ok ? 'Téléchargement lancé.' : 'Téléchargement bloqué ici — utilisez « Copier le JSON ».', ok ? '' : 'err');
-    });
-    back.querySelector('#layDownloadCsv').addEventListener('click', () => {
-      const ok = DW.store.download(getName(), DW.store.configCsv(serializeConfig(state.active)), 'csv', 'text/csv');
-      toast(ok ? 'Téléchargement CSV lancé.' : 'Téléchargement bloqué dans cet environnement.', ok ? '' : 'err');
-    });
-    back.querySelector('#layCopy').addEventListener('click', async () => {
-      const text = DW.store.exportText(getName(), serializeConfig(state.active));
-      const ok = await copyText(text);
-      if (ok) toast('JSON copié dans le presse-papiers.');
-      else showTextModal('Copie manuelle', text);
-    });
-    back.querySelector('#laySaveCtl').addEventListener('click', async () => {
-      const btn = back.querySelector('#laySaveCtl');
-      btn.disabled = true;
-      try {
-        await DW.store.saveToController(getName(), serializeConfig(state.active));
-        toast('Configuration enregistrée dans le contrôleur.');
-      } catch (e) {
-        toast('Contrôleur injoignable — cette action sera disponible avec le back-end embarqué (prototype front-end).', 'err');
-      } finally { btn.disabled = false; }
-    });
-    back.querySelector('#layImport').addEventListener('change', (ev) => {
-      const f = ev.target.files && ev.target.files[0];
-      if (!f) return;
-      const rd = new FileReader();
-      rd.onload = () => {
-        const r = DW.store.parseImport(String(rd.result));
-        if (!r.ok) { toast(r.error, 'err'); return; }
-        DW.store.save(r.name, r.data);
-        createTab(r.name, r.data);
-        close();
-        toast('Configuration « ' + r.name + ' » importée dans un nouvel onglet.');
-      };
-      rd.readAsText(f);
-    });
+    const NOTES = {
+      save: 'Navigateur = mémorisée dans ce navigateur. Contrôleur = nécessite le back-end embarqué (à venir).',
+      download: 'JSON = ré-importable dans Diagweb. CSV = export de consultation (tableur, séparateur « ; »).',
+      load: 'La configuration s’ouvre dans un nouvel onglet. ★ = chargée automatiquement à l’ouverture. Import au format JSON.',
+      copy: 'Copie dans le presse-papiers, pour coller dans un message ou un document.',
+    };
+
+    function openAcc(key) {
+      current = key;
+      for (const b of back.querySelectorAll('.acc-btn')) {
+        b.classList.toggle('on', b.dataset.acc === key);
+      }
+      panel.classList.remove('hide');
+      note.textContent = NOTES[key];
+      panel.innerHTML = '';
+      if (key === 'save') {
+        panel.innerHTML =
+          '<div class="m-actions">' +
+            '<button class="btn primary" id="laySaveLocal" type="button">Navigateur</button>' +
+            '<button class="btn" id="laySaveCtl" type="button">Contrôleur</button>' +
+          '</div>';
+        panel.querySelector('#laySaveLocal').addEventListener('click', () => {
+          if (!DW.store.available) { toast('Stockage local indisponible dans ce navigateur.', 'err'); return; }
+          DW.store.save(getName(), serializeConfig(state.active));
+          toast('Configuration « ' + getName() + ' » enregistrée dans le navigateur.');
+        });
+        panel.querySelector('#laySaveCtl').addEventListener('click', async (ev) => {
+          const btn = ev.currentTarget;
+          btn.disabled = true;
+          try {
+            await DW.store.saveToController(getName(), serializeConfig(state.active));
+            toast('Configuration enregistrée dans le contrôleur.');
+          } catch (e) {
+            toast('Contrôleur injoignable — cette action sera disponible avec le back-end embarqué (prototype front-end).', 'err');
+          } finally { btn.disabled = false; }
+        });
+      } else if (key === 'download') {
+        panel.innerHTML =
+          '<div class="m-actions">' +
+            '<button class="btn primary" id="layDlJson" type="button">JSON</button>' +
+            '<button class="btn" id="layDlCsv" type="button">CSV</button>' +
+          '</div>';
+        panel.querySelector('#layDlJson').addEventListener('click', () => {
+          const ok = DW.store.download(getName(), DW.store.exportText(getName(), serializeConfig(state.active)));
+          toast(ok ? 'Téléchargement JSON lancé.' : 'Téléchargement bloqué ici — utilisez « Copier ».', ok ? '' : 'err');
+        });
+        panel.querySelector('#layDlCsv').addEventListener('click', () => {
+          const ok = DW.store.download(getName(), DW.store.configCsv(serializeConfig(state.active)), 'csv', 'text/csv');
+          toast(ok ? 'Téléchargement CSV lancé.' : 'Téléchargement bloqué dans cet environnement.', ok ? '' : 'err');
+        });
+      } else if (key === 'copy') {
+        panel.innerHTML =
+          '<div class="m-actions">' +
+            '<button class="btn primary" id="layCpJson" type="button">JSON</button>' +
+            '<button class="btn" id="layCpCsv" type="button">CSV</button>' +
+          '</div>';
+        panel.querySelector('#layCpJson').addEventListener('click', async () => {
+          const text = DW.store.exportText(getName(), serializeConfig(state.active));
+          (await copyText(text)) ? toast('JSON copié dans le presse-papiers.') : showTextModal('Copie manuelle', text);
+        });
+        panel.querySelector('#layCpCsv').addEventListener('click', async () => {
+          const text = DW.store.configCsv(serializeConfig(state.active));
+          (await copyText(text)) ? toast('CSV copié dans le presse-papiers.') : showTextModal('Copie manuelle', text);
+        });
+      } else if (key === 'load') {
+        panel.innerHTML =
+          '<div class="m-row"><h4>Enregistrées dans ce navigateur</h4>' +
+          '<label class="btn m-import">Importer un fichier<input type="file" id="layImport" accept=".json,application/json" hidden></label></div>' +
+          '<div class="lay-list" id="layList"></div>';
+        panel.querySelector('#layImport').addEventListener('change', (ev) => {
+          const f = ev.target.files && ev.target.files[0];
+          if (!f) return;
+          const rd = new FileReader();
+          rd.onload = () => {
+            const r = DW.store.parseImport(String(rd.result));
+            if (!r.ok) { toast(r.error, 'err'); return; }
+            DW.store.save(r.name, r.data);
+            createTab(r.name, r.data);
+            close();
+            toast('Configuration « ' + r.name + ' » importée dans un nouvel onglet.');
+          };
+          rd.readAsText(f);
+        });
+        renderLayList();
+      }
+    }
+
+    back.querySelectorAll('.acc-btn').forEach((b) =>
+      b.addEventListener('click', () => openAcc(b.dataset.acc)));
 
     function renderLayList() {
-      const listEl = back.querySelector('#layList');
+      const listEl = panel.querySelector('#layList');
+      if (!listEl) return;
       const items = DW.store.list();
       const auto = DW.store.getAutoload();
       listEl.innerHTML = items.length ? '' : '<p class="m-empty">Aucune configuration enregistrée pour l’instant.</p>';
@@ -809,7 +850,10 @@
         listEl.appendChild(row);
       }
     }
-    renderLayList();
+
+    // Volet le plus utile ouvert d'office : la liste à charger s'il y en a,
+    // sinon l'enregistrement.
+    openAcc(DW.store.list().length ? 'load' : 'save');
   }
 
   async function copyText(text) {

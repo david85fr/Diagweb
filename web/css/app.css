@@ -501,6 +501,20 @@ button { font-family: var(--sans); }
   margin-bottom: 10px;
 }
 .m-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.acc-row { margin-top: 4px; }
+.acc-btn.on {
+  color: #04201d;
+  background: linear-gradient(145deg, var(--accent), var(--accent-dim));
+  border-color: transparent;
+  font-weight: 640;
+}
+.acc-panel {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--panel-2) 55%, transparent);
+}
 .m-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .m-row h4 { margin: 0; font-size: 12.5px; color: var(--muted); font-weight: 600; }
 .m-import { display: inline-flex; align-items: center; }
