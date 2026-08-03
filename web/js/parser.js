@@ -14,14 +14,17 @@
   DW.FAMILIES = FAMILIES;
 
   const HELP = "Formats acceptés : I1.2.3.4, Q14.15, M1.14, S0.4 (bits), " +
-               "MB414 (mot de bus), Modele/sous_systeme/signal (C API Simulink).";
+               "MB414 (mot de bus), Modele.sous_systeme.signal (C API Simulink, " +
+               "premier champ = nom du modèle).";
 
   /**
    * Analyse une saisie utilisateur.
+   * Les familles PLC (I/Q/M/S/MB) sont prioritaires sur les chemins C API ;
+   * l'ancien séparateur « / » est toléré et normalisé en « . ».
    * @returns {ok:true, addr, family, kind} | {ok:false, error}
    */
   DW.parseAddr = function (raw) {
-    const input = String(raw == null ? '' : raw).trim();
+    const input = String(raw == null ? '' : raw).trim().replace(/\//g, '.');
     if (!input) return { ok: false, error: 'Saisissez une adresse de variable. ' + HELP };
 
     // Mot de bus : MB<registre>
@@ -39,8 +42,9 @@
       return { ok: true, addr: family + m[2], family, kind: 'bit' };
     }
 
-    // Signal C API : chemin Modele/…/signal (au moins un « / »)
-    m = /^[A-Za-z_][A-Za-z0-9_]*(?:\/[A-Za-z_][A-Za-z0-9_]*)+$/.exec(input);
+    // Signal C API : Modele.sous_systeme.signal — segments identifiants
+    // séparés par des points, au moins deux (modèle + signal).
+    m = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$/.exec(input);
     if (m) return { ok: true, addr: input, family: 'CAPI', kind: 'float' };
 
     // Diagnostics ciblés pour les erreurs fréquentes

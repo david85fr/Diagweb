@@ -15,7 +15,7 @@ locale (10 Hz) ; le back-end embarqué viendra en phase 2.
 - Ou ouvrir `dist/index.html` dans un navigateur (fichier autonome, aucun
   serveur ni dépendance requis).
 - Saisir une adresse dans la barre de recherche : `I1.2.3.4`, `Q14.15`,
-  `M1.14`, `S0.4`, `MB414` ou un signal modèle `Regulation/mesure/vitesse`,
+  `M1.14`, `S0.4`, `MB414` ou un signal modèle `Regulation.mesure.vitesse`,
   puis choisir la cible (tableau ou graphique).
 
 ## Développement

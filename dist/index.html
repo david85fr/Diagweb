@@ -243,6 +243,13 @@ button { font-family: var(--sans); }
 .v-trend.up { color: var(--good); }
 .v-trend.down { color: #d95926; }
 .v-trend.flat { color: var(--faint); }
+/* Flash : variable immobile depuis ≥ 2 s qui change à nouveau */
+@keyframes vrow-flash {
+  from { box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--accent) 30%, transparent); }
+  to   { box-shadow: inset 0 0 0 999px transparent; }
+}
+.vrow.vflash { animation: vrow-flash 1.1s ease-out; }
+
 .led {
   width: 9px; height: 9px; border-radius: 50%;
   background: var(--panel-2); border: 1px solid var(--line);
@@ -501,7 +508,7 @@ button { font-family: var(--sans); }
       <div class="searchbox">
         <input id="searchInput" type="text" inputmode="text" autocomplete="off" autocapitalize="off"
                autocorrect="off" spellcheck="false"
-               placeholder="Variable : I1.2.3.4, MB414, Regulation/mesure/vitesse…"
+               placeholder="Variable : I1.2.3.4, MB414, Regulation.mesure.vitesse…"
                aria-label="Adresse de la variable à ajouter">
       </div>
       <select id="targetSel" aria-label="Destination de la variable"></select>
@@ -522,7 +529,7 @@ button { font-family: var(--sans); }
     <h2>Aucune variable suivie</h2>
     <p>Saisissez une adresse dans la barre de recherche pour l'ajouter au tableau
        numérique ou à un graphique&nbsp;: <b>I1.2.3.4</b>, <b>Q14.15</b>, <b>M1.14</b>,
-       <b>S0.4</b>, <b>MB414</b> ou un signal modèle comme <b>Regulation/mesure/vitesse</b>.</p>
+       <b>S0.4</b>, <b>MB414</b> ou un signal modèle comme <b>Regulation.mesure.vitesse</b>.</p>
     <div class="cta">
       <button id="demoBtn" class="btn primary" type="button">Charger la disposition de démonstration</button>
     </div>
@@ -615,24 +622,24 @@ button { font-family: var(--sans); }
     { addr: 'MB1000',    label: 'Compteur trames bus',                    kind: 'word', unit: '', sim: { type: 'counter', rate: 87 } },
 
     // --- Signaux modèles Simulink (C API) ---------------------------
-    { addr: 'Regulation/consigne/vitesse',   label: 'Consigne de vitesse',        kind: 'float', unit: 'tr/min', sim: { type: 'steps', values: [1480, 1500, 1500, 1520, 1550], period: 40 } },
-    { addr: 'Regulation/mesure/vitesse',     label: 'Vitesse mesurée',            kind: 'float', unit: 'tr/min', sim: { type: 'sine', base: 1500, amp: 22, period: 17, noise: 4 } },
-    { addr: 'Regulation/sortie/commande',    label: 'Commande actionneur',        kind: 'float', unit: '%',      sim: { type: 'sine', base: 54, amp: 18, period: 23, noise: 1.5 } },
-    { addr: 'Regulation/erreur',             label: 'Erreur de régulation',       kind: 'float', unit: 'tr/min', sim: { type: 'sine', base: 0, amp: 14, period: 11, noise: 3 } },
-    { addr: 'Thermique/temperature_eau',     label: "Température d'eau",          kind: 'float', unit: '°C',     sim: { type: 'sine', base: 82, amp: 2.2, period: 140, noise: 0.15 } },
-    { addr: 'Thermique/temperature_huile',   label: "Température d'huile",        kind: 'float', unit: '°C',     sim: { type: 'sine', base: 96, amp: 3.1, period: 190, noise: 0.2 } },
-    { addr: 'Thermique/temperature_ambiante',label: 'Température ambiante',       kind: 'float', unit: '°C',     sim: { type: 'walk', base: 24, step: 0.05, min: 15, max: 38 } },
-    { addr: 'Hydraulique/pression_huile',    label: "Pression d'huile",           kind: 'float', unit: 'bar',    sim: { type: 'sine', base: 4.2, amp: 0.25, period: 29, noise: 0.05 } },
-    { addr: 'Hydraulique/pression_circuit',  label: 'Pression circuit',           kind: 'float', unit: 'bar',    sim: { type: 'sine', base: 12.1, amp: 0.8, period: 61, noise: 0.1 } },
-    { addr: 'Elec/tension_bus',              label: 'Tension bus DC',             kind: 'float', unit: 'V',      sim: { type: 'sine', base: 27.4, amp: 0.35, period: 37, noise: 0.06 } },
-    { addr: 'Elec/courant_charge',           label: 'Courant de charge',          kind: 'float', unit: 'A',      sim: { type: 'steps', values: [8, 14, 18, 26, 31], period: 28, noise: 0.5 } },
-    { addr: 'Elec/frequence',                label: 'Fréquence réseau',           kind: 'float', unit: 'Hz',     sim: { type: 'sine', base: 50, amp: 0.06, period: 19, noise: 0.01 } },
-    { addr: 'Elec/puissance_active',         label: 'Puissance active',           kind: 'float', unit: 'kW',     sim: { type: 'steps', values: [42, 60, 75, 96, 118], period: 45, noise: 1.2 } },
-    { addr: 'Capteurs/niveau_reservoir',     label: 'Niveau réservoir',           kind: 'float', unit: '%',      sim: { type: 'walk', base: 78, step: 0.03, min: 5, max: 100, drift: -0.006 } },
-    { addr: 'Capteurs/debit_pompe',          label: 'Débit pompe',                kind: 'float', unit: 'L/min',  sim: { type: 'sine', base: 65, amp: 4, period: 33, noise: 0.6 } },
-    { addr: 'Supervision/temps_cycle',       label: "Temps de cycle de l'appli",  kind: 'float', unit: 'µs',     sim: { type: 'jitter', base: 850, noise: 28, spikeP: 0.015, spikeAmp: 400 } },
-    { addr: 'Supervision/charge_cpu',        label: 'Charge CPU',                 kind: 'float', unit: '%',      sim: { type: 'walk', base: 32, step: 0.8, min: 4, max: 97 } },
-    { addr: 'Supervision/memoire_libre',     label: 'Mémoire libre',              kind: 'float', unit: 'Mo',     sim: { type: 'walk', base: 412, step: 0.6, min: 120, max: 480 } },
+    { addr: 'Regulation.consigne.vitesse',   label: 'Consigne de vitesse',        kind: 'float', unit: 'tr/min', sim: { type: 'steps', values: [1480, 1500, 1500, 1520, 1550], period: 40 } },
+    { addr: 'Regulation.mesure.vitesse',     label: 'Vitesse mesurée',            kind: 'float', unit: 'tr/min', sim: { type: 'sine', base: 1500, amp: 22, period: 17, noise: 4 } },
+    { addr: 'Regulation.sortie.commande',    label: 'Commande actionneur',        kind: 'float', unit: '%',      sim: { type: 'sine', base: 54, amp: 18, period: 23, noise: 1.5 } },
+    { addr: 'Regulation.erreur',             label: 'Erreur de régulation',       kind: 'float', unit: 'tr/min', sim: { type: 'sine', base: 0, amp: 14, period: 11, noise: 3 } },
+    { addr: 'Thermique.temperature_eau',     label: "Température d'eau",          kind: 'float', unit: '°C',     sim: { type: 'sine', base: 82, amp: 2.2, period: 140, noise: 0.15 } },
+    { addr: 'Thermique.temperature_huile',   label: "Température d'huile",        kind: 'float', unit: '°C',     sim: { type: 'sine', base: 96, amp: 3.1, period: 190, noise: 0.2 } },
+    { addr: 'Thermique.temperature_ambiante',label: 'Température ambiante',       kind: 'float', unit: '°C',     sim: { type: 'walk', base: 24, step: 0.05, min: 15, max: 38 } },
+    { addr: 'Hydraulique.pression_huile',    label: "Pression d'huile",           kind: 'float', unit: 'bar',    sim: { type: 'sine', base: 4.2, amp: 0.25, period: 29, noise: 0.05 } },
+    { addr: 'Hydraulique.pression_circuit',  label: 'Pression circuit',           kind: 'float', unit: 'bar',    sim: { type: 'sine', base: 12.1, amp: 0.8, period: 61, noise: 0.1 } },
+    { addr: 'Elec.tension_bus',              label: 'Tension bus DC',             kind: 'float', unit: 'V',      sim: { type: 'sine', base: 27.4, amp: 0.35, period: 37, noise: 0.06 } },
+    { addr: 'Elec.courant_charge',           label: 'Courant de charge',          kind: 'float', unit: 'A',      sim: { type: 'steps', values: [8, 14, 18, 26, 31], period: 28, noise: 0.5 } },
+    { addr: 'Elec.frequence',                label: 'Fréquence réseau',           kind: 'float', unit: 'Hz',     sim: { type: 'sine', base: 50, amp: 0.06, period: 19, noise: 0.01 } },
+    { addr: 'Elec.puissance_active',         label: 'Puissance active',           kind: 'float', unit: 'kW',     sim: { type: 'steps', values: [42, 60, 75, 96, 118], period: 45, noise: 1.2 } },
+    { addr: 'Capteurs.niveau_reservoir',     label: 'Niveau réservoir',           kind: 'float', unit: '%',      sim: { type: 'walk', base: 78, step: 0.03, min: 5, max: 100, drift: -0.006 } },
+    { addr: 'Capteurs.debit_pompe',          label: 'Débit pompe',                kind: 'float', unit: 'L/min',  sim: { type: 'sine', base: 65, amp: 4, period: 33, noise: 0.6 } },
+    { addr: 'Supervision.temps_cycle',       label: "Temps de cycle de l'appli",  kind: 'float', unit: 'µs',     sim: { type: 'jitter', base: 850, noise: 28, spikeP: 0.015, spikeAmp: 400 } },
+    { addr: 'Supervision.charge_cpu',        label: 'Charge CPU',                 kind: 'float', unit: '%',      sim: { type: 'walk', base: 32, step: 0.8, min: 4, max: 97 } },
+    { addr: 'Supervision.memoire_libre',     label: 'Mémoire libre',              kind: 'float', unit: 'Mo',     sim: { type: 'walk', base: 412, step: 0.6, min: 120, max: 480 } },
   ];
 
   // Index par adresse (les adresses PLC sont normalisées en majuscules).
@@ -658,14 +665,17 @@ button { font-family: var(--sans); }
   DW.FAMILIES = FAMILIES;
 
   const HELP = "Formats acceptés : I1.2.3.4, Q14.15, M1.14, S0.4 (bits), " +
-               "MB414 (mot de bus), Modele/sous_systeme/signal (C API Simulink).";
+               "MB414 (mot de bus), Modele.sous_systeme.signal (C API Simulink, " +
+               "premier champ = nom du modèle).";
 
   /**
    * Analyse une saisie utilisateur.
+   * Les familles PLC (I/Q/M/S/MB) sont prioritaires sur les chemins C API ;
+   * l'ancien séparateur « / » est toléré et normalisé en « . ».
    * @returns {ok:true, addr, family, kind} | {ok:false, error}
    */
   DW.parseAddr = function (raw) {
-    const input = String(raw == null ? '' : raw).trim();
+    const input = String(raw == null ? '' : raw).trim().replace(/\//g, '.');
     if (!input) return { ok: false, error: 'Saisissez une adresse de variable. ' + HELP };
 
     // Mot de bus : MB<registre>
@@ -683,8 +693,9 @@ button { font-family: var(--sans); }
       return { ok: true, addr: family + m[2], family, kind: 'bit' };
     }
 
-    // Signal C API : chemin Modele/…/signal (au moins un « / »)
-    m = /^[A-Za-z_][A-Za-z0-9_]*(?:\/[A-Za-z_][A-Za-z0-9_]*)+$/.exec(input);
+    // Signal C API : Modele.sous_systeme.signal — segments identifiants
+    // séparés par des points, au moins deux (modèle + signal).
+    m = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$/.exec(input);
     if (m) return { ok: true, addr: input, family: 'CAPI', kind: 'float' };
 
     // Diagnostics ciblés pour les erreurs fréquentes
@@ -1757,11 +1768,24 @@ button { font-family: var(--sans); }
 
   function updateTableValues() {
     const rows = $('tableRows').children;
+    const nowT = DW.source.now();
     for (let i = 0; i < state.table.length && i < rows.length; i++) {
       const e = state.table[i];
       const last = DW.source.latest(e.addr);
       const valEl = rows[i].querySelector('.val');
       if (!last) { valEl.textContent = '—'; continue; }
+      // Flash : la variable était immobile depuis ≥ 2 s et vient de changer
+      if (e._lastV === undefined) {
+        e._lastV = last.v; e._lastChangeT = nowT;
+      } else if (last.v !== e._lastV) {
+        if (nowT - e._lastChangeT >= 2) {
+          const row = rows[i];
+          row.classList.remove('vflash');
+          void row.offsetWidth; // relance l'animation
+          row.classList.add('vflash');
+        }
+        e._lastV = last.v; e._lastChangeT = nowT;
+      }
       if (e.meta.kind === 'bit') {
         const on = last.v >= 0.5;
         valEl.innerHTML = '<i class="led' + (on ? ' on' : '') + '"></i>' + (on ? '1' : '0');
@@ -1875,7 +1899,7 @@ button { font-family: var(--sans); }
       const help = document.createElement('div');
       help.className = 'sug-help';
       help.innerHTML = 'Formats : <code>I1.2.3.4</code> <code>Q14.15</code> <code>M1.14</code> ' +
-        '<code>S0.4</code> <code>MB414</code> <code>Modele/signal</code>';
+        '<code>S0.4</code> <code>MB414</code> <code>Modele.signal</code>';
       box.appendChild(help);
       list = CATALOG_F.slice(0, 8);
     } else {
@@ -1952,21 +1976,21 @@ button { font-family: var(--sans); }
   // ---------- Disposition de démonstration ----------------------------
   const DEMO = {
     version: 1,
-    table: ['I1.2.3.4', 'Q14.15', 'S0.4', 'MB414', 'Elec/tension_bus', 'Supervision/temps_cycle'],
+    table: ['I1.2.3.4', 'Q14.15', 'S0.4', 'MB414', 'Elec.tension_bus', 'Supervision.temps_cycle'],
     charts: [
       {
         title: 'Régulation vitesse', windowS: 60,
         series: [
-          { addr: 'Regulation/mesure/vitesse' },
-          { addr: 'Regulation/consigne/vitesse' },
-          { addr: 'Elec/puissance_active' },
+          { addr: 'Regulation.mesure.vitesse' },
+          { addr: 'Regulation.consigne.vitesse' },
+          { addr: 'Elec.puissance_active' },
         ],
       },
       {
         title: 'Thermique & pression', windowS: 120,
         series: [
-          { addr: 'Thermique/temperature_eau' },
-          { addr: 'Hydraulique/pression_huile' },
+          { addr: 'Thermique.temperature_eau' },
+          { addr: 'Hydraulique.pression_huile' },
           { addr: 'M20.0' },
         ],
       },

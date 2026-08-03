@@ -235,6 +235,13 @@ button { font-family: var(--sans); }
 .v-trend.up { color: var(--good); }
 .v-trend.down { color: #d95926; }
 .v-trend.flat { color: var(--faint); }
+/* Flash : variable immobile depuis ≥ 2 s qui change à nouveau */
+@keyframes vrow-flash {
+  from { box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--accent) 30%, transparent); }
+  to   { box-shadow: inset 0 0 0 999px transparent; }
+}
+.vrow.vflash { animation: vrow-flash 1.1s ease-out; }
+
 .led {
   width: 9px; height: 9px; border-radius: 50%;
   background: var(--panel-2); border: 1px solid var(--line);

@@ -117,11 +117,24 @@
 
   function updateTableValues() {
     const rows = $('tableRows').children;
+    const nowT = DW.source.now();
     for (let i = 0; i < state.table.length && i < rows.length; i++) {
       const e = state.table[i];
       const last = DW.source.latest(e.addr);
       const valEl = rows[i].querySelector('.val');
       if (!last) { valEl.textContent = '—'; continue; }
+      // Flash : la variable était immobile depuis ≥ 2 s et vient de changer
+      if (e._lastV === undefined) {
+        e._lastV = last.v; e._lastChangeT = nowT;
+      } else if (last.v !== e._lastV) {
+        if (nowT - e._lastChangeT >= 2) {
+          const row = rows[i];
+          row.classList.remove('vflash');
+          void row.offsetWidth; // relance l'animation
+          row.classList.add('vflash');
+        }
+        e._lastV = last.v; e._lastChangeT = nowT;
+      }
       if (e.meta.kind === 'bit') {
         const on = last.v >= 0.5;
         valEl.innerHTML = '<i class="led' + (on ? ' on' : '') + '"></i>' + (on ? '1' : '0');
@@ -235,7 +248,7 @@
       const help = document.createElement('div');
       help.className = 'sug-help';
       help.innerHTML = 'Formats : <code>I1.2.3.4</code> <code>Q14.15</code> <code>M1.14</code> ' +
-        '<code>S0.4</code> <code>MB414</code> <code>Modele/signal</code>';
+        '<code>S0.4</code> <code>MB414</code> <code>Modele.signal</code>';
       box.appendChild(help);
       list = CATALOG_F.slice(0, 8);
     } else {
@@ -312,21 +325,21 @@
   // ---------- Disposition de démonstration ----------------------------
   const DEMO = {
     version: 1,
-    table: ['I1.2.3.4', 'Q14.15', 'S0.4', 'MB414', 'Elec/tension_bus', 'Supervision/temps_cycle'],
+    table: ['I1.2.3.4', 'Q14.15', 'S0.4', 'MB414', 'Elec.tension_bus', 'Supervision.temps_cycle'],
     charts: [
       {
         title: 'Régulation vitesse', windowS: 60,
         series: [
-          { addr: 'Regulation/mesure/vitesse' },
-          { addr: 'Regulation/consigne/vitesse' },
-          { addr: 'Elec/puissance_active' },
+          { addr: 'Regulation.mesure.vitesse' },
+          { addr: 'Regulation.consigne.vitesse' },
+          { addr: 'Elec.puissance_active' },
         ],
       },
       {
         title: 'Thermique & pression', windowS: 120,
         series: [
-          { addr: 'Thermique/temperature_eau' },
-          { addr: 'Hydraulique/pression_huile' },
+          { addr: 'Thermique.temperature_eau' },
+          { addr: 'Hydraulique.pression_huile' },
           { addr: 'M20.0' },
         ],
       },

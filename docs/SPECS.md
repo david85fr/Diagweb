@@ -15,10 +15,14 @@ pour les familles PLC, normalisé en majuscules) :
 | `M` | idem | `M1.14` | bit |
 | `S` | idem — variables système | `S0.4` | bit |
 | `MB` | `MB` + numéro de registre 0–65535 | `MB414` | mot 16 bits |
-| C API | chemin `Modele/sous_systeme/signal` (≥ 1 « / », identifiants `[A-Za-z_][A-Za-z0-9_]*`) | `Regulation/mesure/vitesse` | flottant |
+| C API | `Modele.sous_systeme.signal` — **séparateur hiérarchique : le point**, le **premier champ est le nom du modèle** Simulink ; ≥ 2 segments, identifiants `[A-Za-z_][A-Za-z0-9_]*` | `Regulation.mesure.vitesse` | flottant |
 
 - Une adresse bien formée mais absente du catalogue est acceptée (« hors
   catalogue ») : le simulateur lui invente un signal plausible du bon type.
+- Les familles PLC sont **prioritaires** sur les chemins C API (un modèle ne
+  peut donc pas s'appeler `I`, `Q`, `M`, `S` ou `MB` suivi de chiffres avec
+  un 2ᵉ segment numérique). L'ancien séparateur « / » est toléré à la saisie
+  et dans les dispositions importées, normalisé en « . ».
 - Erreur de format → toast explicatif avec exemples.
 
 ## 2. Recherche et ajout
@@ -46,6 +50,11 @@ pour les familles PLC, normalisé en majuscules) :
 - Colonnes : badge famille, adresse (mono), libellé, valeur vivante, unité,
   tendance (↗/↘/→ sur ~2,5 s, sauf bits), bouton retirer.
 - Bits : LED + 0/1. Mots `MB` : décimal + hexadécimal `0xNNNN`.
+- **Flash de changement** : une variable dont la valeur était immobile
+  depuis **≥ 2 s** et qui change à nouveau fait flasher sa ligne (fond
+  accentué qui s'estompe en ~1 s). Repère immédiat des variables qui
+  bougent, même pour un changement d'un seul cycle. (Les grandeurs
+  continues, qui changent en permanence, ne flashent donc pas.)
 - Rafraîchissement ~5 Hz. Masqué quand il est vide.
 
 ## 4. Graphiques
