@@ -109,9 +109,10 @@ défilement de la page se fait en dehors des tracés) :
   - **pincement** à deux doigts ou **molette** = zoom temporel continu
     2 s → 5 min (sélecteur affichant la valeur personnalisée) ; ancré au
     bord droit en vue directe, sous le geste en vue figée ;
-  - **appui bref** = épingle un curseur de mesure à l'instant visé (ligne
-    accentuée, valeurs vraies de chaque courbe, `t − x s`) ; nouvel appui
-    dessus pour le retirer ; survol souris = curseur transitoire.
+  - **appui bref** (tactile) ou **clic bref** (souris) = épingle un curseur
+    de mesure à l'instant visé (ligne accentuée, valeurs vraies de chaque
+    courbe, `t − x s`) ; nouvel appui dessus pour le retirer ; survol
+    souris = curseur transitoire.
 - **Sur la règle d'un axe** :
   - glisser = déplacement de cette échelle (passe en manuel 🔒) ;
   - molette = zoom de cette échelle, ancré sous le curseur (manuel 🔒) ;

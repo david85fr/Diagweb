@@ -54,11 +54,11 @@
   function fmtAxisTick(v, step) {
     if (Math.abs(v) >= 10000) {
       const kStep = step / 1000;
-      const dec = Math.max(0, -Math.floor(Math.log10(Math.max(kStep, 1e-9))));
-      return (v / 1000).toFixed(Math.min(dec, 2)) + 'k';
+      const dec = Math.max(0, -Math.floor(Math.log10(Math.max(kStep, 1e-12))));
+      return (v / 1000).toFixed(Math.min(dec, 4)) + 'k';
     }
-    const dec = step >= 1 ? 0 : Math.max(0, -Math.floor(Math.log10(Math.max(step, 1e-9))));
-    return v.toFixed(Math.min(dec, 3));
+    const dec = step >= 1 ? 0 : Math.max(0, -Math.floor(Math.log10(Math.max(step, 1e-12))));
+    return v.toFixed(Math.min(dec, 6));
   }
   function fmtTimeTick(negS, windowS) {
     if (Math.abs(negS) < 1e-9) return '0';
@@ -84,6 +84,20 @@
   }
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
+  /** Garantit une plage exploitable : span plancher relatif (anti-gel au
+   *  zoom extrême et données quasi constantes en arithmétique flottante). */
+  function sanitizeRange(min, max) {
+    if (!isFinite(min) || !isFinite(max)) { min = 0; max = 1; }
+    const scale = Math.max(Math.abs(min), Math.abs(max), 1e-12);
+    const minSpan = Math.max(1e-9, scale * 1e-6);
+    if (!(max - min >= minSpan)) {
+      const c = (min + max) / 2;
+      min = c - minSpan / 2;
+      max = c + minSpan / 2;
+    }
+    return { min, max };
+  }
+
   // ---------- Encre du thème (lue depuis les variables CSS) -----------
   let inkCache = null;
   DW.invalidateChartTheme = function () { inkCache = null; };
@@ -105,17 +119,41 @@
   const MAX_AXES = 4;
 
   // ---------- Popover partagé (légende & menu ⋮) ----------------------
-  let popEl = null, popOwner = null;
+  let popEl = null, popOwner = null, popAnchor = null;
+  let lastClosedOwner = null, lastClosedAt = 0;
+  let popClosedPointer = -1;   // pointeur ayant fermé un popover (à consommer)
   function closePopover() {
-    if (popEl) { popEl.remove(); popEl = null; popOwner = null; }
+    if (popEl) {
+      popEl.remove();
+      popEl = null;
+      lastClosedOwner = popOwner;
+      lastClosedAt = performance.now();
+      popOwner = null;
+      popAnchor = null;
+    }
   }
   document.addEventListener('pointerdown', (e) => {
-    if (popEl && !popEl.contains(e.target)) closePopover();
+    if (popEl && !popEl.contains(e.target)) {
+      const onAnchor = popAnchor && popAnchor.contains(e.target);
+      closePopover();
+      // Le tap qui ferme un menu ne doit pas démarrer un geste sur le canvas
+      if (!onAnchor) popClosedPointer = e.pointerId;
+    }
   }, true);
+  /** À appeler au pointerdown du canvas : vrai si ce pointeur vient de fermer un menu. */
+  function consumePopClose(pointerId) {
+    if (popClosedPointer === pointerId) { popClosedPointer = -1; return true; }
+    return false;
+  }
   function openPopover(owner, anchorEl, build) {
-    if (popOwner === owner) { closePopover(); return; }
+    // Re-cliquer l'ancre du menu qui vient d'être fermé = bascule (rester fermé)
+    if (lastClosedOwner === owner && performance.now() - lastClosedAt < 500) {
+      lastClosedOwner = null;
+      return;
+    }
     closePopover();
     popOwner = owner;
+    popAnchor = anchorEl;
     popEl = document.createElement('div');
     popEl.className = 'popmenu';
     build((label, fn, cls) => {
@@ -130,8 +168,12 @@
     document.body.appendChild(popEl);
     const r = anchorEl.getBoundingClientRect();
     const pw = popEl.offsetWidth;
+    const mh = popEl.offsetHeight;
     popEl.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pw - 8)) + 'px';
-    popEl.style.top = (r.bottom + 6 + window.scrollY) + 'px';
+    // Sous l'ancre si la place le permet, sinon au-dessus (jamais hors écran)
+    let top = r.bottom + 6;
+    if (top + mh > window.innerHeight - 8) top = Math.max(8, r.top - mh - 6);
+    popEl.style.top = (top + window.scrollY) + 'px';
   }
 
   // ---------- Classe Chart --------------------------------------------
@@ -324,8 +366,12 @@
 
       cv.addEventListener('pointerdown', (e) => {
         try { cv.setPointerCapture(e.pointerId); } catch (err) { /* pointeur synthétique */ }
-        this._ptrs.set(e.pointerId, { x: e.offsetX, y: e.offsetY, x0: e.offsetX, y0: e.offsetY });
+        this.cursor = null;   // le curseur de survol ne survit pas à un appui
+        const suppressed = consumePopClose(e.pointerId);
+        this._ptrs.set(e.pointerId, { x: e.offsetX, y: e.offsetY, x0: e.offsetX, y0: e.offsetY, suppressed });
+        if (suppressed) { this._gesture = { mode: 'dead' }; return; }
         if (this._ptrs.size === 2) {
+          this._hadMulti = true;
           const [a, b] = [...this._ptrs.values()];
           const dist = Math.max(12, Math.hypot(a.x - b.x, a.y - b.y));
           const midX = (a.x + b.x) / 2;
@@ -337,6 +383,7 @@
             anchorX: midX,
           };
         } else if (this._ptrs.size === 1) {
+          this._hadMulti = false;
           const band = this.bandAt(e.offsetX);
           if (this.moveSeries) {
             const s = this.series.find((x) => x.addr === this.moveSeries);
@@ -407,11 +454,16 @@
         } else if (g2.mode === 'offset' && g2.scale) {
           g2.series.offsetY = g2.baseOffset + (g2.baseY - p.y) * g2.scale;
         } else if (g2.mode === 'yaxis') {
+          // Zone morte : un appui qui tremble ne doit pas verrouiller l'axe
+          if (!g2.armed) {
+            if (Math.abs(p.y - g2.baseY) < 8) return;
+            g2.armed = true;
+          }
           const st = this.axisState.get(g2.key);
           if (st) {
             const dv = (p.y - g2.baseY) * g2.scale;
             st.mode = 'manual';
-            st.cur = { min: g2.baseMin + dv, max: g2.baseMax + dv };
+            st.cur = sanitizeRange(g2.baseMin + dv, g2.baseMax + dv);
           }
         }
       });
@@ -423,8 +475,10 @@
         if (this._ptrs.size) { this._gesture = { mode: 'dead' }; return; }
         this._gesture = null;
         if (g && g.mode === 'offset') { this.rebuildLegend(); this.app.onChange(); return; }
-        // Appui bref sans mouvement
-        if (p && Math.abs(p.x - p.x0) < 8 && Math.abs(p.y - p.y0) < 8 && e.pointerType !== 'mouse') {
+        // Appui bref sans mouvement — jamais après un geste multi-touch,
+        // un pointercancel ou le tap qui a fermé un menu
+        if (p && !p.suppressed && !this._hadMulti && e.type !== 'pointercancel' &&
+            Math.abs(p.x - p.x0) < 8 && Math.abs(p.y - p.y0) < 8) {
           const band = this.bandAt(p.x0);
           const now = performance.now();
           const isDouble = now - this._lastTap < 320 && Math.abs(p.x - this._lastTapX) < 40;
@@ -434,10 +488,10 @@
               if (st) { st.mode = 'auto'; st.snap = true; }
             }
             this._lastTapBand = band.key;
-          } else if (isDouble) {
+          } else if (isDouble && this._lastTapBand === null) {
+            // Double-appui homogène sur le tracé uniquement
             this.pinT = null;
             this.goLive();
-            this._lastTapBand = null;
           } else {
             if (this.pinT !== null && this._plot && Math.abs(this.xAt(this.pinT) - p.x) < 24) this.pinT = null;
             else this.pinT = this.timeAt(p.x);
@@ -445,6 +499,7 @@
           }
           this._lastTap = now; this._lastTapX = p.x;
         }
+        this._hadMulti = false;
       };
       cv.addEventListener('pointerup', end);
       cv.addEventListener('pointercancel', end);
@@ -464,7 +519,7 @@
           const span = st.cur.max - st.cur.min;
           const v0 = st.cur.min + (1 - (e.offsetY - pl.mT) / pl.ph) * span;
           st.mode = 'manual';
-          st.cur = { min: v0 - (v0 - st.cur.min) * factor, max: v0 + (st.cur.max - v0) * factor };
+          st.cur = sanitizeRange(v0 - (v0 - st.cur.min) * factor, v0 + (st.cur.max - v0) * factor);
           return;
         }
         const anchorT = this.viewEnd === null ? null : this.timeAt(e.offsetX);
@@ -616,7 +671,9 @@
         valEl.textContent = last ? DW.fmtVal(last.v, s.meta) + (s.meta.unit ? ' ' + s.meta.unit : '') : '—';
         chips[i].querySelector('.chip-off').classList.toggle('hide', !s.offsetY);
         const axEl = chips[i].querySelector('.chip-axis');
-        axEl.textContent = (this._axisCount > 1 && this._axisBadge && this._axisBadge[s.addr]) || '';
+        const badge = (this._axisBadge && this._axisBadge[s.addr]) || '';
+        // Badge visible si plusieurs échelles OU si l'axe est verrouillé 🔒
+        axEl.textContent = (this._axisCount > 1 || badge.includes('🔒')) ? badge : '';
       }
     }
 
@@ -636,7 +693,7 @@
         min -= e; max += e;
       }
       const pad = (max - min) * 0.07;
-      return { min: min - pad, max: max + pad };
+      return sanitizeRange(min - pad, max + pad);
     }
 
     computeGroups(tStart, tEnd) {
@@ -691,49 +748,51 @@
         }
         if (g.isBool && st.mode === 'auto') {
           st.cur = { min: g.dMin, max: g.dMax };
+          st.shrinking = false;
         } else if (st.mode === 'auto') {
           const fit = this.fitRange(g.dMin, g.dMax);
           if (!st.cur || st.snap) {
             st.cur = fit;
             st.snap = false;
             st.shrinkSince = 0;
-          } else {
-            let target = null;
-            // Extension immédiate quand les données sortent
-            if (g.dMin < st.cur.min || g.dMax > st.cur.max) {
-              target = {
-                min: Math.min(fit.min, st.cur.min),
-                max: Math.max(fit.max, st.cur.max),
-              };
+            st.shrinking = false;
+          } else if (g.dMin < st.cur.min || g.dMax > st.cur.max) {
+            // Extension IMMÉDIATE quand les données sortent de la plage
+            st.cur = sanitizeRange(
+              Math.min(fit.min, st.cur.min),
+              Math.max(fit.max, st.cur.max)
+            );
+            st.shrinkSince = 0;
+            st.shrinking = false;
+          } else if (st.shrinking) {
+            // Rétraction en cours : on la mène jusqu'au fit (cible rafraîchie)
+            st.cur = {
+              min: st.cur.min + (fit.min - st.cur.min) * 0.18,
+              max: st.cur.max + (fit.max - st.cur.max) * 0.18,
+            };
+            const span = fit.max - fit.min;
+            if (Math.abs(st.cur.min - fit.min) < span * 0.005 &&
+                Math.abs(st.cur.max - fit.max) < span * 0.005) {
+              st.cur = fit;
+              st.shrinking = false;
               st.shrinkSince = 0;
-            } else {
-              // Rétraction différée quand les données n'occupent plus l'échelle
-              const span = st.cur.max - st.cur.min;
-              const occ = isFinite(g.dMin) ? (g.dMax - g.dMin) / span : 1;
-              if (occ < SHRINK_OCCUPANCY) {
-                if (!st.shrinkSince) st.shrinkSince = nowMs;
-                else if (nowMs - st.shrinkSince > SHRINK_DELAY_S * 1000) target = fit;
-              } else {
-                st.shrinkSince = 0;
-              }
             }
-            if (target) {
-              // Transition lissée
-              st.cur = {
-                min: st.cur.min + (target.min - st.cur.min) * 0.18,
-                max: st.cur.max + (target.max - st.cur.max) * 0.18,
-              };
-              if (Math.abs(st.cur.min - target.min) < (target.max - target.min) * 0.002 &&
-                  Math.abs(st.cur.max - target.max) < (target.max - target.min) * 0.002) {
-                st.cur = target;
-                st.shrinkSince = 0;
-              }
+          } else {
+            // Rétraction différée quand les données n'occupent plus l'échelle
+            const span = st.cur.max - st.cur.min;
+            const occ = isFinite(g.dMin) ? (g.dMax - g.dMin) / span : 1;
+            if (occ < SHRINK_OCCUPANCY) {
+              if (!st.shrinkSince) st.shrinkSince = nowMs;
+              else if (nowMs - st.shrinkSince > SHRINK_DELAY_S * 1000) st.shrinking = true;
+            } else {
+              st.shrinkSince = 0;
             }
           }
         }
         if (!st.cur || !isFinite(st.cur.min) || st.cur.max <= st.cur.min) {
           st.cur = this.fitRange(g.dMin, g.dMax);
         }
+        st.cur = sanitizeRange(st.cur.min, st.cur.max);
         g.min = st.cur.min;
         g.max = st.cur.max;
         g.manual = st.mode === 'manual';
@@ -742,17 +801,25 @@
           g.ticks = [0, 1];
           g.tickStep = 1;
         } else {
+          // Graduations bornées par indices entiers (jamais de boucle infinie)
           const step = niceStep((g.max - g.min) / 4);
           g.tickStep = step;
           g.ticks = [];
-          for (let v = Math.ceil(g.min / step) * step; v <= g.max + 1e-9; v += step) {
-            g.ticks.push(Math.abs(v) < step * 1e-6 ? 0 : v);
+          const k0 = Math.ceil(g.min / step - 1e-9);
+          const k1 = Math.floor(g.max / step + 1e-9);
+          if (isFinite(k0) && isFinite(k1) && k1 - k0 <= 40) {
+            for (let k = k0; k <= k1; k++) {
+              const v = k * step;
+              g.ticks.push(Math.abs(v) < step * 1e-6 ? 0 : v);
+            }
           }
         }
       }
-      // Purge des états d'axes disparus
+      // Purge des états d'axes réellement disparus — les clés des séries
+      // masquées sont conservées (réglage manuel 🔒 non perdu au masquage)
+      const validKeys = new Set(this.series.map((s) => this.axisKey(s)));
       for (const key of [...this.axisState.keys()]) {
-        if (!groups.has(key)) this.axisState.delete(key);
+        if (!validKeys.has(key)) this.axisState.delete(key);
       }
       for (const g of list) {
         g.color = g.series.length === 1 ? DW.seriesColor(g.series[0].colorIdx) : ink().muted;

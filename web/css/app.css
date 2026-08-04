@@ -354,7 +354,8 @@ button { font-family: var(--sans); }
   margin: 0; border-radius: 0; border: 0;
   display: flex; flex-direction: column;
 }
-.chart-card.fs .chart-body { flex: 1; height: auto; }
+.chart-card.fs .chart-body { flex: 1 1 0; height: auto; min-height: 0; }
+.chart-card.fs .chart-legend { flex: none; }
 body.has-fs { overflow: hidden; }
 
 /* Bandeau du mode « décaler une courbe » */
@@ -371,6 +372,8 @@ body.has-fs { overflow: hidden; }
   white-space: nowrap; max-width: 96%;
   overflow: hidden;
 }
+.chart-move .mv-txt { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.chart-move .btn { flex: none; }
 .chip.moving { border-color: var(--warn); }
 .chart-body canvas {
   width: 100%; height: 100%;
@@ -439,7 +442,7 @@ body.has-fs { overflow: hidden; }
 .chip.off .sw { background: transparent !important; border: 1.5px solid var(--faint); }
 
 .popmenu {
-  position: absolute; z-index: 90;
+  position: absolute; z-index: 200;   /* au-dessus du plein écran (140) */
   display: grid; gap: 2px;
   background: var(--panel);
   border: 1px solid var(--line); border-radius: 10px;
@@ -651,7 +654,6 @@ body.has-fs { overflow: hidden; }
   body { font-size: 14.5px; }
   .wrap { padding: 12px 20px 64px; }
   .charts-grid { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
-  .chart-body { height: 280px; }
   .modal-back { place-items: center; padding: 20px; }
   .modal { border-radius: 16px; }
   .chip-addr { max-width: 240px; }
