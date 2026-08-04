@@ -992,11 +992,10 @@
       root.appendChild(back);
     });
 
-    // Repli de la zone de configuration (mémorisé)
+    // Repli de la zone de configuration : recherche + actions d'onglet (mémorisé)
     const CFG_HIDDEN_KEY = 'diagweb.cfghidden.v1';
-    const topbar = document.querySelector('.topbar');
     function setCfgHidden(hidden) {
-      topbar.classList.toggle('cfg-hidden', hidden);
+      document.body.classList.toggle('cfg-hidden', hidden);
       const b = $('cfgToggle');
       b.textContent = hidden ? '⌄' : '⌃';
       b.title = hidden ? 'Afficher la zone de configuration' : 'Masquer la zone de configuration';
@@ -1004,7 +1003,7 @@
       hideSuggest();
     }
     $('cfgToggle').addEventListener('click', () => {
-      const hidden = !topbar.classList.contains('cfg-hidden');
+      const hidden = !document.body.classList.contains('cfg-hidden');
       setCfgHidden(hidden);
       try { window.localStorage.setItem(CFG_HIDDEN_KEY, hidden ? '1' : '0'); } catch (e) { /* stockage indisponible */ }
     });

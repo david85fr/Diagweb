@@ -623,9 +623,10 @@ button { font-family: var(--sans); }
     gap: 12px;
   }
   .searchrow .searchbox { grid-column: auto; }
-  .topbar.cfg-hidden { grid-template-columns: minmax(180px, 1fr) auto; grid-template-areas: "tabs icons"; }
+  body.cfg-hidden .topbar { grid-template-columns: minmax(180px, 1fr) auto; grid-template-areas: "tabs icons"; }
 }
-.topbar.cfg-hidden .searchrow { display: none; }
+body.cfg-hidden .searchrow { display: none; }
+body.cfg-hidden .tabActions { display: none; }
 @media (min-width: 1700px) {
   .charts-grid { grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); }
   .chart-body { height: 330px; }

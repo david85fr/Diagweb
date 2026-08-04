@@ -200,9 +200,11 @@ est transmise au serveur de diag, qui échantillonne le cœur en conséquence.
 - **Actions de l'onglet actif**, dans une rangée sous la barre d'onglets
   (elle défile avec le contenu) : + Graphique · Configs · Journal (point ⏺
   si journalisation active) · Figer/Reprendre.
-- **Repli de la zone de configuration** (recherche + cible + période +
-  Ajouter) via ⌃/⌄ ; l'état est mémorisé dans le navigateur. Replié, la
-  barre se réduit à la seule ligne des onglets (~63 px sur téléphone).
+- **Repli de la zone de configuration** via ⌃/⌄ : masque la recherche +
+  cible + période + Ajouter **et** la rangée d'actions de l'onglet
+  (+ Graphique / Configs / Journal / Figer) ; l'état est mémorisé dans le
+  navigateur. Replié, il ne reste que la ligne des onglets (~63 px sur
+  téléphone) et le contenu.
 - La barre reste **empilée** (onglets / zone de configuration) jusqu'à
   1100 px — y compris téléphone en paysage — et passe sur une seule ligne
   au-delà.
