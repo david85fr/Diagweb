@@ -631,9 +631,10 @@ button { font-family: var(--sans); }
     gap: 12px;
   }
   .searchrow .searchbox { grid-column: auto; }
-  .topbar.cfg-hidden { grid-template-columns: minmax(180px, 1fr) auto; grid-template-areas: "tabs icons"; }
+  body.cfg-hidden .topbar { grid-template-columns: minmax(180px, 1fr) auto; grid-template-areas: "tabs icons"; }
 }
-.topbar.cfg-hidden .searchrow { display: none; }
+body.cfg-hidden .searchrow { display: none; }
+body.cfg-hidden .tabActions { display: none; }
 @media (min-width: 1700px) {
   .charts-grid { grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); }
   .chart-body { height: 330px; }
@@ -659,7 +660,7 @@ button { font-family: var(--sans); }
     </div>
 
     <div class="topIcons">
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">9101aa6 · #18</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">75f7644 · #20</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
@@ -2846,11 +2847,10 @@ button { font-family: var(--sans); }
       root.appendChild(back);
     });
 
-    // Repli de la zone de configuration (mémorisé)
+    // Repli de la zone de configuration : recherche + actions d'onglet (mémorisé)
     const CFG_HIDDEN_KEY = 'diagweb.cfghidden.v1';
-    const topbar = document.querySelector('.topbar');
     function setCfgHidden(hidden) {
-      topbar.classList.toggle('cfg-hidden', hidden);
+      document.body.classList.toggle('cfg-hidden', hidden);
       const b = $('cfgToggle');
       b.textContent = hidden ? '⌄' : '⌃';
       b.title = hidden ? 'Afficher la zone de configuration' : 'Masquer la zone de configuration';
@@ -2858,7 +2858,7 @@ button { font-family: var(--sans); }
       hideSuggest();
     }
     $('cfgToggle').addEventListener('click', () => {
-      const hidden = !topbar.classList.contains('cfg-hidden');
+      const hidden = !document.body.classList.contains('cfg-hidden');
       setCfgHidden(hidden);
       try { window.localStorage.setItem(CFG_HIDDEN_KEY, hidden ? '1' : '0'); } catch (e) { /* stockage indisponible */ }
     });
