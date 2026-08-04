@@ -86,10 +86,29 @@ pour les familles PLC, normalisé en majuscules) :
 - Légende : pastille couleur, adresse, valeur vivante + unité, badge
   d'échelle « Én ». Un appui ouvre le menu de la courbe : masquer/afficher,
   **échelle dédiée**, retirer.
-- Curseur d'inspection : appui/glisser sur le tracé → ligne verticale,
-  marqueurs et info-bulle avec la valeur de chaque courbe à cet instant
-  (`t − x s`). Compatible pause (inspection d'une image figée).
-- Historique conservé : 330 s glissantes (10 Hz).
+- **Zoom temporel** : pincement à deux doigts sur le tracé, ou molette
+  (souris) ; fenêtre continue de 2 s à 5 min (le sélecteur affiche la
+  valeur personnalisée). En vue directe le zoom reste ancré au bord droit ;
+  en vue figée il est ancré sous les doigts/le curseur.
+- **Navigation dans l'historique** : glisser horizontal → la vue se fige à
+  l'instant choisi (borné par l'horizon de 330 s). Retour au temps réel
+  par le bouton superposé « ▶ Direct », le bouton pause du graphique, un
+  double-appui/double-clic, ou en ramenant la vue au bord droit. Les
+  graduations de temps restent relatives au bord direct (« -45 s »).
+- **Décalage vertical par courbe** : glisser verticalement en partant à
+  proximité (< 36 px) d'une courbe la décale (l'échelle de son axe suit).
+  Badge « Δ » sur sa pastille de légende, valeur du décalage dans le menu
+  de la pastille avec « Annuler le décalage ». Le décalage est conservé
+  dans les configurations (colonne `decalage` du CSV). Les valeurs
+  affichées (légende, curseur) restent les valeurs vraies, non décalées.
+- Curseur d'inspection : survol (souris) ou glisser vertical loin des
+  courbes → ligne verticale, marqueurs et info-bulle avec la valeur de
+  chaque courbe à cet instant (`t − x s`). **Appui bref (tactile)** :
+  épingle le curseur à l'instant visé (ligne accentuée) ; nouvel appui
+  dessus pour le retirer.
+- Historique conservé : 330 s glissantes.
+- Le canvas capte tous les gestes tactiles (`touch-action: none`) : le
+  défilement de la page se fait en dehors des tracés.
 
 ## 5. Multi-échelles (règles)
 
@@ -116,8 +135,10 @@ pour les familles PLC, normalisé en majuscules) :
 
 Configuration (une par onglet) : `{version: 1, table: [{addr, periodMs?}],
 charts: [{title, windowS, series: [{addr, axisMode: 'auto'|'solo', visible,
-periodMs?}]}]}`. `periodMs` absent = 10 ms. Le lecteur accepte aussi les
-entrées de tableau sous forme de simple chaîne (format initial).
+periodMs?, offsetY?}]}]}`. `periodMs` absent = 10 ms ; `offsetY` = décalage
+vertical de la courbe (unités de la variable, absent = 0). Le lecteur
+accepte aussi les entrées de tableau sous forme de simple chaîne (format
+initial).
 
 Session (navigateur) : `{version: 2, active, tabs: [{name, log: {enabled,
 dest}, data: <configuration v1>}]}` ; une session v1 (une seule

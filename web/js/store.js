@@ -112,17 +112,17 @@
     /** CSV d'une configuration (liste des variables + agencement). */
     configCsv(data) {
       const F = this.csvField;
-      const L = ['emplacement;graphique;fenetre_s;adresse;periode_ms;echelle;visible'];
+      const L = ['emplacement;graphique;fenetre_s;adresse;periode_ms;echelle;visible;decalage'];
       for (const e of data.table || []) {
         const addr = typeof e === 'string' ? e : e.addr;
         const p = (typeof e === 'object' && e.periodMs) || 10;
-        L.push(['tableau', '', '', F(addr), p, '', ''].join(';'));
+        L.push(['tableau', '', '', F(addr), p, '', '', ''].join(';'));
       }
       for (const c of data.charts || []) {
         for (const s of c.series || []) {
           L.push(['graphique', F(c.title || ''), c.windowS || '', F(s.addr),
             s.periodMs || 10, s.axisMode === 'solo' ? 'dediee' : 'auto',
-            s.visible === false ? 0 : 1].join(';'));
+            s.visible === false ? 0 : 1, s.offsetY || ''].join(';'));
         }
       }
       return L.join('\r\n') + '\r\n';

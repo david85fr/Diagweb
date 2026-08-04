@@ -494,7 +494,7 @@
       if (!chart) break;
       for (const s of c.series || []) {
         const p = DW.parseAddr(s.addr);
-        if (p.ok) chart.addSeries(p.addr, { axisMode: s.axisMode, visible: s.visible !== false, periodMs: s.periodMs });
+        if (p.ok) chart.addSeries(p.addr, { axisMode: s.axisMode, visible: s.visible !== false, periodMs: s.periodMs, offsetY: s.offsetY });
       }
     }
     refreshTargets();
