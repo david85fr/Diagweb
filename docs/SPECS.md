@@ -79,36 +79,55 @@ pour les familles PLC, normalisé en majuscules) :
 ## 4. Graphiques
 
 - Nombre de graphiques au choix (max 8), grille responsive : 1 colonne sur
-  téléphone, `auto-fit minmax(380px)` au-delà, `minmax(480px)` ≥ 1700 px.
-- Par graphique : titre éditable, fenêtre de temps (15 s / 30 s / 1 min /
-  2 min / 5 min), pause locale (+ pause globale dans la barre du haut),
-  fermeture. Max 8 courbes par graphique (palette fixe).
+  téléphone, `auto-fit minmax(380px)` au-delà, `minmax(500px)` ≥ 1700 px,
+  `minmax(620px)` ≥ 2300 px ; conteneur jusqu'à 2300 px (écrans 32″).
+- Par graphique : titre éditable, fenêtre de temps (préréglages 15 s → 5 min
+  + valeur continue par zoom), pause locale (+ pause de l'onglet), menu ⋮
+  (échelles automatiques, taille, plein écran, fermeture). Max 8 courbes
+  par graphique (palette fixe).
+- **Tailles** : hauteur adaptée à l'écran (`32vh`, bornée 220–420 px) ;
+  cycle **M → L → XL** par graphique via le menu ⋮ (L ≈ 48vh, XL ≈ 56vh et
+  pleine largeur de la grille) — mémorisé dans la configuration
+  (`heightMode`). **Plein écran** par graphique (menu ⋮, sortie par Échap
+  ou le menu).
+- Sur canvas étroit (< 520 px) : règles d'axes compactes (38 px), 2 règles
+  visibles au maximum (les groupes suivants gardent leur mise à l'échelle,
+  badge « É· ») ; ≥ 1100 px : règles de 50 px, police 11 px.
 - Légende : pastille couleur, adresse, valeur vivante + unité, badge
   d'échelle « Én ». Un appui ouvre le menu de la courbe : masquer/afficher,
   **échelle dédiée**, retirer.
-- **Zoom temporel** : pincement à deux doigts sur le tracé, ou molette
-  (souris) ; fenêtre continue de 2 s à 5 min (le sélecteur affiche la
-  valeur personnalisée). En vue directe le zoom reste ancré au bord droit ;
-  en vue figée il est ancré sous les doigts/le curseur.
-- **Navigation dans l'historique** : glisser horizontal → la vue se fige à
-  l'instant choisi (borné par l'horizon de 330 s). Retour au temps réel
-  par le bouton superposé « ▶ Direct », le bouton pause du graphique, un
-  double-appui/double-clic, ou en ramenant la vue au bord droit. Les
-  graduations de temps restent relatives au bord direct (« -45 s »).
-- **Décalage vertical par courbe** : glisser verticalement en partant à
-  proximité (< 36 px) d'une courbe la décale (l'échelle de son axe suit).
-  Badge « Δ » sur sa pastille de légende, valeur du décalage dans le menu
-  de la pastille avec « Annuler le décalage ». Le décalage est conservé
-  dans les configurations (colonne `decalage` du CSV). Les valeurs
-  affichées (légende, curseur) restent les valeurs vraies, non décalées.
-- Curseur d'inspection : survol (souris) ou glisser vertical loin des
-  courbes → ligne verticale, marqueurs et info-bulle avec la valeur de
-  chaque courbe à cet instant (`t − x s`). **Appui bref (tactile)** :
-  épingle le curseur à l'instant visé (ligne accentuée) ; nouvel appui
-  dessus pour le retirer.
-- Historique conservé : 330 s glissantes.
-- Le canvas capte tous les gestes tactiles (`touch-action: none`) : le
-  défilement de la page se fait en dehors des tracés.
+Gestes **par zone**, prévisibles (canvas en `touch-action: none` — le
+défilement de la page se fait en dehors des tracés) :
+
+- **Sur le tracé** :
+  - glisser **horizontal** = navigation dans l'historique (vue figée à
+    l'instant choisi, borné par l'horizon de 330 s) ; retour au temps réel
+    par « ▶ Direct » superposé, le bouton pause, un double-appui/double-clic
+    sur le tracé, ou en ramenant la vue au bord droit ;
+  - glisser **vertical** = déplacement de l'**échelle principale** (É1),
+    qui passe en manuel 🔒 ;
+  - **pincement** à deux doigts ou **molette** = zoom temporel continu
+    2 s → 5 min (sélecteur affichant la valeur personnalisée) ; ancré au
+    bord droit en vue directe, sous le geste en vue figée ;
+  - **appui bref** = épingle un curseur de mesure à l'instant visé (ligne
+    accentuée, valeurs vraies de chaque courbe, `t − x s`) ; nouvel appui
+    dessus pour le retirer ; survol souris = curseur transitoire.
+- **Sur la règle d'un axe** :
+  - glisser = déplacement de cette échelle (passe en manuel 🔒) ;
+  - molette = zoom de cette échelle, ancré sous le curseur (manuel 🔒) ;
+  - double-appui/double-clic = retour de cet axe en automatique.
+- **Décalage vertical par courbe** : mode explicite via le menu de sa
+  pastille (« Décaler verticalement ») → bandeau en surimpression, la
+  courbe s'épaissit, glisser verticalement, « OK » pour terminer. Badge
+  « Δ » sur la pastille, « Annuler le décalage » dans son menu. Conservé
+  dans les configurations (`offsetY`, colonne `decalage` du CSV). Les
+  valeurs affichées restent les valeurs vraies, non décalées.
+
+Échelles automatiques **stabilisées** : extension immédiate quand les
+données sortent de la plage ; rétraction seulement si les données occupent
+moins de 55 % de l'échelle pendant plus de 2 s ; transitions lissées.
+« Échelles automatiques » du menu ⋮ ré-arme tous les axes du graphique.
+Historique conservé : 330 s glissantes.
 
 ## 5. Multi-échelles (règles)
 

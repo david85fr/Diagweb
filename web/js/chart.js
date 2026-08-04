@@ -1,18 +1,22 @@
 /* Diagweb — moteur de graphiques temps réel (canvas).
  *
- * Multi-échelles : les courbes sont regroupées par unité (ou isolées via
- * « échelle dédiée ») ; chaque groupe possède son propre axe Y, tracé en
- * alternance à gauche / à droite et coloré comme sa courbe quand il n'en
- * porte qu'une. Au-delà de 4 axes, les groupes restants sont mis à
- * l'échelle indépendamment mais sans règle graduée visible.
+ * Multi-échelles : courbes regroupées par unité (ou isolées via « échelle
+ * dédiée ») ; chaque groupe possède son axe Y, tracé en alternance
+ * gauche/droite, coloré comme sa courbe quand il n'en porte qu'une.
  *
- * Interactions (par graphique) :
- *  - glisser horizontal : navigation dans l'historique (retour « Direct »
- *    par le bouton superposé, le bouton pause ou un double-appui) ;
- *  - pincement à deux doigts / molette : zoom temporel (2 s à 5 min) ;
- *  - glisser vertical en partant près d'une courbe : décalage vertical de
- *    cette courbe (remise à zéro via le menu de sa pastille de légende) ;
- *  - appui bref : épingle un curseur de mesure ; survol souris : curseur.
+ * Échelles : automatiques et stabilisées (extension immédiate, rétraction
+ * différée de 2 s, transitions lissées) ou manuelles (🔒) après un geste
+ * sur la règle de l'axe. Retour auto : double-appui sur la règle ou menu ⋮.
+ *
+ * Gestes — par zone, prévisibles :
+ *   tracé   : glisser ↔ = historique · glisser ↕ = déplacer l'échelle
+ *             principale · pincement / molette = zoom temporel · appui
+ *             bref = curseur épinglé · double-appui = retour Direct ;
+ *   règle   : glisser = déplacer cette échelle · molette = zoomer cette
+ *             échelle · double-appui = re-automatique ;
+ *   légende : menu par courbe (masquer, échelle dédiée, décaler, retirer).
+ * Décalage d'une courbe : mode explicite (bandeau) via le menu de sa
+ * pastille — glisser verticalement, terminer par OK.
  */
 (function () {
   "use strict";
@@ -21,7 +25,9 @@
 
   const MIN_WINDOW_S = 2;
   const MAX_WINDOW_S = 300;
-  const GRAB_PX = 36;          // rayon de prise d'une courbe (décalage)
+  const SHRINK_DELAY_S = 2;      // hystérésis de rétraction des échelles
+  const SHRINK_OCCUPANCY = 0.55; // rétraction si les données occupent < 55 %
+  const HEIGHT_MODES = ['M', 'L', 'XL'];
 
   // ---------- Formatage ------------------------------------------------
   DW.fmtVal = function (v, meta) {
@@ -45,23 +51,21 @@
     if (a === 0) return '0';
     return String(Math.round(v * 1000) / 1000);
   };
-  /** Graduation d'axe : décimales dérivées du pas pour éviter les doublons. */
   function fmtAxisTick(v, step) {
     if (Math.abs(v) >= 10000) {
       const kStep = step / 1000;
-      const dec = Math.max(0, -Math.floor(Math.log10(kStep)));
+      const dec = Math.max(0, -Math.floor(Math.log10(Math.max(kStep, 1e-9))));
       return (v / 1000).toFixed(Math.min(dec, 2)) + 'k';
     }
-    const dec = step >= 1 ? 0 : Math.max(0, -Math.floor(Math.log10(step)));
+    const dec = step >= 1 ? 0 : Math.max(0, -Math.floor(Math.log10(Math.max(step, 1e-9))));
     return v.toFixed(Math.min(dec, 3));
   }
   function fmtTimeTick(negS, windowS) {
     if (Math.abs(negS) < 1e-9) return '0';
-    const sign = negS > 0 ? '-' : '+';
     const a = Math.abs(negS);
-    if (windowS <= 90) return sign + (a < 10 && a % 1 ? a.toFixed(1) : Math.round(a)) + ' s';
+    if (windowS <= 90) return '-' + (a < 10 && a % 1 ? a.toFixed(1) : Math.round(a)) + ' s';
     const m = Math.floor(a / 60), s = Math.round(a % 60);
-    return sign + m + ':' + String(s).padStart(2, '0');
+    return '-' + m + ':' + String(s).padStart(2, '0');
   }
   function fmtWindow(w) {
     if (w < 60) return (w < 10 && w % 1 ? w.toFixed(1) : Math.round(w)) + ' s';
@@ -78,6 +82,7 @@
     for (const s of TIME_STEPS) if (s >= rough) return s;
     return 300;
   }
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
   // ---------- Encre du thème (lue depuis les variables CSS) -----------
   let inkCache = null;
@@ -97,10 +102,9 @@
     return inkCache;
   }
 
-  const AXIS_W = 44;               // largeur d'une règle d'axe (px)
   const MAX_AXES = 4;
 
-  // ---------- Popover de légende (partagé) ----------------------------
+  // ---------- Popover partagé (légende & menu ⋮) ----------------------
   let popEl = null, popOwner = null;
   function closePopover() {
     if (popEl) { popEl.remove(); popEl = null; popOwner = null; }
@@ -108,6 +112,27 @@
   document.addEventListener('pointerdown', (e) => {
     if (popEl && !popEl.contains(e.target)) closePopover();
   }, true);
+  function openPopover(owner, anchorEl, build) {
+    if (popOwner === owner) { closePopover(); return; }
+    closePopover();
+    popOwner = owner;
+    popEl = document.createElement('div');
+    popEl.className = 'popmenu';
+    build((label, fn, cls) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = label;
+      if (cls) b.classList.add(cls);
+      b.addEventListener('click', () => { closePopover(); fn(); });
+      popEl.appendChild(b);
+      return b;
+    });
+    document.body.appendChild(popEl);
+    const r = anchorEl.getBoundingClientRect();
+    const pw = popEl.offsetWidth;
+    popEl.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pw - 8)) + 'px';
+    popEl.style.top = (r.bottom + 6 + window.scrollY) + 'px';
+  }
 
   // ---------- Classe Chart --------------------------------------------
   let uid = 0;
@@ -121,17 +146,22 @@
       opts = opts || {};
       this.app = app;
       this.id = 'c' + (++uid);
-      this.windowS = Math.min(MAX_WINDOW_S, Math.max(MIN_WINDOW_S, opts.windowS || CFG.defaultWindowS));
+      this.windowS = clamp(opts.windowS || CFG.defaultWindowS, MIN_WINDOW_S, MAX_WINDOW_S);
       this.viewEnd = null;         // null = direct ; sinon temps absolu figé
       this.pinT = null;            // curseur épinglé (temps absolu)
-      this.cursor = null;          // curseur transitoire {x} (survol / glisser)
+      this.cursor = null;          // curseur transitoire {x} (survol souris)
       this.series = [];            // {addr, meta, colorIdx, axisMode, visible, periodMs, offsetY}
+      this.heightMode = HEIGHT_MODES.includes(opts.heightMode) ? opts.heightMode : 'M';
+      this.fullscreen = false;
+      this.moveSeries = null;      // adresse en cours de décalage (mode explicite)
+      this.axisState = new Map();  // clé de groupe -> état d'échelle
       this._cw = 0; this._ch = 0; this._dpr = 0;
-      this._ptrs = new Map();      // pointeurs actifs
+      this._ptrs = new Map();
       this._gesture = null;
-      this._plot = null;           // géométrie du dernier rendu
-      this._axisScale = {};        // addr -> unités par pixel (dernier rendu)
-      this._lastTap = 0; this._lastTapX = 0;
+      this._plot = null;
+      this._bands = [];            // zones des règles d'axes (hit-test)
+      this._yFns = {};
+      this._lastTap = 0; this._lastTapX = 0; this._lastTapBand = null;
 
       this.root = document.createElement('section');
       this.root.className = 'card chart-card';
@@ -141,13 +171,14 @@
           '<div class="chart-tools">' +
             '<select class="chart-window" title="Fenêtre de temps" aria-label="Fenêtre de temps"></select>' +
             '<button class="iconbtn chart-pause" type="button" title="Figer / reprendre">⏸</button>' +
-            '<button class="iconbtn chart-close" type="button" title="Fermer le graphique">✕</button>' +
+            '<button class="iconbtn chart-more" type="button" title="Options du graphique">⋮</button>' +
           '</div>' +
         '</header>' +
         '<div class="chart-body">' +
           '<canvas aria-label="Courbes du graphique"></canvas>' +
           '<div class="chart-tip hide"></div>' +
           '<button class="chart-live hide" type="button">▶ Direct</button>' +
+          '<div class="chart-move hide"><span class="mv-txt"></span><button class="btn sm" type="button">OK</button></div>' +
           '<div class="chart-hint">Ajoutez une variable via la barre de recherche, cible « ' +
             '<b class="hint-name"></b> ».</div>' +
         '</div>' +
@@ -163,6 +194,7 @@
       this.winSel = this.root.querySelector('.chart-window');
       this.pauseBtn = this.root.querySelector('.chart-pause');
       this.liveBtn = this.root.querySelector('.chart-live');
+      this.moveEl = this.root.querySelector('.chart-move');
       this._customOpt = null;
 
       for (const w of CFG.windows) {
@@ -172,10 +204,10 @@
         this.winSel.appendChild(o);
       }
       this.syncWinSel();
+      this.applyHeightMode();
 
       this.root.querySelector('.hint-name').textContent = this.titleEl.value;
 
-      // Événements de la barre du graphique
       this.titleEl.addEventListener('change', () => {
         this.root.querySelector('.hint-name').textContent = this.title;
         app.onChange();
@@ -187,7 +219,12 @@
       });
       this.pauseBtn.addEventListener('click', () => this.setPaused(this.viewEnd === null));
       this.liveBtn.addEventListener('click', () => this.goLive());
-      this.root.querySelector('.chart-close').addEventListener('click', () => app.removeChart(this));
+      this.root.querySelector('.chart-more').addEventListener('click', (e) =>
+        this.openChartMenu(e.currentTarget));
+      this.moveEl.querySelector('button').addEventListener('click', () => this.endMoveMode());
+
+      this._escHandler = (e) => { if (e.key === 'Escape' && this.fullscreen) this.setFullscreen(false); };
+      document.addEventListener('keydown', this._escHandler);
 
       this.bindCanvasGestures();
     }
@@ -227,13 +264,61 @@
       }
     }
 
-    setWindow(w, silent) {
-      this.windowS = Math.min(MAX_WINDOW_S, Math.max(MIN_WINDOW_S, w));
-      this.syncWinSel();
-      if (!silent) this.app.onChange();
+    // ---------- Taille & plein écran ------------------------------------
+    applyHeightMode() {
+      this.root.classList.toggle('size-L', this.heightMode === 'L');
+      this.root.classList.toggle('size-XL', this.heightMode === 'XL');
+    }
+    cycleHeight() {
+      const i = HEIGHT_MODES.indexOf(this.heightMode);
+      this.heightMode = HEIGHT_MODES[(i + 1) % HEIGHT_MODES.length];
+      this.applyHeightMode();
+      this.app.onChange();
+    }
+    setFullscreen(on) {
+      this.fullscreen = on;
+      this.root.classList.toggle('fs', on);
+      document.body.classList.toggle('has-fs', on);
     }
 
-    // ---------- Gestes sur le canvas ------------------------------------
+    openChartMenu(anchor) {
+      openPopover(this, anchor, (mk) => {
+        mk('Échelles automatiques', () => this.resetAxes());
+        const next = HEIGHT_MODES[(HEIGHT_MODES.indexOf(this.heightMode) + 1) % HEIGHT_MODES.length];
+        mk('Taille : ' + this.heightMode + ' → ' + next +
+           (next === 'XL' ? ' (pleine largeur)' : ''), () => this.cycleHeight());
+        mk(this.fullscreen ? 'Quitter le plein écran' : 'Plein écran', () =>
+          this.setFullscreen(!this.fullscreen));
+        mk('Fermer le graphique', () => {
+          if (this.fullscreen) this.setFullscreen(false);
+          this.app.removeChart(this);
+        }, 'danger');
+      });
+    }
+
+    resetAxes() {
+      for (const st of this.axisState.values()) { st.mode = 'auto'; st.snap = true; }
+    }
+
+    // ---------- Mode décalage d'une courbe ------------------------------
+    startMoveMode(s) {
+      this.moveSeries = s.addr;
+      this.moveEl.querySelector('.mv-txt').textContent = '↕ Glissez pour décaler ' + s.addr;
+      this.moveEl.classList.remove('hide');
+    }
+    endMoveMode() {
+      this.moveSeries = null;
+      this.moveEl.classList.add('hide');
+      this.rebuildLegend();
+      this.app.onChange();
+    }
+
+    // ---------- Gestes ---------------------------------------------------
+    bandAt(x) {
+      for (const b of this._bands) if (x >= b.x0 && x <= b.x1) return b;
+      return null;
+    }
+
     bindCanvasGestures() {
       const cv = this.canvas;
 
@@ -252,28 +337,40 @@
             anchorX: midX,
           };
         } else if (this._ptrs.size === 1) {
-          this._gesture = null;   // décidé au premier mouvement
+          const band = this.bandAt(e.offsetX);
+          if (this.moveSeries) {
+            const s = this.series.find((x) => x.addr === this.moveSeries);
+            this._gesture = s ? {
+              mode: 'offset', series: s,
+              baseOffset: s.offsetY || 0, baseY: e.offsetY,
+              scale: this._axisScale[s.addr] || 0,
+            } : null;
+          } else if (band) {
+            this._gesture = this.makeYGesture(band.key, e.offsetY);
+          } else {
+            this._gesture = null;   // décidé au premier mouvement
+          }
         } else {
           this._gesture = { mode: 'dead' };
         }
       });
 
       cv.addEventListener('pointermove', (e) => {
-        // Survol souris : curseur transitoire
         if (e.pointerType === 'mouse' && e.buttons === 0) {
-          this.cursor = { x: e.offsetX };
+          if (!this.bandAt(e.offsetX)) this.cursor = { x: e.offsetX };
+          else this.cursor = null;
           return;
         }
         const p = this._ptrs.get(e.pointerId);
         if (!p) return;
         p.x = e.offsetX; p.y = e.offsetY;
 
-        if (this._gesture && this._gesture.mode === 'pinch') {
+        const g = this._gesture;
+        if (g && g.mode === 'pinch') {
           if (this._ptrs.size < 2) return;
           const [a, b] = [...this._ptrs.values()];
           const dist = Math.max(12, Math.hypot(a.x - b.x, a.y - b.y));
-          const g = this._gesture;
-          const w = Math.min(MAX_WINDOW_S, Math.max(MIN_WINDOW_S, g.baseWindow * g.baseDist / dist));
+          const w = clamp(g.baseWindow * g.baseDist / dist, MIN_WINDOW_S, MAX_WINDOW_S);
           this.windowS = w;
           if (g.anchorT !== null && this._plot) {
             const pl = this._plot;
@@ -283,9 +380,9 @@
           this.syncWinSel();
           return;
         }
-        if (this._gesture && this._gesture.mode === 'dead') return;
+        if (g && g.mode === 'dead') return;
 
-        if (!this._gesture) {
+        if (!g) {
           const dx = p.x - p.x0, dy = p.y - p.y0;
           if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
           if (Math.abs(dx) >= Math.abs(dy)) {
@@ -295,33 +392,27 @@
               baseX: p.x0,
             };
           } else {
-            const hit = this.nearestSeries(p.x0, p.y0);
-            if (hit) {
-              this._gesture = {
-                mode: 'offset',
-                series: hit,
-                baseOffset: hit.offsetY || 0,
-                baseY: p.y0,
-                scale: this._axisScale[hit.addr] || 0,
-              };
-            } else {
-              this._gesture = { mode: 'cursor' };
-            }
+            // Glisser vertical sur le tracé : déplace l'échelle principale
+            const primary = this._plot && this._plot.primaryKey;
+            this._gesture = primary ? this.makeYGesture(primary, p.y0) : { mode: 'dead' };
           }
         }
-        const g = this._gesture;
-        if (g.mode === 'pan' && this._plot) {
-          const dt = (g.baseX - p.x) * (this.windowS / this._plot.pw);
-          this.viewEnd = g.baseEnd + dt;
+        const g2 = this._gesture;
+        if (g2.mode === 'pan' && this._plot) {
+          const dt = (g2.baseX - p.x) * (this.windowS / this._plot.pw);
+          this.viewEnd = g2.baseEnd + dt;
           this.clampView();
-          // Ramené au bord direct → on reprend le suivi temps réel
           if (this.viewEnd !== null && DW.source.now() - this.viewEnd < this.windowS * 0.01) this.goLive();
           else this.syncPauseUi();
-        } else if (g.mode === 'offset' && g.scale) {
-          g.series.offsetY = g.baseOffset + (g.baseY - p.y) * g.scale;
-          this._offsetDirty = true;
-        } else if (g.mode === 'cursor') {
-          this.cursor = { x: p.x };
+        } else if (g2.mode === 'offset' && g2.scale) {
+          g2.series.offsetY = g2.baseOffset + (g2.baseY - p.y) * g2.scale;
+        } else if (g2.mode === 'yaxis') {
+          const st = this.axisState.get(g2.key);
+          if (st) {
+            const dv = (p.y - g2.baseY) * g2.scale;
+            st.mode = 'manual';
+            st.cur = { min: g2.baseMin + dv, max: g2.baseMax + dv };
+          }
         }
       });
 
@@ -330,26 +421,30 @@
         this._ptrs.delete(e.pointerId);
         const g = this._gesture;
         if (this._ptrs.size) { this._gesture = { mode: 'dead' }; return; }
-        if (g && g.mode === 'offset') {
-          this._gesture = null;
-          if (this._offsetDirty) { this._offsetDirty = false; this.rebuildLegend(); this.app.onChange(); }
-          return;
-        }
-        // Appui bref sans mouvement : épingle / retire le curseur ; double-appui : direct
-        if (!g && p && Math.abs(p.x - p.x0) < 8 && Math.abs(p.y - p.y0) < 8 && e.pointerType !== 'mouse') {
+        this._gesture = null;
+        if (g && g.mode === 'offset') { this.rebuildLegend(); this.app.onChange(); return; }
+        // Appui bref sans mouvement
+        if (p && Math.abs(p.x - p.x0) < 8 && Math.abs(p.y - p.y0) < 8 && e.pointerType !== 'mouse') {
+          const band = this.bandAt(p.x0);
           const now = performance.now();
-          if (now - this._lastTap < 320 && Math.abs(p.x - this._lastTapX) < 40) {
+          const isDouble = now - this._lastTap < 320 && Math.abs(p.x - this._lastTapX) < 40;
+          if (band) {
+            if (isDouble && this._lastTapBand === band.key) {
+              const st = this.axisState.get(band.key);
+              if (st) { st.mode = 'auto'; st.snap = true; }
+            }
+            this._lastTapBand = band.key;
+          } else if (isDouble) {
             this.pinT = null;
             this.goLive();
-          } else if (this.pinT !== null && this._plot && Math.abs(this.xAt(this.pinT) - p.x) < 24) {
-            this.pinT = null;
+            this._lastTapBand = null;
           } else {
-            this.pinT = this.timeAt(p.x);
+            if (this.pinT !== null && this._plot && Math.abs(this.xAt(this.pinT) - p.x) < 24) this.pinT = null;
+            else this.pinT = this.timeAt(p.x);
+            this._lastTapBand = null;
           }
           this._lastTap = now; this._lastTapX = p.x;
         }
-        if (g && g.mode === 'cursor') this.cursor = null;
-        this._gesture = null;
       };
       cv.addEventListener('pointerup', end);
       cv.addEventListener('pointercancel', end);
@@ -357,12 +452,23 @@
         if (e.pointerType === 'mouse' && e.buttons === 0) this.cursor = null;
       });
 
-      // Molette : zoom temporel (ancré au curseur quand la vue est figée)
       cv.addEventListener('wheel', (e) => {
         e.preventDefault();
         const factor = Math.pow(1.25, e.deltaY / 100);
+        const band = this.bandAt(e.offsetX);
+        if (band) {
+          // Zoom de l'échelle de cet axe, ancré sous le curseur
+          const st = this.axisState.get(band.key);
+          if (!st || !this._plot) return;
+          const pl = this._plot;
+          const span = st.cur.max - st.cur.min;
+          const v0 = st.cur.min + (1 - (e.offsetY - pl.mT) / pl.ph) * span;
+          st.mode = 'manual';
+          st.cur = { min: v0 - (v0 - st.cur.min) * factor, max: v0 + (st.cur.max - v0) * factor };
+          return;
+        }
         const anchorT = this.viewEnd === null ? null : this.timeAt(e.offsetX);
-        const w = Math.min(MAX_WINDOW_S, Math.max(MIN_WINDOW_S, this.windowS * factor));
+        const w = clamp(this.windowS * factor, MIN_WINDOW_S, MAX_WINDOW_S);
         this.windowS = w;
         if (anchorT !== null && this._plot) {
           const pl = this._plot;
@@ -372,7 +478,27 @@
         this.syncWinSel();
       }, { passive: false });
 
-      cv.addEventListener('dblclick', () => { this.pinT = null; this.goLive(); });
+      cv.addEventListener('dblclick', (e) => {
+        const band = this.bandAt(e.offsetX);
+        if (band) {
+          const st = this.axisState.get(band.key);
+          if (st) { st.mode = 'auto'; st.snap = true; }
+        } else {
+          this.pinT = null;
+          this.goLive();
+        }
+      });
+    }
+
+    makeYGesture(key, y0) {
+      const st = this.axisState.get(key);
+      if (!st || !this._plot) return { mode: 'dead' };
+      return {
+        mode: 'yaxis', key,
+        baseY: y0,
+        baseMin: st.cur.min, baseMax: st.cur.max,
+        scale: (st.cur.max - st.cur.min) / this._plot.ph,
+      };
     }
 
     clampView() {
@@ -393,25 +519,7 @@
       return pl.mL + ((t - pl.tStart) / (pl.tEnd - pl.tStart)) * pl.pw;
     }
 
-    /** Courbe visible la plus proche du point (px), dans un rayon GRAB_PX. */
-    nearestSeries(x, y) {
-      const pl = this._plot;
-      if (!pl) return null;
-      const t = this.timeAt(x);
-      let best = null, bestD = GRAB_PX;
-      for (const s of this.series) {
-        if (!s.visible) continue;
-        const yFn = this._yFns && this._yFns[s.addr];
-        if (!yFn) continue;
-        const d = DW.source.data(s.addr);
-        const i = nearestIdx(d.ts, t);
-        if (i < 0) continue;
-        const dy = Math.abs(yFn(d.vs[i]) - y);
-        if (dy < bestD) { bestD = dy; best = s; }
-      }
-      return best;
-    }
-
+    // ---------- Courbes --------------------------------------------------
     hasSeries(addr) { return this.series.some((s) => s.addr === addr); }
 
     addSeries(addr, opts) {
@@ -422,7 +530,6 @@
       }
       const meta = this.app.acquire(addr, opts.periodMs);
       if (!meta) return { ok: false, error: 'Adresse invalide : ' + addr };
-      // Attribution de couleur : plus petit index libre (ordre fixe)
       const used = new Set(this.series.map((s) => s.colorIdx));
       let colorIdx = 0;
       while (used.has(colorIdx)) colorIdx++;
@@ -440,6 +547,7 @@
     removeSeries(addr) {
       const i = this.series.findIndex((s) => s.addr === addr);
       if (i < 0) return;
+      if (this.moveSeries === addr) this.endMoveMode();
       this.app.release(addr);
       this.series.splice(i, 1);
       this.rebuildLegend();
@@ -453,7 +561,8 @@
       for (const s of this.series) {
         const chip = document.createElement('button');
         chip.type = 'button';
-        chip.className = 'chip' + (s.visible ? '' : ' off');
+        chip.className = 'chip' + (s.visible ? '' : ' off') +
+          (this.moveSeries === s.addr ? ' moving' : '');
         chip.setAttribute('role', 'listitem');
         chip.dataset.addr = s.addr;
         chip.innerHTML =
@@ -467,51 +576,34 @@
         chip.title = s.meta.label + (s.meta.unit ? ' (' + s.meta.unit + ')' : '') +
           ' · rafr. ' + (s.periodMs || DW.CONFIG.defaultPeriodMs) + ' ms' +
           (s.offsetY ? ' · décalage ' + DW.fmtVal(s.offsetY, s.meta) : '');
-        chip.addEventListener('click', (e) => this.openMenu(s, chip, e));
+        chip.addEventListener('click', () => this.openSeriesMenu(s, chip));
         this.legendEl.appendChild(chip);
       }
       this.hintEl.classList.toggle('hide', this.series.length > 0);
     }
 
-    openMenu(s, chip) {
-      if (popOwner === s) { closePopover(); return; }
-      closePopover();
-      popOwner = s;
-      popEl = document.createElement('div');
-      popEl.className = 'popmenu';
-      const mk = (label, fn) => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.innerHTML = label;
-        b.addEventListener('click', () => { closePopover(); fn(); });
-        popEl.appendChild(b);
-        return b;
-      };
-      mk(s.visible ? 'Masquer la courbe' : 'Afficher la courbe', () => {
-        s.visible = !s.visible;
-        this.rebuildLegend();
-        this.app.onChange();
-      });
-      mk((s.axisMode === 'solo' ? '✓ ' : '') + 'Échelle dédiée', () => {
-        s.axisMode = s.axisMode === 'solo' ? 'auto' : 'solo';
-        this.app.onChange();
-        this.app.toast(s.addr + ' : ' + (s.axisMode === 'solo' ? 'échelle dédiée' : 'échelle partagée par unité') + '.');
-      });
-      if (s.offsetY) {
-        mk('Annuler le décalage (Δ ' + DW.fmtVal(s.offsetY, s.meta) + ')', () => {
-          s.offsetY = 0;
+    openSeriesMenu(s, chip) {
+      openPopover(s, chip, (mk) => {
+        mk(s.visible ? 'Masquer la courbe' : 'Afficher la courbe', () => {
+          s.visible = !s.visible;
           this.rebuildLegend();
           this.app.onChange();
         });
-      }
-      const del = mk('Retirer du graphique', () => this.removeSeries(s.addr));
-      del.classList.add('danger');
-      document.body.appendChild(popEl);
-      const r = chip.getBoundingClientRect();
-      const pw = popEl.offsetWidth;
-      let x = Math.min(r.left, window.innerWidth - pw - 8);
-      popEl.style.left = Math.max(8, x) + 'px';
-      popEl.style.top = (r.bottom + 6 + window.scrollY) + 'px';
+        mk((s.axisMode === 'solo' ? '✓ ' : '') + 'Échelle dédiée', () => {
+          s.axisMode = s.axisMode === 'solo' ? 'auto' : 'solo';
+          this.app.onChange();
+          this.app.toast(s.addr + ' : ' + (s.axisMode === 'solo' ? 'échelle dédiée' : 'échelle partagée par unité') + '.');
+        });
+        mk('Décaler verticalement (glisser)', () => this.startMoveMode(s));
+        if (s.offsetY) {
+          mk('Annuler le décalage (Δ ' + DW.fmtVal(s.offsetY, s.meta) + ')', () => {
+            s.offsetY = 0;
+            this.rebuildLegend();
+            this.app.onChange();
+          });
+        }
+        mk('Retirer du graphique', () => this.removeSeries(s.addr), 'danger');
+      });
     }
 
     /** Mise à jour des valeurs vivantes de la légende (~5 Hz). */
@@ -536,6 +628,17 @@
       return s.meta.kind === 'word' ? 'mot' : 'sans-unité';
     }
 
+    /** Ajustement « nice » d'une plage de données (avec marge). */
+    fitRange(min, max) {
+      if (!isFinite(min)) { min = 0; max = 1; }
+      if (min === max) {
+        const e = Math.max(Math.abs(min) * 0.05, 0.5);
+        min -= e; max += e;
+      }
+      const pad = (max - min) * 0.07;
+      return { min: min - pad, max: max + pad };
+    }
+
     computeGroups(tStart, tEnd) {
       const groups = new Map();
       for (const s of this.series) {
@@ -547,7 +650,7 @@
             key,
             label: s.meta.kind === 'bit' && s.axisMode !== 'solo' ? 'TOR'
               : (s.meta.unit || (s.meta.kind === 'word' ? 'mot' : '')),
-            series: [], min: Infinity, max: -Infinity, isBool: s.meta.kind === 'bit',
+            series: [], dMin: Infinity, dMax: -Infinity, isBool: s.meta.kind === 'bit',
           };
           groups.set(key, g);
         }
@@ -555,7 +658,10 @@
         if (g.isBool && s.meta.kind !== 'bit') g.isBool = false;
       }
       const list = [...groups.values()];
+      const nowMs = performance.now();
+
       for (const g of list) {
+        // Plage des données (décalages inclus)
         if (g.isBool) {
           let lo = 0, hi = 0;
           for (const s of g.series) {
@@ -563,36 +669,91 @@
             if (off < lo) lo = off;
             if (off > hi) hi = off;
           }
-          g.min = -0.07 + lo; g.max = 1.07 + hi;
-          g.ticks = [0, 1];
-          g.tickStep = 1;
-          continue;
-        }
-        for (const s of g.series) {
-          const off = s.offsetY || 0;
-          const d = DW.source.data(s.addr);
-          const [i0, i1] = rangeIdx(d.ts, tStart, tEnd);
-          for (let i = i0; i <= i1; i++) {
-            const v = d.vs[i] + off;
-            if (v < g.min) g.min = v;
-            if (v > g.max) g.max = v;
+          g.dMin = -0.07 + lo; g.dMax = 1.07 + hi;
+        } else {
+          for (const s of g.series) {
+            const off = s.offsetY || 0;
+            const d = DW.source.data(s.addr);
+            const [i0, i1] = rangeIdx(d.ts, tStart, tEnd);
+            for (let i = i0; i <= i1; i++) {
+              const v = d.vs[i] + off;
+              if (v < g.dMin) g.dMin = v;
+              if (v > g.dMax) g.dMax = v;
+            }
           }
         }
-        if (!isFinite(g.min)) { g.min = 0; g.max = 1; }
-        if (g.min === g.max) {
-          const e = Math.max(Math.abs(g.min) * 0.05, 0.5);
-          g.min -= e; g.max += e;
+
+        // État d'échelle stabilisé (auto avec hystérésis) ou manuel
+        let st = this.axisState.get(g.key);
+        if (!st) {
+          st = { mode: 'auto', cur: null, shrinkSince: 0, snap: true };
+          this.axisState.set(g.key, st);
         }
-        const pad = (g.max - g.min) * 0.07;
-        g.min -= pad; g.max += pad;
-        const step = niceStep((g.max - g.min) / 4);
-        g.tickStep = step;
-        g.ticks = [];
-        for (let v = Math.ceil(g.min / step) * step; v <= g.max + 1e-9; v += step) {
-          g.ticks.push(Math.abs(v) < step * 1e-6 ? 0 : v);
+        if (g.isBool && st.mode === 'auto') {
+          st.cur = { min: g.dMin, max: g.dMax };
+        } else if (st.mode === 'auto') {
+          const fit = this.fitRange(g.dMin, g.dMax);
+          if (!st.cur || st.snap) {
+            st.cur = fit;
+            st.snap = false;
+            st.shrinkSince = 0;
+          } else {
+            let target = null;
+            // Extension immédiate quand les données sortent
+            if (g.dMin < st.cur.min || g.dMax > st.cur.max) {
+              target = {
+                min: Math.min(fit.min, st.cur.min),
+                max: Math.max(fit.max, st.cur.max),
+              };
+              st.shrinkSince = 0;
+            } else {
+              // Rétraction différée quand les données n'occupent plus l'échelle
+              const span = st.cur.max - st.cur.min;
+              const occ = isFinite(g.dMin) ? (g.dMax - g.dMin) / span : 1;
+              if (occ < SHRINK_OCCUPANCY) {
+                if (!st.shrinkSince) st.shrinkSince = nowMs;
+                else if (nowMs - st.shrinkSince > SHRINK_DELAY_S * 1000) target = fit;
+              } else {
+                st.shrinkSince = 0;
+              }
+            }
+            if (target) {
+              // Transition lissée
+              st.cur = {
+                min: st.cur.min + (target.min - st.cur.min) * 0.18,
+                max: st.cur.max + (target.max - st.cur.max) * 0.18,
+              };
+              if (Math.abs(st.cur.min - target.min) < (target.max - target.min) * 0.002 &&
+                  Math.abs(st.cur.max - target.max) < (target.max - target.min) * 0.002) {
+                st.cur = target;
+                st.shrinkSince = 0;
+              }
+            }
+          }
+        }
+        if (!st.cur || !isFinite(st.cur.min) || st.cur.max <= st.cur.min) {
+          st.cur = this.fitRange(g.dMin, g.dMax);
+        }
+        g.min = st.cur.min;
+        g.max = st.cur.max;
+        g.manual = st.mode === 'manual';
+
+        if (g.isBool && !g.manual) {
+          g.ticks = [0, 1];
+          g.tickStep = 1;
+        } else {
+          const step = niceStep((g.max - g.min) / 4);
+          g.tickStep = step;
+          g.ticks = [];
+          for (let v = Math.ceil(g.min / step) * step; v <= g.max + 1e-9; v += step) {
+            g.ticks.push(Math.abs(v) < step * 1e-6 ? 0 : v);
+          }
         }
       }
-      // Chaque groupe garde la couleur de sa courbe s'il n'en porte qu'une
+      // Purge des états d'axes disparus
+      for (const key of [...this.axisState.keys()]) {
+        if (!groups.has(key)) this.axisState.delete(key);
+      }
       for (const g of list) {
         g.color = g.series.length === 1 ? DW.seriesColor(g.series[0].colorIdx) : ink().muted;
       }
@@ -614,32 +775,47 @@
       ctx.clearRect(0, 0, cw, chh);
       const IK = ink();
 
+      // Adaptation à la largeur : axes compacts sur petit écran
+      const compact = cw < 520;
+      const axisW = compact ? 38 : cw > 1100 ? 50 : 44;
+      const maxShown = compact ? 2 : MAX_AXES;
+      const fontPx = compact ? 9 : cw > 1100 ? 11 : 10;
+
       this.clampView();
       const tEnd = this.viewEnd === null ? DW.source.now() : this.viewEnd;
       const tStart = tEnd - this.windowS;
       const groups = this.computeGroups(tStart, tEnd);
 
-      // Badges d'échelle pour la légende (É1…É4, É· = sans règle visible)
+      // Badges d'échelle pour la légende
       this._axisBadge = {};
       this._axisCount = groups.length;
       groups.forEach((g, i) => {
-        const tag = i < MAX_AXES ? 'É' + (i + 1) : 'É·';
+        const tag = i < maxShown ? 'É' + (i + 1) + (g.manual ? '🔒' : '') : 'É·';
         for (const s of g.series) this._axisBadge[s.addr] = tag;
       });
 
-      // Répartition des axes : g0→gauche, g1→droite, g2→gauche ext., g3→droite ext.
-      const shown = groups.slice(0, MAX_AXES);
+      const shown = groups.slice(0, maxShown);
       const leftAxes = shown.filter((_, i) => i % 2 === 0);
       const rightAxes = shown.filter((_, i) => i % 2 === 1);
-      const mL = 8 + (leftAxes.length ? leftAxes.length * AXIS_W : 26);
-      const mR = 8 + rightAxes.length * AXIS_W;
+      const mL = 8 + (leftAxes.length ? leftAxes.length * axisW : 26);
+      const mR = 8 + rightAxes.length * axisW;
       const mT = 18, mB = 22;
       const pw = Math.max(10, cw - mL - mR), ph = Math.max(10, chh - mT - mB);
-      this._plot = { mL, mT, pw, ph, tStart, tEnd };
+      this._plot = {
+        mL, mT, pw, ph, tStart, tEnd,
+        primaryKey: shown[0] ? shown[0].key : null,
+      };
       const X = (t) => mL + ((t - tStart) / this.windowS) * pw;
       const yOf = (g) => (v) => mT + ph * (1 - (v - g.min) / (g.max - g.min));
 
-      // Fonctions Y par courbe (décalage inclus) + échelle pour les gestes
+      // Zones des règles (hit-test des gestes d'axe)
+      this._bands = shown.map((g, i) => {
+        const side = i % 2 === 0 ? 'L' : 'R';
+        const slot = Math.floor(i / 2);
+        const x0 = side === 'L' ? mL - (slot + 1) * axisW : cw - mR + slot * axisW;
+        return { key: g.key, x0: Math.max(0, x0), x1: x0 + axisW, side };
+      });
+
       this._yFns = {};
       this._axisScale = {};
       for (const g of groups) {
@@ -651,17 +827,17 @@
         }
       }
 
-      ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+      ctx.font = fontPx + 'px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 
       // Grille temporelle (graduations relatives au bord direct)
       const nowT = DW.source.now();
-      const tickS = niceTimeStep(this.windowS / 5);
+      const tickS = niceTimeStep(this.windowS / (compact ? 4 : 5));
       ctx.strokeStyle = IK.line;
       ctx.fillStyle = IK.faint;
       ctx.lineWidth = 1;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      const firstK = Math.ceil((nowT - tEnd) / tickS);
+      const firstK = Math.ceil((nowT - tEnd) / tickS - 1e-9);
       for (let k = firstK; ; k++) {
         const t = nowT - k * tickS;
         if (t < tStart - 1e-9) break;
@@ -676,6 +852,7 @@
         ctx.strokeStyle = IK.line;
         for (const v of g0.ticks) {
           const y = Math.round(y0(v)) + 0.5;
+          if (y < mT || y > mT + ph) continue;
           ctx.beginPath(); ctx.moveTo(mL, y); ctx.lineTo(mL + pw, y); ctx.stroke();
         }
       }
@@ -684,7 +861,7 @@
       shown.forEach((g, i) => {
         const side = i % 2 === 0 ? 'L' : 'R';
         const slot = Math.floor(i / 2);
-        const xr = side === 'L' ? mL - slot * AXIS_W : cw - mR + slot * AXIS_W;
+        const xr = side === 'L' ? mL - slot * axisW : cw - mR + slot * axisW;
         const yG = yOf(g);
         ctx.strokeStyle = g.color; ctx.globalAlpha = 0.55; ctx.lineWidth = 1;
         const xl = Math.round(xr) + (side === 'L' ? -0.5 : 0.5);
@@ -694,11 +871,14 @@
         ctx.textAlign = side === 'L' ? 'right' : 'left';
         ctx.textBaseline = 'middle';
         const tx = side === 'L' ? xr - 4 : xr + 4;
-        for (const v of g.ticks) ctx.fillText(fmtAxisTick(v, g.tickStep || 1), tx, yG(v));
-        if (g.label) {
-          ctx.textBaseline = 'bottom';
-          ctx.fillText(g.label, tx, mT - 4);
+        for (const v of g.ticks) {
+          const y = yG(v);
+          if (y < mT - 2 || y > mT + ph + 2) continue;
+          ctx.fillText(fmtAxisTick(v, g.tickStep || 1), tx, y);
         }
+        ctx.textBaseline = 'bottom';
+        const lbl = (g.manual ? '🔒' : '') + (g.label || '');
+        if (lbl) ctx.fillText(lbl, tx, mT - 4);
       });
 
       // Courbes
@@ -712,11 +892,10 @@
           if (i1 < i0) continue;
           const discrete = s.meta.kind === 'bit' || s.meta.kind === 'word';
           ctx.strokeStyle = DW.seriesColor(s.colorIdx);
-          ctx.lineWidth = 2;
+          ctx.lineWidth = this.moveSeries === s.addr ? 3 : 2;
           ctx.lineJoin = 'round';
           ctx.lineCap = 'round';
           drawPath(ctx, d.ts, d.vs, i0, i1, X, yFn, discrete, pw);
-          // Point d'extrémité accentué (uniquement au bord direct)
           if (this.viewEnd === null) {
             const xe = X(d.ts[i1]), ye = yFn(d.vs[i1]);
             ctx.beginPath(); ctx.arc(xe, ye, 3, 0, Math.PI * 2);
@@ -726,7 +905,7 @@
       }
       ctx.restore();
 
-      // Curseur : transitoire (survol / glisser) ou épinglé (appui bref)
+      // Curseur : transitoire (survol) ou épinglé (appui bref)
       let cursorX = null;
       if (this.cursor) cursorX = this.cursor.x;
       else if (this.pinT !== null) {
@@ -734,13 +913,13 @@
         if (xp >= mL - 2 && xp <= mL + pw + 2) cursorX = xp;
       }
       if (cursorX !== null && groups.length) {
-        this.drawCursor(ctx, groups, tStart, tEnd, X, mL, mT, pw, ph, cursorX, nowT);
+        this.drawCursor(ctx, groups, tStart, X, mL, mT, pw, ph, cursorX, nowT);
       } else {
         this.tipEl.classList.add('hide');
       }
     }
 
-    drawCursor(ctx, groups, tStart, tEnd, X, mL, mT, pw, ph, x, nowT) {
+    drawCursor(ctx, groups, tStart, X, mL, mT, pw, ph, x, nowT) {
       const IK = ink();
       x = Math.min(Math.max(x, mL), mL + pw);
       const tCur = tStart + ((x - mL) / pw) * this.windowS;
@@ -778,6 +957,7 @@
       return {
         title: this.title,
         windowS: Math.round(this.windowS * 10) / 10,
+        heightMode: this.heightMode !== 'M' ? this.heightMode : undefined,
         series: this.series.map((s) => ({
           addr: s.addr,
           axisMode: s.axisMode,
@@ -789,6 +969,8 @@
     }
 
     destroy() {
+      if (this.fullscreen) this.setFullscreen(false);
+      document.removeEventListener('keydown', this._escHandler);
       for (const s of this.series) this.app.release(s.addr);
       this.series = [];
       closePopover();
@@ -797,7 +979,6 @@
   }
 
   // ---------- Aides géométriques --------------------------------------
-  /** Indices [i0, i1] couvrant [tStart, tEnd] (i0 recule d'un cran pour la continuité). */
   function rangeIdx(ts, tStart, tEnd) {
     const n = ts.length;
     if (!n) return [0, -1];

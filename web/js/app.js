@@ -285,6 +285,7 @@
     const chart = new DW.Chart(appApi, {
       title: opts.title || 'Graphique ' + tab.chartSeq,
       windowS: opts.windowS,
+      heightMode: opts.heightMode,
     });
     tab.charts.push(chart);
     tab.chartsGridEl.appendChild(chart.root);
@@ -490,7 +491,7 @@
       if (p.ok) addToTable(p.addr, periodMs);
     }
     for (const c of data.charts || []) {
-      const chart = createChart({ title: c.title, windowS: c.windowS });
+      const chart = createChart({ title: c.title, windowS: c.windowS, heightMode: c.heightMode });
       if (!chart) break;
       for (const s of c.series || []) {
         const p = DW.parseAddr(s.addr);
