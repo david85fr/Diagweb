@@ -21,12 +21,33 @@ locale (10 Hz) ; le back-end embarqué viendra en phase 2.
 ## Développement
 
 ```
-web/            sources (ouvrir web/index.html pour développer)
-tools/build.py  assemble dist/index.html (autonome) + dist/artifact.html
-docs/           PROJET.md (description) · SPECS.md (spécifications)
-CLAUDE.md       instructions pour l'IA (conventions, contraintes)
+web/                sources (ouvrir web/index.html pour développer)
+tools/build.py      assemble dist/index.html (autonome) + dist/artifact.html
+tools/serve.py      serveur d'aperçu local (port 8080, sans cache)
+tools/setup-tests.sh installe Playwright + Chromium (facultatif)
+tests/ui.mjs        tests d'interface (mobile + desktop)
+docs/               PROJET.md (description) · SPECS.md (spécifications)
+.devcontainer/      configuration GitHub Codespaces
+CLAUDE.md           instructions pour l'IA (conventions, contraintes)
 ```
 
 Build : `python3 tools/build.py` — vérification : `node --check web/js/*.js`.
 Vanilla HTML/CSS/JS, sans dépendance externe (contrainte de déploiement
-embarqué et de publication sous CSP stricte).
+embarqué et de publication sous CSP stricte) ; Playwright n'est utilisé que
+par les tests, jamais par l'application.
+
+### Dans GitHub Codespaces
+
+Sur GitHub : bouton **Code → Codespaces → Create codespace on
+`<branche>`**. Le conteneur installe Python et Node, vérifie la syntaxe des
+sources et démarre l'aperçu sur le **port 8080**.
+
+- Onglet **PORTS** → ouvrir le port 8080 : `/web/index.html` (page de
+  développement) ou `/dist/index.html` (livrable autonome).
+- **Tester depuis un téléphone** : onglet PORTS → clic droit sur le port
+  8080 → *Port Visibility* → **Public**, puis ouvrir l'adresse transférée
+  sur le téléphone. Le serveur envoie des en-têtes anti-cache, chaque
+  rechargement affiche donc la dernière version.
+- Tests : `bash tools/setup-tests.sh` (une fois) puis `node tests/ui.mjs`,
+  ou `node tests/ui.mjs http://localhost:8080/web/index.html` pour tester
+  les sources sans build.

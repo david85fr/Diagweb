@@ -140,6 +140,11 @@
       if (!onAnchor) popClosedPointer = e.pointerId;
     }
   }, true);
+  // Le marqueur ne vaut que pour l'interaction en cours : la souris réutilise
+  // toujours le même pointerId, il ne doit pas contaminer le geste suivant.
+  const clearPopClose = () => { popClosedPointer = -1; };
+  document.addEventListener('pointerup', clearPopClose, true);
+  document.addEventListener('pointercancel', clearPopClose, true);
   /** À appeler au pointerdown du canvas : vrai si ce pointeur vient de fermer un menu. */
   function consumePopClose(pointerId) {
     if (popClosedPointer === pointerId) { popClosedPointer = -1; return true; }

@@ -29,12 +29,15 @@ web/            sources de l'application (page de dev : web/index.html)
   js/config.js  constantes + catalogue des variables simulées + palette courbes
   js/parser.js  grammaire des adresses (I/Q/M/S, MB, chemins C API)
   js/sim.js     source de données simulée — implémente le contrat DataSource
-  js/chart.js   moteur de graphiques canvas (multi-échelles, curseur, légende)
-  js/store.js   dispositions : localStorage, export/import JSON, stub contrôleur
-  js/app.js     état applicatif, recherche, tableau, modal, boucle de rendu
+  js/chart.js   moteur de graphiques canvas (multi-échelles, gestes, échelles)
+  js/store.js   configurations : localStorage, export/import JSON+CSV, stub
+  js/app.js     onglets, recherche, tableau, journal, boucle de rendu
 tools/build.py  assemble dist/ à partir de web/
+tools/serve.py  serveur d'aperçu (port 8080, en-têtes anti-cache)
+tests/ui.mjs    tests d'interface Playwright (13 vérifications)
 dist/           livrables générés (commités) : index.html autonome + artifact.html
 docs/           PROJET.md, SPECS.md
+.devcontainer/  configuration GitHub Codespaces (Python + Node + aperçu 8080)
 ```
 
 Espace de noms JS global : `window.DW`. Scripts en IIFE, pas de modules ES
@@ -44,7 +47,10 @@ Espace de noms JS global : `window.DW`. Scripts en IIFE, pas de modules ES
 
 1. Modifier les sources sous `web/`.
 2. `node --check web/js/*.js` puis `python3 tools/build.py`, et tester
-   `dist/index.html` (Playwright + captures mobile 390×844 et desktop).
+   `node tests/ui.mjs` (mobile 390×844 + desktop 1600×900, captures dans
+   `.test-shots/`). Environnement de développement possible : GitHub
+   Codespaces (`.devcontainer/`), aperçu sur le port 8080 via
+   `tools/serve.py` — port à passer en « Public » pour tester au téléphone.
 3. **Commit des sources** (sans `dist/`), puis relancer
    `python3 tools/build.py` : il injecte dans la page la version
    `hash court · #n` du commit de sources fraîchement créé.
