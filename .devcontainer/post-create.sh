@@ -12,22 +12,21 @@ echo "→ Vérification de la syntaxe des sources"
 for f in web/js/*.js; do node --check "$f"; done
 echo "   OK"
 
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo " Diagweb — Codespace prêt. Aperçu lancé sur le port 8080 :"
+echo
+python3 tools/serve.py --url | sed 's/^/   /'
+echo
 cat <<'TXT'
+ (adresses aussi listées par : python3 tools/serve.py --url)
 
-────────────────────────────────────────────────────────────────
- Diagweb — Codespace prêt
-
- Aperçu (déjà lancé sur le port 8080) :
-   · onglet « PORTS » → ouvrir le port 8080
-   · page de développement : /web/index.html
-   · livrable autonome    : /dist/index.html
-
- Pour tester depuis un téléphone : onglet « PORTS », clic droit sur
- le port 8080 → Visibilité du port → Public, puis ouvrir l'adresse
- transférée sur le téléphone.
+ Rendre l'aperçu accessible à un autre appareil :
+   gh codespace ports visibility 8080:public -c $CODESPACE_NAME
 
  Commandes utiles :
    python3 tools/serve.py            relancer l'aperçu (port 8080)
+   python3 tools/serve.py --url      réafficher les adresses
    python3 tools/build.py            assembler dist/
    node --check web/js/*.js          vérifier la syntaxe
    bash tools/setup-tests.sh         installer Chromium (une fois)

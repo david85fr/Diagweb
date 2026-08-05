@@ -42,12 +42,18 @@ Sur GitHub : bouton **Code → Codespaces → Create codespace on
 `<branche>`**. Le conteneur installe Python et Node, vérifie la syntaxe des
 sources et démarre l'aperçu sur le **port 8080**.
 
-- Onglet **PORTS** → ouvrir le port 8080 : `/web/index.html` (page de
-  développement) ou `/dist/index.html` (livrable autonome).
-- **Tester depuis un téléphone** : onglet PORTS → clic droit sur le port
-  8080 → *Port Visibility* → **Public**, puis ouvrir l'adresse transférée
-  sur le téléphone. Le serveur envoie des en-têtes anti-cache, chaque
-  rechargement affiche donc la dernière version.
+- Adresse de l'aperçu : `python3 tools/serve.py --url` (elle est aussi
+  affichée à la création du Codespace). `/web/index.html` = page de
+  développement, `/dist/index.html` = livrable autonome.
+- Elle figure également dans l'onglet **PORTS** du panneau du bas. Sur
+  téléphone ce panneau est replié : menu **☰ → Terminal → New Terminal**
+  l'ouvre (les onglets qui débordent sont derrière le **⋯**).
+- **Tester depuis un autre appareil** : l'adresse ci-dessus fonctionne
+  telle quelle si vous êtes connecté au même compte GitHub ; sinon rendez
+  le port public —
+  `gh codespace ports visibility 8080:public -c $CODESPACE_NAME`.
+  Le serveur envoie des en-têtes anti-cache : chaque rechargement affiche
+  la dernière version.
 - Tests : `bash tools/setup-tests.sh` (une fois) puis `node tests/ui.mjs`,
   ou `node tests/ui.mjs http://localhost:8080/web/index.html` pour tester
   les sources sans build.

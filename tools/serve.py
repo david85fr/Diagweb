@@ -7,6 +7,7 @@ mises en cache, sinon un téléphone garde une version périmée entre deux
 itérations.
 
 Usage : python3 tools/serve.py [--port 8080] [--dir .]
+        python3 tools/serve.py --url     (affiche l'adresse d'aperçu et sort)
 """
 import argparse
 import functools
@@ -16,6 +17,15 @@ import pathlib
 import socketserver
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def preview_base(port):
+    """Adresse d'aperçu : URL transférée dans un Codespace, sinon locale."""
+    name = os.environ.get("CODESPACE_NAME")
+    domain = os.environ.get("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN", "app.github.dev")
+    if name:
+        return "https://%s-%d.%s" % (name, port, domain)
+    return "http://localhost:%d" % port
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -48,14 +58,22 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8080)))
     ap.add_argument("--dir", default=str(ROOT))
+    ap.add_argument("--url", action="store_true",
+                    help="affiche l'adresse d'aperçu (utile sans le panneau PORTS)")
     args = ap.parse_args()
+
+    base = preview_base(args.port)
+    if args.url:
+        print(base + "/web/index.html")
+        print(base + "/dist/index.html")
+        return
 
     handler = functools.partial(Handler, directory=args.dir)
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.ThreadingTCPServer(("0.0.0.0", args.port), handler) as httpd:
         print("Diagweb — aperçu sur le port %d" % args.port)
-        print("  développement : http://localhost:%d/web/index.html" % args.port)
-        print("  livrable      : http://localhost:%d/dist/index.html" % args.port)
+        print("  développement : %s/web/index.html" % base)
+        print("  livrable      : %s/dist/index.html" % base)
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
