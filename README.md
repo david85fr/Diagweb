@@ -42,7 +42,9 @@ Sur GitHub : bouton **Code → Codespaces → Create codespace on
 `<branche>`**. Le conteneur installe Python et Node, vérifie la syntaxe des
 sources et démarre l'aperçu sur le **port 8080**.
 
-- Adresse de l'aperçu : `python3 tools/serve.py --url` (elle est aussi
+- **Une seule commande** : `bash tools/share.sh` — démarre l'aperçu s'il
+  ne tourne pas, rend le port public et affiche l'adresse à ouvrir.
+- Sinon, adresse seule : `python3 tools/serve.py --url` (elle est aussi
   affichée à la création du Codespace). `/web/index.html` = page de
   développement, `/dist/index.html` = livrable autonome.
 - Elle figure également dans l'onglet **PORTS** du panneau du bas. Sur

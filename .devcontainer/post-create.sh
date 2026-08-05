@@ -22,9 +22,10 @@ cat <<'TXT'
  (adresses aussi listées par : python3 tools/serve.py --url)
 
  Rendre l'aperçu accessible à un autre appareil :
-   gh codespace ports visibility 8080:public -c $CODESPACE_NAME
+   bash tools/share.sh
 
  Commandes utiles :
+   bash tools/share.sh               aperçu public + adresse
    python3 tools/serve.py            relancer l'aperçu (port 8080)
    python3 tools/serve.py --url      réafficher les adresses
    python3 tools/build.py            assembler dist/
