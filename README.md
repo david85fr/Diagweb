@@ -59,6 +59,9 @@ sources et démarre l'aperçu sur le **port 8080**.
 
 - **Une seule commande** : `bash tools/share.sh` — démarre l'aperçu s'il
   ne tourne pas, rend le port public et affiche l'adresse à ouvrir.
+  Variante `bash tools/share.sh --server` : compile et lance le **serveur
+  de diagnostic C++** à la place (flux WebSocket réel au lieu de la
+  simulation navigateur).
 - Sinon, adresse seule : `python3 tools/serve.py --url` (elle est aussi
   affichée à la création du Codespace). `/web/index.html` = page de
   développement, `/dist/index.html` = livrable autonome.
