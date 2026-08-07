@@ -21,15 +21,30 @@ locale (10 Hz) ; le back-end embarqué viendra en phase 2.
 ## Développement
 
 ```
-web/                sources (ouvrir web/index.html pour développer)
+web/                sources de l'application (ouvrir web/index.html)
+server/             serveur de diagnostic C++20 (HTTP + WebSocket)
 tools/build.py      assemble dist/index.html (autonome) + dist/artifact.html
 tools/serve.py      serveur d'aperçu local (port 8080, sans cache)
+tools/gen-catalog.mjs régénère le catalogue C++ depuis web/js/config.js
 tools/setup-tests.sh installe Playwright + Chromium (facultatif)
 tests/ui.mjs        tests d'interface (mobile + desktop)
 docs/               PROJET.md (description) · SPECS.md (spécifications)
 .devcontainer/      configuration GitHub Codespaces
 CLAUDE.md           instructions pour l'IA (conventions, contraintes)
 ```
+
+### Serveur de diagnostic (prototype du back-end embarqué)
+
+```bash
+cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release
+cmake --build server/build -j
+./server/build/diagweb-server --port 8080 --root .
+```
+
+La page servie par ce serveur bascule automatiquement sur son **flux
+WebSocket** (au lieu de la simulation navigateur) ; `?src=sim` force la
+simulation. Détails, protocole et point d'accroche pour brancher le vrai
+contrôleur : `server/README.md`.
 
 Build : `python3 tools/build.py` — vérification : `node --check web/js/*.js`.
 Vanilla HTML/CSS/JS, sans dépendance externe (contrainte de déploiement

@@ -3,6 +3,8 @@ node_modules/
 package-lock.json
 .pw-browsers/
 .test-shots/
+server/build*/
+.diag-data/
 __pycache__/
 *.pyc
 .DS_Store

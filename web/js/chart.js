@@ -120,14 +120,15 @@
 
   // ---------- Popover partagé (légende & menu ⋮) ----------------------
   let popEl = null, popOwner = null, popAnchor = null;
-  let lastClosedOwner = null, lastClosedAt = 0;
+  // Bascule : un appui sur l'ancre du menu ouvert le ferme sans le rouvrir.
+  // N'est armé QUE par cet appui — fermer en choisissant une entrée ne doit
+  // pas empêcher de rouvrir le menu juste après.
+  let suppressOwner = null, suppressAt = 0;
   let popClosedPointer = -1;   // pointeur ayant fermé un popover (à consommer)
   function closePopover() {
     if (popEl) {
       popEl.remove();
       popEl = null;
-      lastClosedOwner = popOwner;
-      lastClosedAt = performance.now();
       popOwner = null;
       popAnchor = null;
     }
@@ -135,9 +136,11 @@
   document.addEventListener('pointerdown', (e) => {
     if (popEl && !popEl.contains(e.target)) {
       const onAnchor = popAnchor && popAnchor.contains(e.target);
+      const owner = popOwner;
       closePopover();
+      if (onAnchor) { suppressOwner = owner; suppressAt = performance.now(); }
       // Le tap qui ferme un menu ne doit pas démarrer un geste sur le canvas
-      if (!onAnchor) popClosedPointer = e.pointerId;
+      else popClosedPointer = e.pointerId;
     }
   }, true);
   // Le marqueur ne vaut que pour l'interaction en cours : la souris réutilise
@@ -152,10 +155,11 @@
   }
   function openPopover(owner, anchorEl, build) {
     // Re-cliquer l'ancre du menu qui vient d'être fermé = bascule (rester fermé)
-    if (lastClosedOwner === owner && performance.now() - lastClosedAt < 500) {
-      lastClosedOwner = null;
+    if (suppressOwner === owner && performance.now() - suppressAt < 500) {
+      suppressOwner = null;
       return;
     }
+    suppressOwner = null;
     closePopover();
     popOwner = owner;
     popAnchor = anchorEl;

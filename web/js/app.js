@@ -85,6 +85,7 @@
         enabled: false, dest: 'browser',
         rows: [], lastT: {}, enableT: 0,
         truncated: false, ctlWarned: false,
+        sentIdx: 0,        // lignes déjà transmises au contrôleur
       },
     };
     state.tabs.push(tab);
@@ -548,18 +549,28 @@
         if (i0 < d.ts.length) { lg.lastT[addr] = d.ts[d.ts.length - 1]; appended += d.ts.length - i0; }
       }
       if (lg.rows.length > LOG_MAX_ROWS) {
-        lg.rows.splice(0, lg.rows.length - LOG_MAX_ROWS);
+        const dropped = lg.rows.length - LOG_MAX_ROWS;
+        lg.rows.splice(0, dropped);
+        lg.sentIdx = Math.max(0, lg.sentIdx - dropped);
         lg.truncated = true;
       }
-      // Destination « contrôleur » : tentative d'envoi, repli navigateur.
-      if (lg.dest === 'controller' && appended && !lg.ctlWarned) {
-        lg.ctlWarned = true;
+      // Destination « contrôleur » : envoi des lignes au serveur de diagnostic
+      // (POST /api/datalog) ; en cas d'échec, le tampon navigateur fait office
+      // de repli et l'utilisateur est averti une fois.
+      if (lg.dest === 'controller' && lg.rows.length > lg.sentIdx) {
+        const batch = lg.rows.slice(lg.sentIdx);
+        lg.sentIdx = lg.rows.length;
         fetch('/api/datalog', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tab: tab.name, count: appended }),
+          body: JSON.stringify({ tab: tab.name, rows: batch }),
+        }).then((r) => {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          lg.ctlWarned = false;
         }).catch(() => {
-          toast('Contrôleur injoignable — le journal reste en mémoire navigateur (prototype front-end).', 'err');
+          if (lg.ctlWarned) return;
+          lg.ctlWarned = true;
+          toast('Serveur de diagnostic injoignable — le journal reste en mémoire du navigateur.', 'err');
         });
       }
     }
@@ -1035,6 +1046,11 @@
     perSel.value = String(CFG.defaultPeriodMs);
 
     $('srcInfo').textContent = 'Source : ' + DW.source.name + ' · défaut ' + DW.source.defaultPeriodMs + ' ms';
+    if (DW.source.onStatus === null) DW.source.onStatus = (msg, isErr) => toast(msg, isErr ? 'err' : '');
+    if (DW.sourceMode === 'ws') toast('Connecté au serveur de diagnostic.');
+    else if (DW.sourceFallbackReason) {
+      toast('Serveur de diagnostic injoignable (' + DW.sourceFallbackReason + ') — simulation locale.', 'err');
+    }
   }
 
   // ---------- Démarrage ------------------------------------------------
@@ -1058,6 +1074,12 @@
     requestAnimationFrame(loop);
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-  else boot();
+  // La source (simulation ou serveur de diagnostic) doit être choisie avant
+  // de construire l'espace de travail : les premiers abonnements en dépendent.
+  function start() {
+    const ready = DW.sourceReady || Promise.resolve();
+    ready.catch(() => {}).then(boot);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
 })();

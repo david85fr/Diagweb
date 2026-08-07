@@ -706,7 +706,7 @@ body.cfg-hidden .tabActions { display: none; }
     </div>
 
     <div class="topIcons">
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">0d56a91 · #28</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">c991862 · #31</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
@@ -1106,7 +1106,8 @@ body.cfg-hidden .tabActions { display: none; }
   }
   setInterval(tick, CFG.defaultPeriodMs);
 
-  DW.source = {
+  DW.sources = DW.sources || {};
+  DW.sources.sim = {
     name: 'Simulation locale',
     defaultPeriodMs: CFG.defaultPeriodMs,
     now,
@@ -1138,6 +1139,293 @@ body.cfg-hidden .tabActions { display: none; }
       return rec ? rec.meta : DW.resolveMeta(addr);
     },
   };
+
+  // Source par défaut ; source.js peut lui substituer le flux du serveur
+  // de diagnostic avant le démarrage de l'application.
+  DW.source = DW.sources.sim;
+})();
+
+</script>
+<script>
+/* Diagweb — source de données WebSocket (serveur de diagnostic).
+ *
+ * Implémente le même contrat que la simulation (voir docs/SPECS.md §7) :
+ * subscribe(addr, {periodMs}) / unsubscribe / latest / past / data / meta /
+ * now / count. Le reste de l'application ignore laquelle des deux sources
+ * est active.
+ *
+ * Protocole (trames texte JSON, voir server/src/main.cpp) :
+ *   → {"c":"sub","addr":"MB414","periodMs":10} · {"c":"unsub","addr":…}
+ *   ← {"e":"hello"|"meta"|"err"|"d", …}
+ */
+(function () {
+  "use strict";
+  const DW = (window.DW = window.DW || {});
+  const CFG = DW.CONFIG;
+
+  DW.sources = DW.sources || {};
+
+  function createWsSource() {
+    const chans = new Map();     // addr -> {meta, ts:[], vs:[], refs, periodMs}
+    let ws = null;
+    let skew = 0, haveSkew = false;
+    let horizonS = CFG.horizonS;
+    let srcName = 'Serveur de diagnostic';
+    let retry = 0, retryTimer = null, closed = false;
+
+    const localSec = () => performance.now() / 1000;
+    const now = () => localSec() + skew;
+
+    function setStatus(msg, isErr) {
+      if (typeof api.onStatus === 'function') api.onStatus(msg, isErr);
+    }
+
+    function send(obj) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(obj));
+        return true;
+      }
+      return false;
+    }
+
+    function trim(ch) {
+      const minT = now() - horizonS;
+      let cut = 0;
+      while (cut < ch.ts.length && ch.ts[cut] < minT) cut++;
+      if (cut > 400) { ch.ts.splice(0, cut); ch.vs.splice(0, cut); }
+    }
+
+    let onHello = null;   // renseigné par connect() : la session n'est prête
+                          // qu'une fois « hello » reçu (nom, horizon, horloge)
+
+    function onMessage(ev) {
+      let m;
+      try { m = JSON.parse(ev.data); } catch (e) { return; }
+
+      if (m.e === 'hello') {
+        horizonS = m.horizonS || horizonS;
+        srcName = m.source || srcName;
+        api.name = srcName;
+        api.defaultPeriodMs = m.defaultPeriodMs || CFG.defaultPeriodMs;
+        skew = m.now - localSec();
+        haveSkew = true;
+        if (onHello) { const f = onHello; onHello = null; f(); }
+        return;
+      }
+      if (m.e === 'meta') {
+        const ch = chans.get(m.addr);
+        if (ch) {
+          // Les métadonnées du contrôleur font autorité sur celles déduites
+          // localement : on complète l'objet en place (déjà référencé par l'UI).
+          if (m.label) ch.meta.label = m.label;
+          if (m.unit != null) ch.meta.unit = m.unit;
+          if (m.kind) ch.meta.kind = m.kind;
+          if (m.family) ch.meta.family = m.family;
+          ch.meta.known = !!m.known;
+        }
+        return;
+      }
+      if (m.e === 'err') {
+        setStatus(m.addr ? m.addr + ' : ' + m.msg : m.msg, true);
+        return;
+      }
+      if (m.e === 'd') {
+        // Recalage d'horloge lissé (le réseau introduit de la gigue)
+        const target = m.now - localSec();
+        skew = haveSkew ? skew + (target - skew) * 0.1 : target;
+        haveSkew = true;
+        for (const addr in m.s) {
+          const ch = chans.get(addr);
+          if (!ch) continue;
+          for (const [t, v] of m.s[addr]) {
+            if (ch.ts.length && t <= ch.ts[ch.ts.length - 1]) continue;
+            ch.ts.push(t); ch.vs.push(v);
+          }
+          trim(ch);
+        }
+      }
+    }
+
+    function connect() {
+      return new Promise((resolve, reject) => {
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        let settled = false;
+        try {
+          ws = new WebSocket(proto + '//' + location.host + '/ws');
+        } catch (e) { reject(e); return; }
+
+        const timer = setTimeout(() => {
+          if (!settled) { settled = true; try { ws.close(); } catch (e) { /* déjà fermé */ } reject(new Error('délai dépassé')); }
+        }, 4000);
+
+        onHello = () => {
+          clearTimeout(timer);
+          if (!settled) { settled = true; resolve(api); }
+          else setStatus('Flux temps réel rétabli.');
+        };
+        ws.addEventListener('open', () => {
+          retry = 0;
+          // Réabonnement après reconnexion
+          for (const [addr, ch] of chans) send({ c: 'sub', addr, periodMs: ch.periodMs });
+        });
+        ws.addEventListener('message', onMessage);
+        ws.addEventListener('error', () => { /* traité par close */ });
+        ws.addEventListener('close', () => {
+          clearTimeout(timer);
+          if (!settled) { settled = true; reject(new Error('connexion refusée')); return; }
+          if (closed) return;
+          setStatus('Flux temps réel interrompu — reconnexion…', true);
+          const delay = Math.min(8000, 500 * Math.pow(2, retry++));
+          clearTimeout(retryTimer);
+          retryTimer = setTimeout(() => { connect().catch(() => {}); }, delay);
+        });
+      });
+    }
+
+    const api = {
+      name: srcName,
+      defaultPeriodMs: CFG.defaultPeriodMs,
+      onStatus: null,
+      now,
+      connect,
+      isLive: () => !!ws && ws.readyState === WebSocket.OPEN,
+
+      subscribe(addr, opts) {
+        const p = DW.parseAddr(addr);
+        if (!p.ok) return null;
+        const periodMs = Math.max(1, parseInt((opts && opts.periodMs) || api.defaultPeriodMs, 10) || api.defaultPeriodMs);
+        let ch = chans.get(p.addr);
+        if (ch) {
+          ch.refs++;
+          if (periodMs < ch.periodMs) { ch.periodMs = periodMs; send({ c: 'sub', addr: p.addr, periodMs }); }
+          return ch;
+        }
+        // Métadonnées provisoires issues du catalogue local ; le serveur les
+        // confirme (ou les corrige) par un message « meta ».
+        const meta = DW.resolveMeta(p.addr, p);
+        if (!meta) return null;
+        ch = { meta, ts: [], vs: [], refs: 1, periodMs };
+        chans.set(p.addr, ch);
+        send({ c: 'sub', addr: p.addr, periodMs });
+        return ch;
+      },
+
+      unsubscribe(addr) {
+        const p = DW.parseAddr(addr);
+        const key = p.ok ? p.addr : addr;
+        const ch = chans.get(key);
+        if (!ch) return;
+        if (--ch.refs <= 0) {
+          chans.delete(key);
+          send({ c: 'unsub', addr: key });
+        }
+      },
+
+      count: () => chans.size,
+
+      latest(addr) {
+        const ch = chans.get(addr);
+        if (!ch || !ch.ts.length) return null;
+        const i = ch.ts.length - 1;
+        return { t: ch.ts[i], v: ch.vs[i] };
+      },
+
+      past(addr, delta) {
+        const ch = chans.get(addr);
+        if (!ch || !ch.ts.length) return null;
+        const target = ch.ts[ch.ts.length - 1] - delta;
+        for (let i = ch.ts.length - 1; i >= 0; i--) {
+          if (ch.ts[i] <= target) return ch.vs[i];
+        }
+        return ch.vs[0];
+      },
+
+      data(addr) {
+        const ch = chans.get(addr);
+        return ch ? { ts: ch.ts, vs: ch.vs } : { ts: [], vs: [] };
+      },
+
+      meta(addr) {
+        const ch = chans.get(addr);
+        return ch ? ch.meta : DW.resolveMeta(addr);
+      },
+
+      close() {
+        closed = true;
+        clearTimeout(retryTimer);
+        if (ws) try { ws.close(); } catch (e) { /* déjà fermé */ }
+      },
+    };
+
+    return api;
+  }
+
+  DW.sources.ws = createWsSource();
+})();
+
+</script>
+<script>
+/* Diagweb — choix de la source de données.
+ *
+ * Par défaut (« auto ») : si la page est servie par le serveur de diagnostic
+ * du contrôleur, on utilise son flux temps réel ; sinon on retombe sur la
+ * simulation locale. Forçage possible par l'URL : ?src=ws ou ?src=sim.
+ *
+ * DW.sourceReady est attendue par app.js avant de construire l'interface,
+ * pour que les premiers abonnements partent sur la bonne source.
+ */
+(function () {
+  "use strict";
+  const DW = window.DW;
+
+  function wanted() {
+    try {
+      const v = new URLSearchParams(location.search).get('src');
+      return v === 'ws' || v === 'sim' ? v : 'auto';
+    } catch (e) {
+      return 'auto';
+    }
+  }
+
+  /** Le serveur de diagnostic répond-il ? (court, pour ne pas retarder le démarrage) */
+  async function probe() {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 1200);
+    try {
+      // Chemin absolu : la page peut être servie depuis /web/ en développement
+      // comme depuis la racine sur le contrôleur (cf. store.js).
+      const r = await fetch('/api/health', { signal: ctl.signal, cache: 'no-store' });
+      if (!r.ok) return false;
+      const j = await r.json();
+      return j && j.role === 'diag-server';
+    } catch (e) {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  DW.sourceReady = (async () => {
+    const want = wanted();
+    const httpish = location.protocol === 'http:' || location.protocol === 'https:';
+    DW.sourceMode = 'sim';
+
+    if (want !== 'sim' && httpish && typeof WebSocket !== 'undefined') {
+      const available = want === 'ws' ? true : await probe();
+      if (available) {
+        try {
+          await DW.sources.ws.connect();
+          DW.source = DW.sources.ws;
+          DW.sourceMode = 'ws';
+          return DW.source;
+        } catch (e) {
+          DW.sourceFallbackReason = e && e.message ? e.message : 'connexion impossible';
+        }
+      }
+    }
+    DW.source = DW.sources.sim;
+    return DW.source;
+  })();
 })();
 
 </script>
@@ -1264,14 +1552,15 @@ body.cfg-hidden .tabActions { display: none; }
 
   // ---------- Popover partagé (légende & menu ⋮) ----------------------
   let popEl = null, popOwner = null, popAnchor = null;
-  let lastClosedOwner = null, lastClosedAt = 0;
+  // Bascule : un appui sur l'ancre du menu ouvert le ferme sans le rouvrir.
+  // N'est armé QUE par cet appui — fermer en choisissant une entrée ne doit
+  // pas empêcher de rouvrir le menu juste après.
+  let suppressOwner = null, suppressAt = 0;
   let popClosedPointer = -1;   // pointeur ayant fermé un popover (à consommer)
   function closePopover() {
     if (popEl) {
       popEl.remove();
       popEl = null;
-      lastClosedOwner = popOwner;
-      lastClosedAt = performance.now();
       popOwner = null;
       popAnchor = null;
     }
@@ -1279,9 +1568,11 @@ body.cfg-hidden .tabActions { display: none; }
   document.addEventListener('pointerdown', (e) => {
     if (popEl && !popEl.contains(e.target)) {
       const onAnchor = popAnchor && popAnchor.contains(e.target);
+      const owner = popOwner;
       closePopover();
+      if (onAnchor) { suppressOwner = owner; suppressAt = performance.now(); }
       // Le tap qui ferme un menu ne doit pas démarrer un geste sur le canvas
-      if (!onAnchor) popClosedPointer = e.pointerId;
+      else popClosedPointer = e.pointerId;
     }
   }, true);
   // Le marqueur ne vaut que pour l'interaction en cours : la souris réutilise
@@ -1296,10 +1587,11 @@ body.cfg-hidden .tabActions { display: none; }
   }
   function openPopover(owner, anchorEl, build) {
     // Re-cliquer l'ancre du menu qui vient d'être fermé = bascule (rester fermé)
-    if (lastClosedOwner === owner && performance.now() - lastClosedAt < 500) {
-      lastClosedOwner = null;
+    if (suppressOwner === owner && performance.now() - suppressAt < 500) {
+      suppressOwner = null;
       return;
     }
+    suppressOwner = null;
     closePopover();
     popOwner = owner;
     popAnchor = anchorEl;
@@ -2522,6 +2814,7 @@ body.cfg-hidden .tabActions { display: none; }
         enabled: false, dest: 'browser',
         rows: [], lastT: {}, enableT: 0,
         truncated: false, ctlWarned: false,
+        sentIdx: 0,        // lignes déjà transmises au contrôleur
       },
     };
     state.tabs.push(tab);
@@ -2985,18 +3278,28 @@ body.cfg-hidden .tabActions { display: none; }
         if (i0 < d.ts.length) { lg.lastT[addr] = d.ts[d.ts.length - 1]; appended += d.ts.length - i0; }
       }
       if (lg.rows.length > LOG_MAX_ROWS) {
-        lg.rows.splice(0, lg.rows.length - LOG_MAX_ROWS);
+        const dropped = lg.rows.length - LOG_MAX_ROWS;
+        lg.rows.splice(0, dropped);
+        lg.sentIdx = Math.max(0, lg.sentIdx - dropped);
         lg.truncated = true;
       }
-      // Destination « contrôleur » : tentative d'envoi, repli navigateur.
-      if (lg.dest === 'controller' && appended && !lg.ctlWarned) {
-        lg.ctlWarned = true;
+      // Destination « contrôleur » : envoi des lignes au serveur de diagnostic
+      // (POST /api/datalog) ; en cas d'échec, le tampon navigateur fait office
+      // de repli et l'utilisateur est averti une fois.
+      if (lg.dest === 'controller' && lg.rows.length > lg.sentIdx) {
+        const batch = lg.rows.slice(lg.sentIdx);
+        lg.sentIdx = lg.rows.length;
         fetch('/api/datalog', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tab: tab.name, count: appended }),
+          body: JSON.stringify({ tab: tab.name, rows: batch }),
+        }).then((r) => {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          lg.ctlWarned = false;
         }).catch(() => {
-          toast('Contrôleur injoignable — le journal reste en mémoire navigateur (prototype front-end).', 'err');
+          if (lg.ctlWarned) return;
+          lg.ctlWarned = true;
+          toast('Serveur de diagnostic injoignable — le journal reste en mémoire du navigateur.', 'err');
         });
       }
     }
@@ -3472,6 +3775,11 @@ body.cfg-hidden .tabActions { display: none; }
     perSel.value = String(CFG.defaultPeriodMs);
 
     $('srcInfo').textContent = 'Source : ' + DW.source.name + ' · défaut ' + DW.source.defaultPeriodMs + ' ms';
+    if (DW.source.onStatus === null) DW.source.onStatus = (msg, isErr) => toast(msg, isErr ? 'err' : '');
+    if (DW.sourceMode === 'ws') toast('Connecté au serveur de diagnostic.');
+    else if (DW.sourceFallbackReason) {
+      toast('Serveur de diagnostic injoignable (' + DW.sourceFallbackReason + ') — simulation locale.', 'err');
+    }
   }
 
   // ---------- Démarrage ------------------------------------------------
@@ -3495,8 +3803,14 @@ body.cfg-hidden .tabActions { display: none; }
     requestAnimationFrame(loop);
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-  else boot();
+  // La source (simulation ou serveur de diagnostic) doit être choisie avant
+  // de construire l'espace de travail : les premiers abonnements en dépendent.
+  function start() {
+    const ready = DW.sourceReady || Promise.resolve();
+    ready.catch(() => {}).then(boot);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
 })();
 
 </script>

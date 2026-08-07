@@ -56,8 +56,10 @@ responsive, tactile en priorité).
 
 ## État actuel — prototype front-end
 
-- Aucune connexion au contrôleur : une **simulation locale** (10 Hz) génère
-  des signaux plausibles pour toutes les adresses saisies.
+- Deux sources de données interchangeables : une **simulation locale** dans
+  le navigateur (par défaut) et le **serveur de diagnostic** de `server/`
+  quand la page est servie par lui (flux WebSocket). Dans les deux cas les
+  signaux sont simulés — aucun contrôleur n'est encore branché.
 - Toutes les fonctions d'interface sont opérationnelles : recherche/ajout,
   tableau numérique, graphiques multi-échelles, dispositions
   (navigateur + export/import fichier ; l'enregistrement « contrôleur » est
@@ -66,12 +68,16 @@ responsive, tactile en priorité).
 ## Feuille de route
 
 1. **Prototype front-end** (ce dépôt, en cours) — itérations sur l'UX.
-2. **Back-end embarqué** : service sur le contrôleur exposant
-   - un WebSocket de streaming des valeurs (abonnement par adresse, période
-     par variable),
-   - la résolution des adresses (mapping PLC, registres, C API Simulink),
-   - le stockage des configurations (`/api/layouts`),
-   - la journalisation côté contrôleur (`/api/datalog`).
-3. **Branchement** : remplacer la simulation par ce back-end via le contrat
-   `DataSource` (voir `docs/SPECS.md` §7) — le reste de l'UI ne change pas.
+2. **Serveur de diagnostic** — squelette opérationnel dans `server/`
+   (C++20, sans dépendance externe) : WebSocket de streaming (abonnement par
+   adresse, période par variable), service des pages, `/api/layouts`,
+   `/api/datalog`. Sa source de variables est encore simulée ; le contrat à
+   implémenter pour brancher le processus cœur est `IVariableSource`
+   (`server/src/source.hpp`) : résolution des adresses (mapping PLC,
+   registres de bus, chemins C API des modèles), abonnement avec période,
+   lecture des échantillons.
+3. **Branchement** : côté navigateur c'est fait — `web/js/source-ws.js`
+   implémente le contrat `DataSource` (voir `docs/SPECS.md` §7) et la page
+   bascule automatiquement sur le serveur quand il répond. Reste à
+   substituer la source simulée du serveur par le lien avec le cœur.
 4. Ensuite : enregistrement/relecture de séquences, export CSV, alarmes/seuils.

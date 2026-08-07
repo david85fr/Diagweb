@@ -30,9 +30,16 @@ web/            sources de l'application (page de dev : web/index.html)
   js/parser.js  grammaire des adresses (I/Q/M/S, MB, chemins C API)
   js/sim.js     source de données simulée — implémente le contrat DataSource
   js/chart.js   moteur de graphiques canvas (multi-échelles, gestes, échelles)
+  js/source-ws.js source WebSocket (même contrat que sim.js)
+  js/source.js  choix de la source au démarrage (DW.sourceReady)
   js/store.js   configurations : localStorage, export/import JSON+CSV, stub
   js/app.js     onglets, recherche, tableau, journal, boucle de rendu
+server/         serveur de diagnostic C++20 (HTTP + WebSocket, sans dépendance)
+  src/source.hpp     contrat IVariableSource — à implémenter pour le cœur
+  src/sim_source.hpp source simulée (bouchon) + générateurs
+  src/main.cpp       HTTP/WS, REST, boucle d'émission
 tools/build.py  assemble dist/ à partir de web/
+tools/gen-catalog.mjs  régénère server/src/catalog.generated.hpp depuis config.js
 tools/serve.py  serveur d'aperçu (port 8080, en-têtes anti-cache)
 tests/ui.mjs    tests d'interface Playwright (13 vérifications)
 dist/           livrables générés (commités) : index.html autonome + artifact.html
@@ -65,6 +72,12 @@ Espace de noms JS global : `window.DW`. Scripts en IIFE, pas de modules ES
 
 ## Points d'architecture à respecter
 
+- **Deux sources** implémentent le contrat : `web/js/sim.js` (simulation) et
+  `web/js/source-ws.js` (serveur de diagnostic) ; `web/js/source.js` choisit
+  au démarrage. Toute modification du contrat doit être répercutée des deux
+  côtés **et** dans `server/src/source.hpp`.
+- Le catalogue C++ est **généré** : après modification de `DW.CATALOG` dans
+  `web/js/config.js`, relancer `node tools/gen-catalog.mjs`.
 - `DW.source` est le **contrat DataSource** (`subscribe(addr, {periodMs})`,
   unsubscribe/latest/past/data/meta/now — période par variable, défaut
   10 ms). Le futur back-end (WebSocket via le processus serveur de diag du

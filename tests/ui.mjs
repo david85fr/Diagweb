@@ -59,7 +59,10 @@ const p1 = await mob.newPage();
 p1.on('pageerror', (e) => errors.push('mobile pageerror: ' + e.message));
 p1.on('console', (m) => { if (m.type() === 'error') errors.push('mobile console: ' + m.text()); });
 await p1.goto(TARGET);
-await p1.waitForTimeout(1800);
+// L'application démarre après le choix de la source (simulation ou serveur) :
+// on attend le premier graphique plutôt qu'un délai fixe.
+await p1.waitForSelector(PANE + '.chart-card', { timeout: 20000 });
+await p1.waitForTimeout(1200);
 
 check('disposition de démonstration chargée',
   await p1.locator(PANE + '.chart-card').count() === 2 &&
@@ -144,7 +147,8 @@ const p2 = await desk.newPage();
 p2.on('pageerror', (e) => errors.push('desktop pageerror: ' + e.message));
 p2.on('console', (m) => { if (m.type() === 'error') errors.push('desktop console: ' + m.text()); });
 await p2.goto(TARGET);
-await p2.waitForTimeout(1600);
+await p2.waitForSelector(PANE + '.chart-card', { timeout: 20000 });
+await p2.waitForTimeout(1200);
 
 const bodyH = await p2.locator('.chart-body').first().evaluate((el) => el.getBoundingClientRect().height);
 check('hauteur des graphiques adaptée à l\'écran (32vh)',

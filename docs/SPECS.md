@@ -216,15 +216,45 @@ configuration à la racine) est acceptée et convertie en un onglet.
 souscription avec une période plus courte resserre le flux existant),
 `unsubscribe(addr)`, `latest(addr)`, `past(addr, delta)`, `data(addr)` →
 `{ts[], vs[]}` (secondes, croissant), `meta(addr)`, `count()`.
-Le back-end WebSocket devra fournir exactement cette interface ; la
-simulation actuelle (`web/js/sim.js`) en est l'implémentation de référence
-(pré-remplissage de l'horizon compris, pour l'ergonomie à l'ajout).
+
+**Deux implémentations** interchangeables, choisies au démarrage par
+`web/js/source.js` (`DW.sourceReady` est attendue par `app.js` avant de
+construire l'espace de travail) :
+
+| Source | Fichier | Sélection |
+|---|---|---|
+| Simulation locale | `web/js/sim.js` | par défaut, et repli |
+| Serveur de diagnostic | `web/js/source-ws.js` | si `GET /api/health` répond `role: diag-server` |
+
+Forçage par l'URL : `?src=sim` ou `?src=ws`. En cas de coupure, la source
+WebSocket se reconnecte (attente exponentielle plafonnée à 8 s), se
+réabonne et en informe l'utilisateur.
 
 Côté contrôleur (voir `docs/PROJET.md`, « Architecture cible ») : le
 navigateur ne dialogue qu'avec le **processus serveur de diagnostic**, qui
 sert les pages et relaie le flux temps réel depuis le **processus cœur**
 (C++). La période de rafraîchissement de chaque abonnement (défaut 10 ms)
 est transmise au serveur de diag, qui échantillonne le cœur en conséquence.
+
+### Protocole du flux (WebSocket `/ws`, trames texte JSON)
+
+- client → `{"c":"sub","addr":…,"periodMs":…}` · `{"c":"unsub","addr":…}`
+- serveur → `{"e":"hello","now":…,"horizonS":…,"defaultPeriodMs":…,"source":…}`,
+  puis `{"e":"meta",…}` par variable, `{"e":"err","addr":…,"msg":…}` et les
+  lots `{"e":"d","now":…,"s":{"<adresse>":[[t,v],…]}}`.
+- `t` est en secondes depuis le démarrage du serveur ; le navigateur recale
+  son horloge sur `now` (lissage de la gigue réseau).
+- À l'abonnement, le serveur envoie l'historique récent (60 s, décimé à
+  1 500 points par variable) ; ensuite, lots toutes les 60 ms.
+- Les métadonnées du serveur (libellé, unité, type) font autorité et
+  complètent celles déduites du catalogue local.
+
+Points d'entrée REST du même serveur : `/api/health`, `/api/layouts`
+(liste, lecture, enregistrement) et `/api/datalog` (journal en JSON Lines).
+
+L'implémentation de référence est `server/` (C++20, sans dépendance) : voir
+`server/README.md`, et `server/src/source.hpp` pour le contrat côté serveur
+(`IVariableSource`) — seul point à réimplémenter pour brancher le cœur.
 
 ## 8. Interface générale
 
@@ -272,5 +302,8 @@ est transmise au serveur de diag, qui échantillonne le cœur en conséquence.
 - [x] Période de rafraîchissement par variable (défaut 10 ms)
 - [x] Simulation (catalogue ~37 variables + hors catalogue, période honorée)
 - [x] Thèmes clair/sombre, responsive téléphone → 32″
-- [ ] Back-end embarqué (WebSocket + /api/layouts) — phase 2
+- [x] Serveur de diagnostic C++ (squelette) : WebSocket, /api/layouts,
+      /api/datalog, service des pages ; source encore simulée
+- [x] Source WebSocket côté navigateur + bascule automatique
+- [ ] Binding du processus cœur derrière `IVariableSource` — phase 2
 - [ ] Enregistrement/relecture, export CSV, seuils/alarmes — phase 3

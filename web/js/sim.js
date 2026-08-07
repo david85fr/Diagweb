@@ -170,7 +170,8 @@
   }
   setInterval(tick, CFG.defaultPeriodMs);
 
-  DW.source = {
+  DW.sources = DW.sources || {};
+  DW.sources.sim = {
     name: 'Simulation locale',
     defaultPeriodMs: CFG.defaultPeriodMs,
     now,
@@ -202,4 +203,8 @@
       return rec ? rec.meta : DW.resolveMeta(addr);
     },
   };
+
+  // Source par défaut ; source.js peut lui substituer le flux du serveur
+  // de diagnostic avant le démarrage de l'application.
+  DW.source = DW.sources.sim;
 })();
