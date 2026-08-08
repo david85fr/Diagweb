@@ -467,6 +467,34 @@ body.has-fs { overflow: hidden; }
 .popmenu button:hover { background: var(--panel-2); }
 .popmenu button.danger { color: var(--crit); }
 
+/* ---------- Glisser-déposer de widgets ---------- */
+.drag-handle {
+  flex: none;
+  cursor: grab;
+  color: var(--faint);
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 5px;
+  border-radius: 6px;
+  user-select: none;
+}
+.drag-handle:hover { color: var(--ink); background: var(--panel-2); }
+.drag-handle:active { cursor: grabbing; }
+.table-card h3 .drag-handle { margin-right: 6px; display: inline-block; }
+
+body.dnd-active .tab { outline: 1px dashed var(--line); outline-offset: 2px; }
+.tab.dnd-over {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel));
+}
+body.dnd-over-pane #panes {
+  outline: 2px dashed color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
+.vrow[draggable="true"] { cursor: grab; }
+
 /* ---------- Onglets (dans la barre supérieure, à la place du titre) ---------- */
 .tabbar {
   grid-area: tabs;
@@ -706,7 +734,7 @@ body.cfg-hidden .tabActions { display: none; }
     </div>
 
     <div class="topIcons">
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">edfc434 · #32</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">ac17689 · #34</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
@@ -1650,6 +1678,7 @@ body.cfg-hidden .tabActions { display: none; }
       this.root.className = 'card chart-card';
       this.root.innerHTML =
         '<header class="chart-head">' +
+          '<span class="drag-handle" draggable="true" title="Glisser vers un onglet ou une autre fenêtre">⠿</span>' +
           '<input class="chart-title" maxlength="48" aria-label="Titre du graphique">' +
           '<div class="chart-tools">' +
             '<select class="chart-window" title="Fenêtre de temps" aria-label="Fenêtre de temps"></select>' +
@@ -1705,6 +1734,16 @@ body.cfg-hidden .tabActions { display: none; }
       this.root.querySelector('.chart-more').addEventListener('click', (e) =>
         this.openChartMenu(e.currentTarget));
       this.moveEl.querySelector('button').addEventListener('click', () => this.endMoveMode());
+
+      // Glisser le graphique (avec sa configuration) vers un autre onglet
+      // ou une autre fenêtre du navigateur.
+      const handle = this.root.querySelector('.drag-handle');
+      handle.addEventListener('dragstart', (e) => {
+        if (!DW.dnd) return;
+        e.dataTransfer.setDragImage(this.root, 40, 20);
+        DW.dnd.startDrag(e, { kind: 'chart', chart: this.serialize() },
+          () => this.app.removeChart(this));
+      });
 
       this._escHandler = (e) => { if (e.key === 'Escape' && this.fullscreen) this.setFullscreen(false); };
       document.addEventListener('keydown', this._escHandler);
@@ -1772,6 +1811,17 @@ body.cfg-hidden .tabActions { display: none; }
            (next === 'XL' ? ' (pleine largeur)' : ''), () => this.cycleHeight());
         mk(this.fullscreen ? 'Quitter le plein écran' : 'Plein écran', () =>
           this.setFullscreen(!this.fullscreen));
+        // Déplacements (indispensables au tact : pas de glisser-déposer HTML5)
+        for (const t of this.app.otherTabs()) {
+          mk('Déplacer vers l’onglet « ' + DW.escapeHtml(t.name) + ' »', () => {
+            this.app.moveChartToTab(this, t);
+          });
+        }
+        mk('Ouvrir dans une nouvelle fenêtre', () => {
+          if (this.fullscreen) this.setFullscreen(false);
+          DW.dnd.openInNewWindow({ kind: 'chart', chart: this.serialize() },
+            () => this.app.removeChart(this));
+        });
         mk('Fermer le graphique', () => {
           if (this.fullscreen) this.setFullscreen(false);
           this.app.removeChart(this);
@@ -2564,6 +2614,9 @@ body.cfg-hidden .tabActions { display: none; }
   const KEY_SESSION = 'diagweb.session.v1';
   const KEY_AUTO = 'diagweb.autoload.v1';
 
+  const KEY_TRANSFER = 'diagweb.transfer.';
+  const TRANSFER_TTL_MS = 120000;
+
   let available = true;
   function lsGet(key) {
     try { return window.localStorage.getItem(key); }
@@ -2575,6 +2628,20 @@ body.cfg-hidden .tabActions { display: none; }
   }
   function lsDel(key) {
     try { window.localStorage.removeItem(key); } catch (e) { available = false; }
+  }
+
+  // La session est propre à chaque onglet/fenêtre du navigateur : plusieurs
+  // fenêtres peuvent afficher des espaces de travail différents (multi-écran)
+  // sans se marcher dessus. Les configurations nommées, elles, restent
+  // partagées (localStorage).
+  function ssGet(key) {
+    try { return window.sessionStorage.getItem(key); } catch (e) { return null; }
+  }
+  function ssSet(key, val) {
+    try { window.sessionStorage.setItem(key, val); return true; } catch (e) { return false; }
+  }
+  function ssDel(key) {
+    try { window.sessionStorage.removeItem(key); } catch (e) { /* indisponible */ }
   }
 
   function readLayouts() {
@@ -2621,9 +2688,15 @@ body.cfg-hidden .tabActions { display: none; }
     // ---- Session courante (restaurée au rechargement) ---------------
     // v2 : {version:2, active, tabs:[{name, log, data:<config v1>}]} ;
     // v1 (une seule configuration) accepté en rétro-compatibilité.
-    saveSession(data) { lsSet(KEY_SESSION, JSON.stringify(data)); },
+    saveSession(data) { ssSet(KEY_SESSION, JSON.stringify(data)); },
     loadSession() {
-      const raw = lsGet(KEY_SESSION);
+      let raw = ssGet(KEY_SESSION);
+      if (!raw) {
+        // Reprise unique de l'ancienne session partagée (avant le passage au
+        // stockage par fenêtre) : elle est consommée puis effacée.
+        raw = lsGet(KEY_SESSION);
+        if (raw) lsDel(KEY_SESSION);
+      }
       if (!raw) return null;
       try {
         const d = JSON.parse(raw);
@@ -2634,7 +2707,40 @@ body.cfg-hidden .tabActions { display: none; }
         return validateLayout(d) ? null : d;
       } catch (e) { return null; }
     },
-    clearSession() { lsDel(KEY_SESSION); },
+    clearSession() { ssDel(KEY_SESSION); },
+
+    // ---- Transferts entre fenêtres (glisser-déposer, nouvelle fenêtre) ----
+    /** Dépose une charge utile et renvoie son identifiant de reprise. */
+    putTransfer(payload) {
+      const id = 't' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+      this.purgeTransfers();
+      return lsSet(KEY_TRANSFER + id, JSON.stringify({ at: Date.now(), payload })) ? id : null;
+    },
+    /** Récupère et consomme une charge utile. */
+    takeTransfer(id) {
+      if (!id) return null;
+      const raw = lsGet(KEY_TRANSFER + id);
+      lsDel(KEY_TRANSFER + id);
+      if (!raw) return null;
+      try {
+        const o = JSON.parse(raw);
+        return o && Date.now() - o.at < TRANSFER_TTL_MS ? o.payload : null;
+      } catch (e) { return null; }
+    },
+    /** Nettoie les transferts abandonnés (fenêtre jamais ouverte). */
+    purgeTransfers() {
+      try {
+        const now = Date.now();
+        for (let i = window.localStorage.length - 1; i >= 0; i--) {
+          const k = window.localStorage.key(i);
+          if (!k || k.indexOf(KEY_TRANSFER) !== 0) continue;
+          try {
+            const o = JSON.parse(window.localStorage.getItem(k));
+            if (!o || now - o.at > TRANSFER_TTL_MS) window.localStorage.removeItem(k);
+          } catch (e) { window.localStorage.removeItem(k); }
+        }
+      } catch (e) { /* stockage indisponible */ }
+    },
 
     // ---- Export / import fichier ------------------------------------
     exportText(name, data) {
@@ -2727,6 +2833,216 @@ body.cfg-hidden .tabActions { display: none; }
 
 </script>
 <script>
+/* Diagweb — déplacement de widgets entre onglets et entre fenêtres.
+ *
+ * Un « widget » est un graphique, le tableau numérique, ou une variable
+ * isolée, transporté **avec sa configuration**. Trois chemins :
+ *
+ *  1. glisser-déposer HTML5 : vers un onglet de l'application, vers la zone
+ *     de contenu, ou vers une **autre fenêtre du navigateur** (multi-écran) ;
+ *  2. menu « Déplacer vers » (indispensable au tact, le glisser-déposer
+ *     HTML5 n'existant pas sur écran tactile) ;
+ *  3. « Ouvrir dans une nouvelle fenêtre » (transfert via le stockage local).
+ *
+ * Sémantique de déplacement sûre : la source ne retire son widget qu'après
+ * l'accusé de réception de la cible (BroadcastChannel, même origine). Sans
+ * accusé — autre navigateur, page ouverte en fichier local — le widget est
+ * simplement copié : jamais de perte.
+ */
+(function () {
+  "use strict";
+  const DW = (window.DW = window.DW || {});
+
+  const MIME = 'application/x-diagweb-widget+json';
+  const ACK_MS = 2500;
+  const winId = 'w' + Math.random().toString(36).slice(2, 10);
+
+  let api = null;                 // fourni par app.js (voir attach)
+  const pending = new Map();      // dragId -> {onMoved, timer}
+  let dragging = null;            // charge utile en cours d'émission
+  let bc = null;
+  try { bc = new BroadcastChannel('diagweb.widgets'); } catch (e) { bc = null; }
+
+  if (bc) {
+    bc.addEventListener('message', (ev) => {
+      const m = ev.data;
+      if (!m || m.type !== 'widget-accepted') return;
+      completeMove(m.dragId);
+    });
+  }
+
+  function envelope(payload, dragId) {
+    return JSON.stringify({
+      app: 'diagweb-widget', version: 1,
+      dragId, origin: winId,
+      kind: payload.kind,
+      chart: payload.chart,
+      table: payload.table,
+      title: payload.title,
+    });
+  }
+
+  function parseEnvelope(text) {
+    try {
+      const o = JSON.parse(text);
+      if (!o || o.app !== 'diagweb-widget' || !o.kind) return null;
+      return o;
+    } catch (e) { return null; }
+  }
+
+  /** Description courte, pour les messages. */
+  function describe(o) {
+    if (o.kind === 'chart') return '« ' + ((o.chart && o.chart.title) || 'Graphique') + ' »';
+    if (o.kind === 'table') return 'le tableau numérique (' + ((o.table && o.table.length) || 0) + ' variables)';
+    const n = (o.table && o.table.length) || 0;
+    return n === 1 ? o.table[0].addr : n + ' variables';
+  }
+
+  // ------------------------------------------------------------- émission
+  /**
+   * À appeler depuis un gestionnaire `dragstart`.
+   * @param payload {kind:'chart'|'table'|'vars', chart?, table?}
+   * @param onMoved fonction appelée si la cible accepte (déplacement)
+   */
+  function startDrag(e, payload, onMoved) {
+    const dragId = 'd' + Math.random().toString(36).slice(2, 10);
+    const text = envelope(payload, dragId);
+    try {
+      e.dataTransfer.setData(MIME, text);
+      e.dataTransfer.setData('text/plain', text);   // repli inter-fenêtres
+      e.dataTransfer.effectAllowed = 'copyMove';
+    } catch (err) { return; }
+    dragging = { dragId, onMoved, payload };
+    // L'attente de l'accusé est armée dès maintenant : entre deux fenêtres,
+    // la cible traite le dépôt AVANT que « dragend » ne survienne ici.
+    const timer = setTimeout(() => pending.delete(dragId), ACK_MS);
+    pending.set(dragId, { onMoved, timer });
+    document.body.classList.add('dnd-active');
+  }
+
+  /** Consomme l'attente d'un déplacement et exécute le retrait. */
+  function completeMove(dragId) {
+    const p = pending.get(dragId);
+    if (!p) return false;
+    clearTimeout(p.timer);
+    pending.delete(dragId);
+    p.onMoved();
+    return true;
+  }
+
+  function endDrag() {
+    document.body.classList.remove('dnd-active');
+    clearHighlight();
+    dragging = null;
+    // Les attentes non honorées expirent d'elles-mêmes : sans accusé de
+    // réception, le widget reste en place (copie plutôt que perte).
+  }
+
+  // -------------------------------------------------------------- réception
+  function clearHighlight() {
+    document.querySelectorAll('.tab.dnd-over').forEach((el) => el.classList.remove('dnd-over'));
+    document.body.classList.remove('dnd-over-pane');
+  }
+
+  function hasWidget(dt) {
+    if (!dt || !dt.types) return false;
+    for (const t of dt.types) if (t === MIME || t === 'text/plain') return true;
+    return false;
+  }
+
+  function onDragOver(e) {
+    if (!api || !hasWidget(e.dataTransfer)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    clearHighlight();
+    const tabEl = e.target.closest && e.target.closest('.tab');
+    if (tabEl) tabEl.classList.add('dnd-over');
+    else document.body.classList.add('dnd-over-pane');
+  }
+
+  function onDrop(e) {
+    if (!api) return;
+    const dt = e.dataTransfer;
+    if (!hasWidget(dt)) return;
+    e.preventDefault();
+    clearHighlight();
+    document.body.classList.remove('dnd-active');
+
+    const text = dt.getData(MIME) || dt.getData('text/plain');
+    const o = parseEnvelope(text);
+    if (!o) return;
+
+    const tabEl = e.target.closest && e.target.closest('.tab');
+    const targetTab = tabEl ? api.tabFromElement(tabEl) : api.activeTab();
+    if (!targetTab) return;
+
+    // Dépôt au point de départ : rien à faire
+    if (o.origin === winId && dragging && api.isSameTarget(targetTab, dragging.payload)) {
+      dragging = null;
+      return;
+    }
+
+    const ok = api.receive(o, targetTab);
+    if (!ok) return;
+
+    if (o.origin === winId) {
+      // Même fenêtre : le déplacement est immédiat
+      dragging = null;
+      completeMove(o.dragId);
+    } else if (bc) {
+      bc.postMessage({ type: 'widget-accepted', dragId: o.dragId });
+    } else {
+      api.toast('Copié depuis une autre fenêtre (déplacement impossible ici).');
+    }
+  }
+
+  // ---------------------------------------- ouverture dans une autre fenêtre
+  function openInNewWindow(payload, onMoved) {
+    const id = DW.store && DW.store.putTransfer(payload);
+    if (!id) { api && api.toast('Stockage indisponible : transfert impossible.', 'err'); return; }
+    const url = location.pathname + '?open=' + encodeURIComponent(id);
+    const w = window.open(url, '_blank');
+    if (!w) {
+      DW.store.takeTransfer(id);
+      api && api.toast('Fenêtre bloquée par le navigateur — autorisez les fenêtres surgissantes.', 'err');
+      return;
+    }
+    if (onMoved) onMoved();
+  }
+
+  /** Au démarrage : récupère le widget transféré par ?open=<id>. */
+  function consumeOpenParam() {
+    let id = null;
+    try { id = new URLSearchParams(location.search).get('open'); } catch (e) { return null; }
+    if (!id) return null;
+    const payload = DW.store && DW.store.takeTransfer(id);
+    // L'adresse est nettoyée pour qu'un rechargement ne rejoue pas le transfert
+    try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) { /* ignoré */ }
+    return payload || null;
+  }
+
+  DW.dnd = {
+    winId,
+    startDrag,
+    endDrag,
+    openInNewWindow,
+    consumeOpenParam,
+    describe,
+    /** app.js fournit ici l'accès à l'espace de travail. */
+    attach(a) {
+      api = a;
+      document.addEventListener('dragover', onDragOver);
+      document.addEventListener('drop', onDrop);
+      document.addEventListener('dragend', endDrag);
+      document.addEventListener('dragleave', (e) => {
+        if (e.relatedTarget === null) clearHighlight();
+      });
+    },
+  };
+})();
+
+</script>
+<script>
 /* Diagweb — logique applicative & interface.
  *
  * Espace de travail multi-onglets : chaque onglet porte sa propre
@@ -2786,6 +3102,9 @@ body.cfg-hidden .tabActions { display: none; }
       onChange();
     },
     refreshTargets,
+    /** Onglets autres que l'actif (menus « Déplacer vers »). */
+    otherTabs: () => state.tabs.filter((t) => t !== state.active),
+    moveChartToTab,
   };
 
   // ---------- Onglets --------------------------------------------------
@@ -2795,7 +3114,9 @@ body.cfg-hidden .tabActions { display: none; }
     pane.className = 'tabpane';
     pane.innerHTML =
       '<section class="card table-card hide">' +
-        '<h3>Valeurs numériques <span class="tcount"></span></h3>' +
+        '<h3><span class="drag-handle" draggable="true" ' +
+          'title="Glisser le tableau vers un onglet ou une autre fenêtre">⠿</span>' +
+          'Valeurs numériques <span class="tcount"></span></h3>' +
         '<div class="trows"></div>' +
       '</section>' +
       '<div class="charts-grid"></div>';
@@ -2817,6 +3138,14 @@ body.cfg-hidden .tabActions { display: none; }
         sentIdx: 0,        // lignes déjà transmises au contrôleur
       },
     };
+    // Le tableau numérique entier (avec ses variables) est déplaçable
+    pane.querySelector('.table-card .drag-handle').addEventListener('dragstart', (e) => {
+      if (!DW.dnd || !tab.table.length) { e.preventDefault(); return; }
+      DW.dnd.startDrag(e, { kind: 'table', table: serializeTable(tab) }, () => {
+        for (const entry of [...tab.table]) removeFromTable(tab, entry.addr);
+      });
+    });
+
     state.tabs.push(tab);
     switchTab(tab);
     if (data) applyConfigToActive(data);
@@ -2874,6 +3203,7 @@ body.cfg-hidden .tabActions { display: none; }
       const el = document.createElement('div');
       el.className = 'tab' + (tab === state.active ? ' on' : '');
       el.setAttribute('role', 'tab');
+      el._tab = tab;   // cible de dépôt (voir dnd.js)
       el.innerHTML =
         '<span class="tab-name"></span>' +
         (tab.log.enabled ? '<i class="recdot" title="Journalisation en cours"></i>' : '') +
@@ -2902,7 +3232,9 @@ body.cfg-hidden .tabActions { display: none; }
     input.select();
     const commit = () => {
       tab.name = input.value.trim() || tab.name;
-      rebuildTabbar();
+      // Remplacement sur place : reconstruire la barre ici détacherait
+      // l'onglet sous le pointeur et avalerait le clic en cours.
+      nameEl.textContent = tab.name;
       refreshTargets();
       onChange();
     };
@@ -2943,6 +3275,13 @@ body.cfg-hidden .tabActions { display: none; }
       const row = document.createElement('div');
       row.className = 'vrow';
       row.dataset.addr = e.addr;
+      // Chaque variable peut être glissée seule vers un autre onglet/fenêtre
+      row.draggable = true;
+      row.addEventListener('dragstart', (ev) => {
+        if (!DW.dnd) { ev.preventDefault(); return; }
+        DW.dnd.startDrag(ev, { kind: 'vars', table: [{ addr: e.addr, periodMs: e.periodMs }] },
+          () => removeFromTable(tab, e.addr));
+      });
       row.innerHTML =
         '<span class="badge fam-' + e.meta.family + '">' + e.meta.family + '</span>' +
         '<div class="v-id"><span class="v-addr"></span><span class="v-label"></span></div>' +
@@ -3003,9 +3342,10 @@ body.cfg-hidden .tabActions { display: none; }
     }
   }
 
-  // ---------- Graphiques (onglet actif) -------------------------------
-  function createChart(opts) {
-    const tab = state.active;
+  // ---------- Graphiques ------------------------------------------------
+  /** Crée un graphique dans `dest` (onglet actif par défaut, sans y basculer). */
+  function createChart(opts, dest) {
+    const tab = dest || state.active;
     if (tab.charts.length >= CFG.maxCharts) {
       toast('Limite de ' + CFG.maxCharts + ' graphiques par onglet atteinte.', 'err');
       return null;
@@ -3019,7 +3359,7 @@ body.cfg-hidden .tabActions { display: none; }
     });
     tab.charts.push(chart);
     tab.chartsGridEl.appendChild(chart.root);
-    refreshTargets();
+    if (tab === state.active) refreshTargets();
     onChange();
     return chart;
   }
@@ -3189,12 +3529,84 @@ body.cfg-hidden .tabActions { display: none; }
   }
 
   // ---------- Sérialisation -------------------------------------------
+  function serializeTable(tab) {
+    return tab.table.map((e) => ({ addr: e.addr, periodMs: e.periodMs }));
+  }
+
   function serializeConfig(tab) {
     return {
       version: 1,
-      table: tab.table.map((e) => ({ addr: e.addr, periodMs: e.periodMs })),
+      table: serializeTable(tab),
       charts: tab.charts.map((c) => c.serialize()),
     };
+  }
+
+  // ---------- Déplacement de widgets (onglets, fenêtres) ---------------
+  /** Crée un graphique depuis une configuration sérialisée, dans `tab`. */
+  function addChartFromConfig(cfg, tab) {
+    const target = tab || state.active;
+    if (target.charts.length >= CFG.maxCharts) {
+      toast('Limite de ' + CFG.maxCharts + ' graphiques par onglet atteinte.', 'err');
+      return null;
+    }
+    // On ne bascule pas d'onglet : en multi-écran, l'utilisateur range des
+    // widgets sans quitter ce qu'il regarde (un message indique la cible).
+    const chart = createChart({ title: cfg.title, windowS: cfg.windowS, heightMode: cfg.heightMode }, target);
+    if (chart) {
+      for (const s of cfg.series || []) {
+        const p = DW.parseAddr(s.addr);
+        if (p.ok) {
+          chart.addSeries(p.addr, {
+            axisMode: s.axisMode, visible: s.visible !== false,
+            periodMs: s.periodMs, offsetY: s.offsetY,
+          });
+        }
+      }
+    }
+    return chart;
+  }
+
+  /** Ajoute des variables au tableau de `tab` ; renvoie le nombre ajouté. */
+  function addVarsToTab(list, tab) {
+    const target = tab || state.active;
+    let n = 0;
+    for (const entry of list || []) {
+      const addr = typeof entry === 'string' ? entry : entry.addr;
+      const periodMs = typeof entry === 'string' ? undefined : entry.periodMs;
+      const p = DW.parseAddr(addr);
+      if (!p.ok || inTable(target, p.addr)) continue;
+      const meta = appApi.acquire(p.addr, periodMs);
+      if (!meta) continue;
+      target.table.push({ addr: p.addr, meta, periodMs: periodMs || undefined });
+      n++;
+    }
+    if (n) renderTable(target);
+    return n;
+  }
+
+  function moveChartToTab(chart, tab) {
+    const cfg = chart.serialize();
+    appApi.removeChart(chart);
+    const created = addChartFromConfig(cfg, tab);
+    if (created) toast('« ' + cfg.title + ' » déplacé vers « ' + tab.name + ' ».');
+    onChange();
+  }
+
+  /** Réception d'un widget déposé (glisser-déposer ou nouvelle fenêtre). */
+  function receiveWidget(o, tab) {
+    const target = tab || state.active;
+    if (o.kind === 'chart' && o.chart) {
+      if (!addChartFromConfig(o.chart, target)) return false;
+    } else if ((o.kind === 'table' || o.kind === 'vars') && o.table) {
+      const n = addVarsToTab(o.table, target);
+      if (!n) { toast('Ces variables sont déjà présentes dans « ' + target.name + ' ».', 'err'); return false; }
+    } else {
+      return false;
+    }
+    toast(DW.dnd.describe(o) + ' → onglet « ' + target.name + ' ».');
+    refreshTargets();
+    onChange();
+    return true;
   }
 
   function serializeSession() {
@@ -3785,6 +4197,27 @@ body.cfg-hidden .tabActions { display: none; }
   // ---------- Démarrage ------------------------------------------------
   function boot() {
     bindUi();
+
+    // Déplacement de widgets entre onglets et entre fenêtres
+    DW.dnd.attach({
+      receive: receiveWidget,
+      activeTab: () => state.active,
+      tabFromElement: (el) => el._tab || state.active,
+      isSameTarget: (tab, payload) => tab === state.active && payload.kind !== 'chart',
+      toast,
+    });
+
+    // Widget transféré par « Ouvrir dans une nouvelle fenêtre »
+    const transferred = DW.dnd.consumeOpenParam();
+    if (transferred) {
+      createTab(transferred.kind === 'chart'
+        ? ((transferred.chart && transferred.chart.title) || 'Graphique')
+        : 'Variables');
+      receiveWidget(transferred, state.active);
+      requestAnimationFrame(loop);
+      return;
+    }
+
     const sess = DW.store.loadSession();
     if (sess && sess.version === 2) {
       for (const t of sess.tabs) createTab(t.name, t.data, t.log);

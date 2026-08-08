@@ -57,6 +57,9 @@
       onChange();
     },
     refreshTargets,
+    /** Onglets autres que l'actif (menus « Déplacer vers »). */
+    otherTabs: () => state.tabs.filter((t) => t !== state.active),
+    moveChartToTab,
   };
 
   // ---------- Onglets --------------------------------------------------
@@ -66,7 +69,9 @@
     pane.className = 'tabpane';
     pane.innerHTML =
       '<section class="card table-card hide">' +
-        '<h3>Valeurs numériques <span class="tcount"></span></h3>' +
+        '<h3><span class="drag-handle" draggable="true" ' +
+          'title="Glisser le tableau vers un onglet ou une autre fenêtre">⠿</span>' +
+          'Valeurs numériques <span class="tcount"></span></h3>' +
         '<div class="trows"></div>' +
       '</section>' +
       '<div class="charts-grid"></div>';
@@ -88,6 +93,14 @@
         sentIdx: 0,        // lignes déjà transmises au contrôleur
       },
     };
+    // Le tableau numérique entier (avec ses variables) est déplaçable
+    pane.querySelector('.table-card .drag-handle').addEventListener('dragstart', (e) => {
+      if (!DW.dnd || !tab.table.length) { e.preventDefault(); return; }
+      DW.dnd.startDrag(e, { kind: 'table', table: serializeTable(tab) }, () => {
+        for (const entry of [...tab.table]) removeFromTable(tab, entry.addr);
+      });
+    });
+
     state.tabs.push(tab);
     switchTab(tab);
     if (data) applyConfigToActive(data);
@@ -145,6 +158,7 @@
       const el = document.createElement('div');
       el.className = 'tab' + (tab === state.active ? ' on' : '');
       el.setAttribute('role', 'tab');
+      el._tab = tab;   // cible de dépôt (voir dnd.js)
       el.innerHTML =
         '<span class="tab-name"></span>' +
         (tab.log.enabled ? '<i class="recdot" title="Journalisation en cours"></i>' : '') +
@@ -173,7 +187,9 @@
     input.select();
     const commit = () => {
       tab.name = input.value.trim() || tab.name;
-      rebuildTabbar();
+      // Remplacement sur place : reconstruire la barre ici détacherait
+      // l'onglet sous le pointeur et avalerait le clic en cours.
+      nameEl.textContent = tab.name;
       refreshTargets();
       onChange();
     };
@@ -214,6 +230,13 @@
       const row = document.createElement('div');
       row.className = 'vrow';
       row.dataset.addr = e.addr;
+      // Chaque variable peut être glissée seule vers un autre onglet/fenêtre
+      row.draggable = true;
+      row.addEventListener('dragstart', (ev) => {
+        if (!DW.dnd) { ev.preventDefault(); return; }
+        DW.dnd.startDrag(ev, { kind: 'vars', table: [{ addr: e.addr, periodMs: e.periodMs }] },
+          () => removeFromTable(tab, e.addr));
+      });
       row.innerHTML =
         '<span class="badge fam-' + e.meta.family + '">' + e.meta.family + '</span>' +
         '<div class="v-id"><span class="v-addr"></span><span class="v-label"></span></div>' +
@@ -274,9 +297,10 @@
     }
   }
 
-  // ---------- Graphiques (onglet actif) -------------------------------
-  function createChart(opts) {
-    const tab = state.active;
+  // ---------- Graphiques ------------------------------------------------
+  /** Crée un graphique dans `dest` (onglet actif par défaut, sans y basculer). */
+  function createChart(opts, dest) {
+    const tab = dest || state.active;
     if (tab.charts.length >= CFG.maxCharts) {
       toast('Limite de ' + CFG.maxCharts + ' graphiques par onglet atteinte.', 'err');
       return null;
@@ -290,7 +314,7 @@
     });
     tab.charts.push(chart);
     tab.chartsGridEl.appendChild(chart.root);
-    refreshTargets();
+    if (tab === state.active) refreshTargets();
     onChange();
     return chart;
   }
@@ -460,12 +484,84 @@
   }
 
   // ---------- Sérialisation -------------------------------------------
+  function serializeTable(tab) {
+    return tab.table.map((e) => ({ addr: e.addr, periodMs: e.periodMs }));
+  }
+
   function serializeConfig(tab) {
     return {
       version: 1,
-      table: tab.table.map((e) => ({ addr: e.addr, periodMs: e.periodMs })),
+      table: serializeTable(tab),
       charts: tab.charts.map((c) => c.serialize()),
     };
+  }
+
+  // ---------- Déplacement de widgets (onglets, fenêtres) ---------------
+  /** Crée un graphique depuis une configuration sérialisée, dans `tab`. */
+  function addChartFromConfig(cfg, tab) {
+    const target = tab || state.active;
+    if (target.charts.length >= CFG.maxCharts) {
+      toast('Limite de ' + CFG.maxCharts + ' graphiques par onglet atteinte.', 'err');
+      return null;
+    }
+    // On ne bascule pas d'onglet : en multi-écran, l'utilisateur range des
+    // widgets sans quitter ce qu'il regarde (un message indique la cible).
+    const chart = createChart({ title: cfg.title, windowS: cfg.windowS, heightMode: cfg.heightMode }, target);
+    if (chart) {
+      for (const s of cfg.series || []) {
+        const p = DW.parseAddr(s.addr);
+        if (p.ok) {
+          chart.addSeries(p.addr, {
+            axisMode: s.axisMode, visible: s.visible !== false,
+            periodMs: s.periodMs, offsetY: s.offsetY,
+          });
+        }
+      }
+    }
+    return chart;
+  }
+
+  /** Ajoute des variables au tableau de `tab` ; renvoie le nombre ajouté. */
+  function addVarsToTab(list, tab) {
+    const target = tab || state.active;
+    let n = 0;
+    for (const entry of list || []) {
+      const addr = typeof entry === 'string' ? entry : entry.addr;
+      const periodMs = typeof entry === 'string' ? undefined : entry.periodMs;
+      const p = DW.parseAddr(addr);
+      if (!p.ok || inTable(target, p.addr)) continue;
+      const meta = appApi.acquire(p.addr, periodMs);
+      if (!meta) continue;
+      target.table.push({ addr: p.addr, meta, periodMs: periodMs || undefined });
+      n++;
+    }
+    if (n) renderTable(target);
+    return n;
+  }
+
+  function moveChartToTab(chart, tab) {
+    const cfg = chart.serialize();
+    appApi.removeChart(chart);
+    const created = addChartFromConfig(cfg, tab);
+    if (created) toast('« ' + cfg.title + ' » déplacé vers « ' + tab.name + ' ».');
+    onChange();
+  }
+
+  /** Réception d'un widget déposé (glisser-déposer ou nouvelle fenêtre). */
+  function receiveWidget(o, tab) {
+    const target = tab || state.active;
+    if (o.kind === 'chart' && o.chart) {
+      if (!addChartFromConfig(o.chart, target)) return false;
+    } else if ((o.kind === 'table' || o.kind === 'vars') && o.table) {
+      const n = addVarsToTab(o.table, target);
+      if (!n) { toast('Ces variables sont déjà présentes dans « ' + target.name + ' ».', 'err'); return false; }
+    } else {
+      return false;
+    }
+    toast(DW.dnd.describe(o) + ' → onglet « ' + target.name + ' ».');
+    refreshTargets();
+    onChange();
+    return true;
   }
 
   function serializeSession() {
@@ -1056,6 +1152,27 @@
   // ---------- Démarrage ------------------------------------------------
   function boot() {
     bindUi();
+
+    // Déplacement de widgets entre onglets et entre fenêtres
+    DW.dnd.attach({
+      receive: receiveWidget,
+      activeTab: () => state.active,
+      tabFromElement: (el) => el._tab || state.active,
+      isSameTarget: (tab, payload) => tab === state.active && payload.kind !== 'chart',
+      toast,
+    });
+
+    // Widget transféré par « Ouvrir dans une nouvelle fenêtre »
+    const transferred = DW.dnd.consumeOpenParam();
+    if (transferred) {
+      createTab(transferred.kind === 'chart'
+        ? ((transferred.chart && transferred.chart.title) || 'Graphique')
+        : 'Variables');
+      receiveWidget(transferred, state.active);
+      requestAnimationFrame(loop);
+      return;
+    }
+
     const sess = DW.store.loadSession();
     if (sess && sess.version === 2) {
       for (const t of sess.tabs) createTab(t.name, t.data, t.log);

@@ -218,6 +218,7 @@
       this.root.className = 'card chart-card';
       this.root.innerHTML =
         '<header class="chart-head">' +
+          '<span class="drag-handle" draggable="true" title="Glisser vers un onglet ou une autre fenêtre">⠿</span>' +
           '<input class="chart-title" maxlength="48" aria-label="Titre du graphique">' +
           '<div class="chart-tools">' +
             '<select class="chart-window" title="Fenêtre de temps" aria-label="Fenêtre de temps"></select>' +
@@ -273,6 +274,16 @@
       this.root.querySelector('.chart-more').addEventListener('click', (e) =>
         this.openChartMenu(e.currentTarget));
       this.moveEl.querySelector('button').addEventListener('click', () => this.endMoveMode());
+
+      // Glisser le graphique (avec sa configuration) vers un autre onglet
+      // ou une autre fenêtre du navigateur.
+      const handle = this.root.querySelector('.drag-handle');
+      handle.addEventListener('dragstart', (e) => {
+        if (!DW.dnd) return;
+        e.dataTransfer.setDragImage(this.root, 40, 20);
+        DW.dnd.startDrag(e, { kind: 'chart', chart: this.serialize() },
+          () => this.app.removeChart(this));
+      });
 
       this._escHandler = (e) => { if (e.key === 'Escape' && this.fullscreen) this.setFullscreen(false); };
       document.addEventListener('keydown', this._escHandler);
@@ -340,6 +351,17 @@
            (next === 'XL' ? ' (pleine largeur)' : ''), () => this.cycleHeight());
         mk(this.fullscreen ? 'Quitter le plein écran' : 'Plein écran', () =>
           this.setFullscreen(!this.fullscreen));
+        // Déplacements (indispensables au tact : pas de glisser-déposer HTML5)
+        for (const t of this.app.otherTabs()) {
+          mk('Déplacer vers l’onglet « ' + DW.escapeHtml(t.name) + ' »', () => {
+            this.app.moveChartToTab(this, t);
+          });
+        }
+        mk('Ouvrir dans une nouvelle fenêtre', () => {
+          if (this.fullscreen) this.setFullscreen(false);
+          DW.dnd.openInNewWindow({ kind: 'chart', chart: this.serialize() },
+            () => this.app.removeChart(this));
+        });
         mk('Fermer le graphique', () => {
           if (this.fullscreen) this.setFullscreen(false);
           this.app.removeChart(this);

@@ -64,6 +64,37 @@ pour les familles PLC, normalisé en majuscules) :
 - La session (v2) mémorise tous les onglets, l'onglet actif et l'état de
   journalisation de chacun.
 
+## 2 ter. Déplacement de widgets (multi-écran)
+
+Un **widget** — un graphique, le tableau numérique entier, ou une variable
+isolée — se déplace **avec sa configuration** (courbes, échelles dédiées,
+décalages, fenêtre de temps, taille, périodes de rafraîchissement).
+
+- **Glisser-déposer** par la poignée « ⠿ » (en-tête du graphique, en-tête
+  du tableau) ou en glissant une ligne du tableau : vers un **onglet** de la
+  barre, vers la zone de contenu (onglet courant), ou vers une **autre
+  fenêtre du navigateur** (même origine).
+- **Menu ⋮ du graphique** : « Déplacer vers l'onglet … » (une entrée par
+  onglet) et « Ouvrir dans une nouvelle fenêtre ». Indispensable sur écran
+  tactile, où le glisser-déposer HTML5 n'existe pas.
+- L'onglet actif **ne change pas** quand on dépose ailleurs : on range sans
+  quitter ce qu'on regarde ; un message indique la destination.
+- **Sécurité du déplacement** : la source ne retire son widget qu'après
+  l'accusé de réception de la cible (`BroadcastChannel`, même origine).
+  Sans accusé — autre navigateur, page ouverte en fichier local — le widget
+  est **copié** : jamais de perte. L'attente est armée dès le début du
+  glisser (entre fenêtres, la cible traite le dépôt avant le `dragend` de
+  la source) et expire au bout de 2,5 s.
+- Transfert vers une nouvelle fenêtre : la configuration transite par le
+  stockage local sous une clé éphémère (2 min), consommée au démarrage de
+  la fenêtre ouverte (`?open=<id>`, l'adresse est aussitôt nettoyée).
+
+**Session par fenêtre** : l'espace de travail (onglets, widgets,
+journalisation) est mémorisé dans le stockage **de session**, propre à
+chaque onglet/fenêtre du navigateur — deux fenêtres affichent donc deux
+espaces différents sans se marcher dessus. Les **configurations nommées**
+restent partagées entre toutes les fenêtres (stockage local).
+
 ## 3. Tableau numérique
 
 - Colonnes : badge famille, adresse (mono), libellé, valeur vivante, unité,
@@ -165,7 +196,8 @@ dest}, data: <configuration v1>}]}` ; une session v1 (une seule
 configuration à la racine) est acceptée et convertie en un onglet.
 
 - **Session** : l'espace de travail courant est sauvegardé en continu
-  (localStorage, debounce 500 ms) et restauré au rechargement.
+  (stockage de session, propre à la fenêtre, debounce 500 ms) et restauré au
+  rechargement. Une ancienne session partagée est reprise une seule fois.
 - **Navigateur** : dispositions nommées en localStorage — enregistrer,
   charger, supprimer, télécharger ; « ★ » désigne la disposition chargée
   automatiquement à l'ouverture (à défaut : session, sinon démo).
@@ -296,6 +328,7 @@ L'implémentation de référence est `server/` (C++20, sans dépendance) : voir
 - [x] Tableau numérique (LED, hexa, tendance)
 - [x] Graphiques multi-échelles, curseur, pause, fenêtres de temps
 - [x] Onglets multiples (une configuration par onglet, session v2)
+- [x] Déplacement de widgets entre onglets et entre fenêtres (multi-écran)
 - [x] Configurations : session, navigateur, export JSON + CSV, import JSON,
       ★ auto, stub contrôleur
 - [x] Journalisation par onglet (navigateur ; contrôleur en stub)

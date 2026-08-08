@@ -1,0 +1,207 @@
+/* Diagweb — déplacement de widgets entre onglets et entre fenêtres.
+ *
+ * Un « widget » est un graphique, le tableau numérique, ou une variable
+ * isolée, transporté **avec sa configuration**. Trois chemins :
+ *
+ *  1. glisser-déposer HTML5 : vers un onglet de l'application, vers la zone
+ *     de contenu, ou vers une **autre fenêtre du navigateur** (multi-écran) ;
+ *  2. menu « Déplacer vers » (indispensable au tact, le glisser-déposer
+ *     HTML5 n'existant pas sur écran tactile) ;
+ *  3. « Ouvrir dans une nouvelle fenêtre » (transfert via le stockage local).
+ *
+ * Sémantique de déplacement sûre : la source ne retire son widget qu'après
+ * l'accusé de réception de la cible (BroadcastChannel, même origine). Sans
+ * accusé — autre navigateur, page ouverte en fichier local — le widget est
+ * simplement copié : jamais de perte.
+ */
+(function () {
+  "use strict";
+  const DW = (window.DW = window.DW || {});
+
+  const MIME = 'application/x-diagweb-widget+json';
+  const ACK_MS = 2500;
+  const winId = 'w' + Math.random().toString(36).slice(2, 10);
+
+  let api = null;                 // fourni par app.js (voir attach)
+  const pending = new Map();      // dragId -> {onMoved, timer}
+  let dragging = null;            // charge utile en cours d'émission
+  let bc = null;
+  try { bc = new BroadcastChannel('diagweb.widgets'); } catch (e) { bc = null; }
+
+  if (bc) {
+    bc.addEventListener('message', (ev) => {
+      const m = ev.data;
+      if (!m || m.type !== 'widget-accepted') return;
+      completeMove(m.dragId);
+    });
+  }
+
+  function envelope(payload, dragId) {
+    return JSON.stringify({
+      app: 'diagweb-widget', version: 1,
+      dragId, origin: winId,
+      kind: payload.kind,
+      chart: payload.chart,
+      table: payload.table,
+      title: payload.title,
+    });
+  }
+
+  function parseEnvelope(text) {
+    try {
+      const o = JSON.parse(text);
+      if (!o || o.app !== 'diagweb-widget' || !o.kind) return null;
+      return o;
+    } catch (e) { return null; }
+  }
+
+  /** Description courte, pour les messages. */
+  function describe(o) {
+    if (o.kind === 'chart') return '« ' + ((o.chart && o.chart.title) || 'Graphique') + ' »';
+    if (o.kind === 'table') return 'le tableau numérique (' + ((o.table && o.table.length) || 0) + ' variables)';
+    const n = (o.table && o.table.length) || 0;
+    return n === 1 ? o.table[0].addr : n + ' variables';
+  }
+
+  // ------------------------------------------------------------- émission
+  /**
+   * À appeler depuis un gestionnaire `dragstart`.
+   * @param payload {kind:'chart'|'table'|'vars', chart?, table?}
+   * @param onMoved fonction appelée si la cible accepte (déplacement)
+   */
+  function startDrag(e, payload, onMoved) {
+    const dragId = 'd' + Math.random().toString(36).slice(2, 10);
+    const text = envelope(payload, dragId);
+    try {
+      e.dataTransfer.setData(MIME, text);
+      e.dataTransfer.setData('text/plain', text);   // repli inter-fenêtres
+      e.dataTransfer.effectAllowed = 'copyMove';
+    } catch (err) { return; }
+    dragging = { dragId, onMoved, payload };
+    // L'attente de l'accusé est armée dès maintenant : entre deux fenêtres,
+    // la cible traite le dépôt AVANT que « dragend » ne survienne ici.
+    const timer = setTimeout(() => pending.delete(dragId), ACK_MS);
+    pending.set(dragId, { onMoved, timer });
+    document.body.classList.add('dnd-active');
+  }
+
+  /** Consomme l'attente d'un déplacement et exécute le retrait. */
+  function completeMove(dragId) {
+    const p = pending.get(dragId);
+    if (!p) return false;
+    clearTimeout(p.timer);
+    pending.delete(dragId);
+    p.onMoved();
+    return true;
+  }
+
+  function endDrag() {
+    document.body.classList.remove('dnd-active');
+    clearHighlight();
+    dragging = null;
+    // Les attentes non honorées expirent d'elles-mêmes : sans accusé de
+    // réception, le widget reste en place (copie plutôt que perte).
+  }
+
+  // -------------------------------------------------------------- réception
+  function clearHighlight() {
+    document.querySelectorAll('.tab.dnd-over').forEach((el) => el.classList.remove('dnd-over'));
+    document.body.classList.remove('dnd-over-pane');
+  }
+
+  function hasWidget(dt) {
+    if (!dt || !dt.types) return false;
+    for (const t of dt.types) if (t === MIME || t === 'text/plain') return true;
+    return false;
+  }
+
+  function onDragOver(e) {
+    if (!api || !hasWidget(e.dataTransfer)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    clearHighlight();
+    const tabEl = e.target.closest && e.target.closest('.tab');
+    if (tabEl) tabEl.classList.add('dnd-over');
+    else document.body.classList.add('dnd-over-pane');
+  }
+
+  function onDrop(e) {
+    if (!api) return;
+    const dt = e.dataTransfer;
+    if (!hasWidget(dt)) return;
+    e.preventDefault();
+    clearHighlight();
+    document.body.classList.remove('dnd-active');
+
+    const text = dt.getData(MIME) || dt.getData('text/plain');
+    const o = parseEnvelope(text);
+    if (!o) return;
+
+    const tabEl = e.target.closest && e.target.closest('.tab');
+    const targetTab = tabEl ? api.tabFromElement(tabEl) : api.activeTab();
+    if (!targetTab) return;
+
+    // Dépôt au point de départ : rien à faire
+    if (o.origin === winId && dragging && api.isSameTarget(targetTab, dragging.payload)) {
+      dragging = null;
+      return;
+    }
+
+    const ok = api.receive(o, targetTab);
+    if (!ok) return;
+
+    if (o.origin === winId) {
+      // Même fenêtre : le déplacement est immédiat
+      dragging = null;
+      completeMove(o.dragId);
+    } else if (bc) {
+      bc.postMessage({ type: 'widget-accepted', dragId: o.dragId });
+    } else {
+      api.toast('Copié depuis une autre fenêtre (déplacement impossible ici).');
+    }
+  }
+
+  // ---------------------------------------- ouverture dans une autre fenêtre
+  function openInNewWindow(payload, onMoved) {
+    const id = DW.store && DW.store.putTransfer(payload);
+    if (!id) { api && api.toast('Stockage indisponible : transfert impossible.', 'err'); return; }
+    const url = location.pathname + '?open=' + encodeURIComponent(id);
+    const w = window.open(url, '_blank');
+    if (!w) {
+      DW.store.takeTransfer(id);
+      api && api.toast('Fenêtre bloquée par le navigateur — autorisez les fenêtres surgissantes.', 'err');
+      return;
+    }
+    if (onMoved) onMoved();
+  }
+
+  /** Au démarrage : récupère le widget transféré par ?open=<id>. */
+  function consumeOpenParam() {
+    let id = null;
+    try { id = new URLSearchParams(location.search).get('open'); } catch (e) { return null; }
+    if (!id) return null;
+    const payload = DW.store && DW.store.takeTransfer(id);
+    // L'adresse est nettoyée pour qu'un rechargement ne rejoue pas le transfert
+    try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) { /* ignoré */ }
+    return payload || null;
+  }
+
+  DW.dnd = {
+    winId,
+    startDrag,
+    endDrag,
+    openInNewWindow,
+    consumeOpenParam,
+    describe,
+    /** app.js fournit ici l'accès à l'espace de travail. */
+    attach(a) {
+      api = a;
+      document.addEventListener('dragover', onDragOver);
+      document.addEventListener('drop', onDrop);
+      document.addEventListener('dragend', endDrag);
+      document.addEventListener('dragleave', (e) => {
+        if (e.relatedTarget === null) clearHighlight();
+      });
+    },
+  };
+})();

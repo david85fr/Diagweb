@@ -459,6 +459,34 @@ body.has-fs { overflow: hidden; }
 .popmenu button:hover { background: var(--panel-2); }
 .popmenu button.danger { color: var(--crit); }
 
+/* ---------- Glisser-déposer de widgets ---------- */
+.drag-handle {
+  flex: none;
+  cursor: grab;
+  color: var(--faint);
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 5px;
+  border-radius: 6px;
+  user-select: none;
+}
+.drag-handle:hover { color: var(--ink); background: var(--panel-2); }
+.drag-handle:active { cursor: grabbing; }
+.table-card h3 .drag-handle { margin-right: 6px; display: inline-block; }
+
+body.dnd-active .tab { outline: 1px dashed var(--line); outline-offset: 2px; }
+.tab.dnd-over {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel));
+}
+body.dnd-over-pane #panes {
+  outline: 2px dashed color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
+.vrow[draggable="true"] { cursor: grab; }
+
 /* ---------- Onglets (dans la barre supérieure, à la place du titre) ---------- */
 .tabbar {
   grid-area: tabs;

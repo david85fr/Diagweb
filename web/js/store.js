@@ -14,6 +14,9 @@
   const KEY_SESSION = 'diagweb.session.v1';
   const KEY_AUTO = 'diagweb.autoload.v1';
 
+  const KEY_TRANSFER = 'diagweb.transfer.';
+  const TRANSFER_TTL_MS = 120000;
+
   let available = true;
   function lsGet(key) {
     try { return window.localStorage.getItem(key); }
@@ -25,6 +28,20 @@
   }
   function lsDel(key) {
     try { window.localStorage.removeItem(key); } catch (e) { available = false; }
+  }
+
+  // La session est propre à chaque onglet/fenêtre du navigateur : plusieurs
+  // fenêtres peuvent afficher des espaces de travail différents (multi-écran)
+  // sans se marcher dessus. Les configurations nommées, elles, restent
+  // partagées (localStorage).
+  function ssGet(key) {
+    try { return window.sessionStorage.getItem(key); } catch (e) { return null; }
+  }
+  function ssSet(key, val) {
+    try { window.sessionStorage.setItem(key, val); return true; } catch (e) { return false; }
+  }
+  function ssDel(key) {
+    try { window.sessionStorage.removeItem(key); } catch (e) { /* indisponible */ }
   }
 
   function readLayouts() {
@@ -71,9 +88,15 @@
     // ---- Session courante (restaurée au rechargement) ---------------
     // v2 : {version:2, active, tabs:[{name, log, data:<config v1>}]} ;
     // v1 (une seule configuration) accepté en rétro-compatibilité.
-    saveSession(data) { lsSet(KEY_SESSION, JSON.stringify(data)); },
+    saveSession(data) { ssSet(KEY_SESSION, JSON.stringify(data)); },
     loadSession() {
-      const raw = lsGet(KEY_SESSION);
+      let raw = ssGet(KEY_SESSION);
+      if (!raw) {
+        // Reprise unique de l'ancienne session partagée (avant le passage au
+        // stockage par fenêtre) : elle est consommée puis effacée.
+        raw = lsGet(KEY_SESSION);
+        if (raw) lsDel(KEY_SESSION);
+      }
       if (!raw) return null;
       try {
         const d = JSON.parse(raw);
@@ -84,7 +107,40 @@
         return validateLayout(d) ? null : d;
       } catch (e) { return null; }
     },
-    clearSession() { lsDel(KEY_SESSION); },
+    clearSession() { ssDel(KEY_SESSION); },
+
+    // ---- Transferts entre fenêtres (glisser-déposer, nouvelle fenêtre) ----
+    /** Dépose une charge utile et renvoie son identifiant de reprise. */
+    putTransfer(payload) {
+      const id = 't' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+      this.purgeTransfers();
+      return lsSet(KEY_TRANSFER + id, JSON.stringify({ at: Date.now(), payload })) ? id : null;
+    },
+    /** Récupère et consomme une charge utile. */
+    takeTransfer(id) {
+      if (!id) return null;
+      const raw = lsGet(KEY_TRANSFER + id);
+      lsDel(KEY_TRANSFER + id);
+      if (!raw) return null;
+      try {
+        const o = JSON.parse(raw);
+        return o && Date.now() - o.at < TRANSFER_TTL_MS ? o.payload : null;
+      } catch (e) { return null; }
+    },
+    /** Nettoie les transferts abandonnés (fenêtre jamais ouverte). */
+    purgeTransfers() {
+      try {
+        const now = Date.now();
+        for (let i = window.localStorage.length - 1; i >= 0; i--) {
+          const k = window.localStorage.key(i);
+          if (!k || k.indexOf(KEY_TRANSFER) !== 0) continue;
+          try {
+            const o = JSON.parse(window.localStorage.getItem(k));
+            if (!o || now - o.at > TRANSFER_TTL_MS) window.localStorage.removeItem(k);
+          } catch (e) { window.localStorage.removeItem(k); }
+        }
+      } catch (e) { /* stockage indisponible */ }
+    },
 
     // ---- Export / import fichier ------------------------------------
     exportText(name, data) {

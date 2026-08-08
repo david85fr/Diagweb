@@ -32,6 +32,7 @@ web/            sources de l'application (page de dev : web/index.html)
   js/chart.js   moteur de graphiques canvas (multi-échelles, gestes, échelles)
   js/source-ws.js source WebSocket (même contrat que sim.js)
   js/source.js  choix de la source au démarrage (DW.sourceReady)
+  js/dnd.js     déplacement de widgets entre onglets et fenêtres
   js/store.js   configurations : localStorage, export/import JSON+CSV, stub
   js/app.js     onglets, recherche, tableau, journal, boucle de rendu
 server/         serveur de diagnostic C++20 (HTTP + WebSocket, sans dépendance)
@@ -42,6 +43,7 @@ tools/build.py  assemble dist/ à partir de web/
 tools/gen-catalog.mjs  régénère server/src/catalog.generated.hpp depuis config.js
 tools/serve.py  serveur d'aperçu (port 8080, en-têtes anti-cache)
 tests/ui.mjs    tests d'interface Playwright (13 vérifications)
+tests/dnd.mjs   tests de déplacement de widgets (6 vérifications, http requis)
 dist/           livrables générés (commités) : index.html autonome + artifact.html
 docs/           PROJET.md, SPECS.md
 .devcontainer/  configuration GitHub Codespaces (Python + Node + aperçu 8080)
@@ -90,3 +92,5 @@ Espace de noms JS global : `window.DW`. Scripts en IIFE, pas de modules ES
   par plus petit index libre — ne jamais générer de teintes.
 - Les dispositions sérialisées (`{version, table, charts}`) sont un format
   d'échange : rester rétro-compatible ou incrémenter `version` avec migration.
+- Session dans `sessionStorage` (par fenêtre, multi-écran), configurations
+  nommées dans `localStorage` (partagées) — ne pas confondre.
