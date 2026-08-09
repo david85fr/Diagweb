@@ -60,6 +60,7 @@
     /** Onglets autres que l'actif (menus « Déplacer vers »). */
     otherTabs: () => state.tabs.filter((t) => t !== state.active),
     moveChartToTab,
+    duplicateChart,
   };
 
   // ---------- Onglets --------------------------------------------------
@@ -497,8 +498,11 @@
   }
 
   // ---------- Déplacement de widgets (onglets, fenêtres) ---------------
-  /** Crée un graphique depuis une configuration sérialisée, dans `tab`. */
-  function addChartFromConfig(cfg, tab) {
+  /**
+   * Crée un graphique depuis une configuration sérialisée, dans `tab`.
+   * `place` ({anchorEl, after}) permet de l'insérer à un rang précis.
+   */
+  function addChartFromConfig(cfg, tab, place) {
     const target = tab || state.active;
     if (target.charts.length >= CFG.maxCharts) {
       toast('Limite de ' + CFG.maxCharts + ' graphiques par onglet atteinte.', 'err');
@@ -514,11 +518,38 @@
           chart.addSeries(p.addr, {
             axisMode: s.axisMode, visible: s.visible !== false,
             periodMs: s.periodMs, offsetY: s.offsetY,
+            colorIdx: s.colorIdx, color: s.color,
           });
         }
       }
+      if (place && place.anchorEl) placeChart(chart, target, place);
     }
     return chart;
+  }
+
+  /** Range un graphique avant / après une carte de la même grille. */
+  function placeChart(chart, tab, place) {
+    const anchor = place.anchorEl;
+    if (!anchor || anchor === chart.root || !tab.chartsGridEl.contains(anchor)) return;
+    const i = tab.charts.indexOf(chart);
+    if (i >= 0) tab.charts.splice(i, 1);
+    const at = tab.charts.findIndex((c) => c.root === anchor);
+    const insert = at < 0 ? tab.charts.length : at + (place.after ? 1 : 0);
+    tab.charts.splice(insert, 0, chart);
+    if (place.after) anchor.after(chart.root);
+    else anchor.before(chart.root);
+    refreshTargets();
+    onChange();
+  }
+
+  /** Duplique un graphique (courbes, échelles, couleurs) juste après lui. */
+  function duplicateChart(chart) {
+    const tab = state.tabs.find((t) => t.charts.includes(chart)) || state.active;
+    const cfg = chart.serialize();
+    cfg.title = cfg.title + ' (copie)';
+    const copy = addChartFromConfig(cfg, tab, { anchorEl: chart.root, after: true });
+    if (copy) toast('« ' + cfg.title +' » créé.');
+    return copy;
   }
 
   /** Ajoute des variables au tableau de `tab` ; renvoie le nombre ajouté. */
@@ -547,11 +578,23 @@
     onChange();
   }
 
-  /** Réception d'un widget déposé (glisser-déposer ou nouvelle fenêtre). */
-  function receiveWidget(o, tab) {
+  /**
+   * Réception d'un widget déposé (glisser-déposer ou nouvelle fenêtre).
+   * @returns 'reordered' si le widget était déjà là et n'a été que rangé,
+   *          true s'il a été créé, false sinon.
+   */
+  function receiveWidget(o, tab, place, sameWindow) {
     const target = tab || state.active;
     if (o.kind === 'chart' && o.chart) {
-      if (!addChartFromConfig(o.chart, target)) return false;
+      // Graphique déjà présent dans cet onglet : simple réorganisation
+      if (sameWindow && o.chartId) {
+        const existing = target.charts.find((c) => c.id === o.chartId);
+        if (existing) {
+          if (place) placeChart(existing, target, place);
+          return 'reordered';
+        }
+      }
+      if (!addChartFromConfig(o.chart, target, place)) return false;
     } else if ((o.kind === 'table' || o.kind === 'vars') && o.table) {
       const n = addVarsToTab(o.table, target);
       if (!n) { toast('Ces variables sont déjà présentes dans « ' + target.name + ' ».', 'err'); return false; }
@@ -592,7 +635,13 @@
       if (!chart) break;
       for (const s of c.series || []) {
         const p = DW.parseAddr(s.addr);
-        if (p.ok) chart.addSeries(p.addr, { axisMode: s.axisMode, visible: s.visible !== false, periodMs: s.periodMs, offsetY: s.offsetY });
+        if (p.ok) {
+          chart.addSeries(p.addr, {
+            axisMode: s.axisMode, visible: s.visible !== false,
+            periodMs: s.periodMs, offsetY: s.offsetY,
+            colorIdx: s.colorIdx, color: s.color,
+          });
+        }
       }
     }
     refreshTargets();

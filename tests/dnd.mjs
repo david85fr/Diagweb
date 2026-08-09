@@ -28,6 +28,32 @@ function findChromium() {
   return undefined;
 }
 
+/** Glisse un widget sur une carte de graphique (rangement dans la grille). */
+async function dragOntoCard(page, srcSel, dstSel, right) {
+  const store = await page.evaluate((sel) => {
+    const el = document.querySelector(sel); const s = {};
+    const dt = { types: [], setData(t, v) { s[t] = v; this.types.push(t); },
+      getData(t) { return s[t] || ''; }, setDragImage() {}, effectAllowed: '', dropEffect: '' };
+    const ev = new Event('dragstart', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', { value: dt });
+    el.dispatchEvent(ev);
+    return s;
+  }, srcSel);
+  await page.evaluate(({ sel, store, right }) => {
+    const el = document.querySelector(sel);
+    const r = el.getBoundingClientRect();
+    const dt = { types: Object.keys(store), getData(t) { return store[t] || ''; },
+      setData() {}, dropEffect: '', effectAllowed: '' };
+    for (const type of ['dragover', 'drop']) {
+      const ev = new MouseEvent(type, { bubbles: true, cancelable: true,
+        clientX: r.left + (right ? r.width * 0.8 : r.width * 0.2), clientY: r.top + 20 });
+      Object.defineProperty(ev, 'dataTransfer', { value: dt });
+      el.dispatchEvent(ev);
+    }
+  }, { sel: dstSel, store, right });
+  await page.evaluate(() => document.dispatchEvent(new Event('dragend', { bubbles: true })));
+}
+
 /** Simule un glisser-déposer HTML5 en transportant réellement le DataTransfer. */
 async function dragTo(srcPage, srcSel, dstPage, dstSel) {
   // 1. dragstart sur la source, on capture ce que l'application y dépose
@@ -98,6 +124,16 @@ console.log(`Cible : ${URL}\n`);
   await A.goto(URL);
   await A.waitForSelector('.tabpane.on .chart-card', { timeout: 20000 });
   await A.waitForTimeout(1500);
+
+  // 0) Rangement des graphiques dans la grille (sans duplication)
+  const ordre0 = await A.locator('.tabpane.on .chart-title').evaluateAll((e) => e.map((x) => x.value));
+  await dragOntoCard(A, '.tabpane.on .chart-card:nth-of-type(1) .drag-handle',
+    '.tabpane.on .chart-card:nth-of-type(2)', true);
+  await A.waitForTimeout(700);
+  const ordre1 = await A.locator('.tabpane.on .chart-title').evaluateAll((e) => e.map((x) => x.value));
+  check('graphiques rangés dans l’ordre voulu (aucune copie)',
+    ordre1.length === ordre0.length && ordre1[0] === ordre0[1] && ordre1[1] === ordre0[0],
+    ordre1.join(' · '));
 
   // Un second onglet dans A
   await A.click('#tabAdd');

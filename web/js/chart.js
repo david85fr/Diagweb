@@ -84,6 +84,11 @@
   }
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
+  /** Couleur d'une courbe : teinte personnalisée si l'utilisateur en a choisi
+   *  une, sinon l'emplacement de palette (qui, lui, suit le thème). */
+  function colorOf(s) { return s.color || DW.seriesColor(s.colorIdx); }
+  DW.seriesColorOf = colorOf;
+
   /** Garantit une plage exploitable : span plancher relatif (anti-gel au
    *  zoom extrême et données quasi constantes en arithmétique flottante). */
   function sanitizeRange(min, max) {
@@ -173,7 +178,7 @@
       b.addEventListener('click', () => { closePopover(); fn(); });
       popEl.appendChild(b);
       return b;
-    });
+    }, (node) => { popEl.appendChild(node); return node; });
     document.body.appendChild(popEl);
     const r = anchorEl.getBoundingClientRect();
     const pw = popEl.offsetWidth;
@@ -281,7 +286,7 @@
       handle.addEventListener('dragstart', (e) => {
         if (!DW.dnd) return;
         e.dataTransfer.setDragImage(this.root, 40, 20);
-        DW.dnd.startDrag(e, { kind: 'chart', chart: this.serialize() },
+        DW.dnd.startDrag(e, { kind: 'chart', chartId: this.id, chart: this.serialize() },
           () => this.app.removeChart(this));
       });
 
@@ -345,6 +350,7 @@
 
     openChartMenu(anchor) {
       openPopover(this, anchor, (mk) => {
+        mk('Dupliquer ce graphique', () => this.app.duplicateChart(this));
         mk('Échelles automatiques', () => this.resetAxes());
         const next = HEIGHT_MODES[(HEIGHT_MODES.indexOf(this.heightMode) + 1) % HEIGHT_MODES.length];
         mk('Taille : ' + this.heightMode + ' → ' + next +
@@ -619,8 +625,11 @@
       const used = new Set(this.series.map((s) => s.colorIdx));
       let colorIdx = 0;
       while (used.has(colorIdx)) colorIdx++;
+      // Une couleur explicitement choisie (palette ou teinte libre) est restituée
+      if (Number.isInteger(opts.colorIdx) && opts.colorIdx >= 0) colorIdx = opts.colorIdx;
       this.series.push({
         addr, meta, colorIdx,
+        color: typeof opts.color === 'string' ? opts.color : undefined,
         axisMode: opts.axisMode === 'solo' ? 'solo' : 'auto',
         visible: opts.visible !== false,
         periodMs: opts.periodMs || undefined,
@@ -658,7 +667,7 @@
           '<span class="chip-off hide" title="Courbe décalée verticalement">Δ</span>' +
           '<span class="chip-axis"></span>';
         chip.querySelector('.chip-addr').textContent = s.addr;
-        chip.querySelector('.sw').style.background = DW.seriesColor(s.colorIdx);
+        chip.querySelector('.sw').style.background = colorOf(s);
         chip.title = s.meta.label + (s.meta.unit ? ' (' + s.meta.unit + ')' : '') +
           ' · rafr. ' + (s.periodMs || DW.CONFIG.defaultPeriodMs) + ' ms' +
           (s.offsetY ? ' · décalage ' + DW.fmtVal(s.offsetY, s.meta) : '');
@@ -669,7 +678,8 @@
     }
 
     openSeriesMenu(s, chip) {
-      openPopover(s, chip, (mk) => {
+      openPopover(s, chip, (mk, add) => {
+        add(this.buildColorPicker(s));
         mk(s.visible ? 'Masquer la courbe' : 'Afficher la courbe', () => {
           s.visible = !s.visible;
           this.rebuildLegend();
@@ -690,6 +700,51 @@
         }
         mk('Retirer du graphique', () => this.removeSeries(s.addr), 'danger');
       });
+    }
+
+    /**
+     * Nuancier du menu de courbe : les emplacements de la palette (qui
+     * suivent le thème clair/sombre) puis une teinte libre.
+     */
+    buildColorPicker(s) {
+      const wrap = document.createElement('div');
+      wrap.className = 'pop-swatches';
+      const pal = DW.isDarkTheme() ? DW.SERIES_COLORS.dark : DW.SERIES_COLORS.light;
+
+      const apply = () => {
+        this.rebuildLegend();
+        this.app.onChange();
+      };
+      pal.forEach((hex, i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'sw-btn' + (!s.color && s.colorIdx === i ? ' on' : '');
+        b.style.background = hex;
+        b.title = 'Couleur ' + (i + 1) + ' de la palette';
+        b.addEventListener('click', () => {
+          s.colorIdx = i;
+          delete s.color;      // retour à une couleur qui suit le thème
+          closePopover();
+          apply();
+        });
+        wrap.appendChild(b);
+      });
+
+      const custom = document.createElement('label');
+      custom.className = 'sw-custom' + (s.color ? ' on' : '');
+      custom.title = 'Teinte personnalisée (fixe, identique en thème clair et sombre)';
+      const input = document.createElement('input');
+      input.type = 'color';
+      input.value = /^#[0-9a-f]{6}$/i.test(colorOf(s)) ? colorOf(s) : '#2dd4bf';
+      input.addEventListener('input', () => { s.color = input.value; });
+      input.addEventListener('change', () => {
+        s.color = input.value;
+        closePopover();
+        apply();
+      });
+      custom.appendChild(input);
+      wrap.appendChild(custom);
+      return wrap;
     }
 
     /** Mise à jour des valeurs vivantes de la légende (~5 Hz). */
@@ -853,7 +908,7 @@
         if (!validKeys.has(key)) this.axisState.delete(key);
       }
       for (const g of list) {
-        g.color = g.series.length === 1 ? DW.seriesColor(g.series[0].colorIdx) : ink().muted;
+        g.color = g.series.length === 1 ? colorOf(g.series[0]) : ink().muted;
       }
       return list;
     }
@@ -989,7 +1044,7 @@
           const [i0, i1] = rangeIdx(d.ts, tStart, tEnd);
           if (i1 < i0) continue;
           const discrete = s.meta.kind === 'bit' || s.meta.kind === 'word';
-          ctx.strokeStyle = DW.seriesColor(s.colorIdx);
+          ctx.strokeStyle = colorOf(s);
           ctx.lineWidth = this.moveSeries === s.addr ? 3 : 2;
           ctx.lineJoin = 'round';
           ctx.lineCap = 'round';
@@ -997,7 +1052,7 @@
           if (this.viewEnd === null) {
             const xe = X(d.ts[i1]), ye = yFn(d.vs[i1]);
             ctx.beginPath(); ctx.arc(xe, ye, 3, 0, Math.PI * 2);
-            ctx.fillStyle = DW.seriesColor(s.colorIdx); ctx.fill();
+            ctx.fillStyle = colorOf(s); ctx.fill();
           }
         }
       }
@@ -1035,8 +1090,8 @@
           const v = d.vs[i];
           const y = this._yFns[s.addr](v);
           ctx.beginPath(); ctx.arc(X(d.ts[i]), y, 4, 0, Math.PI * 2);
-          ctx.strokeStyle = DW.seriesColor(s.colorIdx); ctx.lineWidth = 2; ctx.stroke();
-          rows += '<div class="tip-row"><i style="background:' + DW.seriesColor(s.colorIdx) + '"></i>' +
+          ctx.strokeStyle = colorOf(s); ctx.lineWidth = 2; ctx.stroke();
+          rows += '<div class="tip-row"><i style="background:' + colorOf(s) + '"></i>' +
             '<span class="tip-addr">' + escapeHtml(s.addr) + '</span>' +
             '<b>' + DW.fmtVal(v, s.meta) + (s.meta.unit ? ' ' + escapeHtml(s.meta.unit) : '') + '</b></div>';
         }
@@ -1062,6 +1117,8 @@
           visible: s.visible,
           periodMs: s.periodMs,
           offsetY: s.offsetY || undefined,
+          colorIdx: s.colorIdx,
+          color: s.color || undefined,
         })),
       };
     }

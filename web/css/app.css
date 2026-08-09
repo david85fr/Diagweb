@@ -487,6 +487,46 @@ body.dnd-over-pane #panes {
 }
 .vrow[draggable="true"] { cursor: grab; }
 
+/* Repère d'insertion pendant le rangement des graphiques */
+.chart-card { position: relative; }
+.chart-card.drop-before::before,
+.chart-card.drop-after::after {
+  content: '';
+  position: absolute; top: 6px; bottom: 6px; width: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 70%, transparent);
+  z-index: 20;
+}
+.chart-card.drop-before::before { left: -7px; }
+.chart-card.drop-after::after { right: -7px; }
+
+/* Nuancier du menu de courbe */
+.pop-swatches {
+  display: flex; flex-wrap: wrap; gap: 5px;
+  padding: 6px 8px 8px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+  max-width: 220px;
+}
+.sw-btn, .sw-custom {
+  width: 22px; height: 22px; flex: none;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  box-shadow: 0 0 0 1px var(--line);
+  cursor: pointer;
+  padding: 0;
+}
+.sw-btn.on, .sw-custom.on { border-color: var(--ink); }
+.sw-custom {
+  display: grid; place-items: center;
+  overflow: hidden;
+  background: conic-gradient(#e34948, #eda100, #1baf7a, #2a78d6, #4a3aa7, #e87ba4, #e34948);
+}
+.sw-custom input[type="color"] {
+  opacity: 0; width: 100%; height: 100%; cursor: pointer; border: 0; padding: 0;
+}
+
 /* ---------- Onglets (dans la barre supérieure, à la place du titre) ---------- */
 .tabbar {
   grid-area: tabs;

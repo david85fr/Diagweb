@@ -42,8 +42,8 @@ server/         serveur de diagnostic C++20 (HTTP + WebSocket, sans dépendance)
 tools/build.py  assemble dist/ à partir de web/
 tools/gen-catalog.mjs  régénère server/src/catalog.generated.hpp depuis config.js
 tools/serve.py  serveur d'aperçu (port 8080, en-têtes anti-cache)
-tests/ui.mjs    tests d'interface Playwright (13 vérifications)
-tests/dnd.mjs   tests de déplacement de widgets (6 vérifications, http requis)
+tests/ui.mjs    tests d'interface Playwright (15 vérifications)
+tests/dnd.mjs   tests de déplacement de widgets (7 vérifications, http requis)
 dist/           livrables générés (commités) : index.html autonome + artifact.html
 docs/           PROJET.md, SPECS.md
 .devcontainer/  configuration GitHub Codespaces (Python + Node + aperçu 8080)
@@ -89,7 +89,9 @@ Espace de noms JS global : `window.DW`. Scripts en IIFE, pas de modules ES
 - Multi-échelles : regroupement automatique par unité + « échelle dédiée »
   par courbe ; max 4 règles d'axe visibles (voir `docs/SPECS.md` §5).
 - Couleurs de courbes : palette catégorielle fixe de `config.js`, attribution
-  par plus petit index libre — ne jamais générer de teintes.
+  automatique par plus petit index libre — ne jamais générer de teintes.
+  L'utilisateur peut choisir un emplacement de palette (`colorIdx`, suit le
+  thème) ou une teinte libre (`color`) ; lire la couleur via `colorOf(s)`.
 - Les dispositions sérialisées (`{version, table, charts}`) sont un format
   d'échange : rester rétro-compatible ou incrémenter `version` avec migration.
 - Session dans `sessionStorage` (par fenêtre, multi-écran), configurations

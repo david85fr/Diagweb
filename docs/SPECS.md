@@ -72,8 +72,10 @@ décalages, fenêtre de temps, taille, périodes de rafraîchissement).
 
 - **Glisser-déposer** par la poignée « ⠿ » (en-tête du graphique, en-tête
   du tableau) ou en glissant une ligne du tableau : vers un **onglet** de la
-  barre, vers la zone de contenu (onglet courant), ou vers une **autre
-  fenêtre du navigateur** (même origine).
+  barre, vers la zone de contenu (onglet courant), sur un **autre graphique**
+  pour ranger la grille, ou vers une **autre fenêtre du navigateur** (même
+  origine). Déposer un graphique sur la grille de son propre onglet le
+  **range** (il n'est ni copié ni recréé).
 - **Menu ⋮ du graphique** : « Déplacer vers l'onglet … » (une entrée par
   onglet) et « Ouvrir dans une nouvelle fenêtre ». Indispensable sur écran
   tactile, où le glisser-déposer HTML5 n'existe pas.
@@ -124,9 +126,23 @@ restent partagées entre toutes les fenêtres (stockage local).
 - Sur canvas étroit (< 520 px) : règles d'axes compactes (38 px), 2 règles
   visibles au maximum (les groupes suivants gardent leur mise à l'échelle,
   badge « É· ») ; ≥ 1100 px : règles de 50 px, police 11 px.
+- **Duplication** : menu ⋮ → « Dupliquer ce graphique ». La copie reprend
+  toute la configuration (courbes, couleurs, échelles dédiées, décalages,
+  fenêtre, taille), s'intitule « … (copie) » et s'insère juste après
+  l'original.
+- **Rangement** : glisser un graphique par sa poignée « ⠿ » sur un autre
+  graphique de la même grille le range avant ou après lui (un repère
+  vertical indique le point d'insertion, selon la moitié survolée). L'ordre
+  est conservé dans la configuration.
 - Légende : pastille couleur, adresse, valeur vivante + unité, badge
-  d'échelle « Én ». Un appui ouvre le menu de la courbe : masquer/afficher,
-  **échelle dédiée**, retirer.
+  d'échelle « Én ». Un appui ouvre le menu de la courbe : **choix de la
+  couleur**, masquer/afficher, **échelle dédiée**, décaler, retirer.
+- **Couleur d'une courbe** (en tête de son menu) : les 8 emplacements de la
+  palette, ou une **teinte libre** (sélecteur du navigateur). Un
+  emplacement de palette suit le thème clair/sombre (c'est la position qui
+  est mémorisée, `colorIdx`) ; une teinte libre est fixe et identique dans
+  les deux thèmes (`color`, hex). Les deux sont conservées dans les
+  configurations et lors d'une duplication ou d'un déplacement.
 Gestes **par zone**, prévisibles (canvas en `touch-action: none` — le
 défilement de la page se fait en dehors des tracés) :
 
@@ -186,8 +202,11 @@ Historique conservé : 330 s glissantes.
 
 Configuration (une par onglet) : `{version: 1, table: [{addr, periodMs?}],
 charts: [{title, windowS, series: [{addr, axisMode: 'auto'|'solo', visible,
-periodMs?, offsetY?}]}]}`. `periodMs` absent = 10 ms ; `offsetY` = décalage
-vertical de la courbe (unités de la variable, absent = 0). Le lecteur
+periodMs?, offsetY?, colorIdx?, color?}]}]}`. `periodMs` absent = 10 ms ;
+`offsetY` = décalage vertical (unités de la variable, absent = 0) ;
+`colorIdx` = emplacement de palette (suit le thème), `color` = teinte libre
+en hexadécimal qui, si présente, l'emporte. L'ordre du tableau `charts`
+est l'ordre d'affichage dans la grille. Le lecteur
 accepte aussi les entrées de tableau sous forme de simple chaîne (format
 initial).
 
@@ -329,6 +348,7 @@ L'implémentation de référence est `server/` (C++20, sans dépendance) : voir
 - [x] Graphiques multi-échelles, curseur, pause, fenêtres de temps
 - [x] Onglets multiples (une configuration par onglet, session v2)
 - [x] Déplacement de widgets entre onglets et entre fenêtres (multi-écran)
+- [x] Duplication de graphiques, rangement de la grille, couleur des courbes
 - [x] Configurations : session, navigateur, export JSON + CSV, import JSON,
       ★ auto, stub contrôleur
 - [x] Journalisation par onglet (navigateur ; contrôleur en stub)

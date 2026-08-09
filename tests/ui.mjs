@@ -172,13 +172,43 @@ await p2.waitForTimeout(200);
 check('plein écran : menu accessible, sortie par Échap',
   fsOn && menuHit && await p2.locator('.chart-card.fs').count() === 0);
 
-// Le menu ⋮ est encore ouvert : on le referme hors du tracé (un clic sur le
-// graphique serait consommé par la fermeture, et n'épinglerait rien).
+// Le menu ⋮ est resté ouvert : on le congédie hors du graphique (le
+// re-cliquer refermerait le menu au lieu de l'ouvrir — bascule voulue).
 await p2.mouse.click(5, 5);
 await p2.waitForTimeout(150);
 
+// Duplication d'un graphique (courbes et couleurs comprises)
+const nBefore = await p2.locator(PANE + '.chart-card').count();
+await more.click(); await p2.waitForTimeout(120);
+await p2.locator('.popmenu button', { hasText: 'Dupliquer' }).click();
+await p2.waitForTimeout(500);
+const titles = await p2.locator(PANE + '.chart-title').evaluateAll((els) => els.map((e) => e.value));
+check('duplication d\'un graphique (inséré juste après, mêmes courbes)',
+  await p2.locator(PANE + '.chart-card').count() === nBefore + 1 &&
+  /\(copie\)$/.test(titles[1]) &&
+  await p2.locator(PANE + '.chart-card').nth(0).locator('.chip').count() ===
+  await p2.locator(PANE + '.chart-card').nth(1).locator('.chip').count(),
+  titles.join(' · '));
+
+// Couleur d'une courbe : emplacement de palette, conservé au rechargement
+const swatch = () => p2.locator(PANE + '.chart-card').first().locator('.chip').first().locator('.sw');
+const colBefore = await swatch().evaluate((el) => getComputedStyle(el).backgroundColor);
+await p2.locator(PANE + '.chart-card').first().locator('.chip').first().click();
+await p2.waitForTimeout(180);
+const nSwatches = await p2.locator('.pop-swatches .sw-btn').count();
+await p2.locator('.pop-swatches .sw-btn').nth(5).click();
+await p2.waitForTimeout(700);
+const colAfter = await swatch().evaluate((el) => getComputedStyle(el).backgroundColor);
+await p2.reload();
+await p2.waitForSelector(PANE + '.chart-card', { timeout: 20000 });
+await p2.waitForTimeout(1200);
+const colReload = await swatch().evaluate((el) => getComputedStyle(el).backgroundColor);
+check('couleur de courbe choisie et conservée au rechargement',
+  nSwatches === 8 && colAfter !== colBefore && colReload === colAfter,
+  `${colBefore} → ${colAfter}`);
+
 // Zoom extrême sur une règle d'axe : la page doit rester réactive
-const cv = card.locator('canvas');
+const cv = p2.locator('.chart-card').first().locator('canvas');
 const box = await cv.boundingBox();
 await p2.mouse.move(box.x + 20, box.y + box.height / 2);
 for (let i = 0; i < 220; i++) await p2.mouse.wheel(0, -100);

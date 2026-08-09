@@ -41,6 +41,7 @@
       app: 'diagweb-widget', version: 1,
       dragId, origin: winId,
       kind: payload.kind,
+      chartId: payload.chartId,
       chart: payload.chart,
       table: payload.table,
       title: payload.title,
@@ -106,7 +107,20 @@
   // -------------------------------------------------------------- réception
   function clearHighlight() {
     document.querySelectorAll('.tab.dnd-over').forEach((el) => el.classList.remove('dnd-over'));
+    document.querySelectorAll('.chart-card.drop-before, .chart-card.drop-after')
+      .forEach((el) => el.classList.remove('drop-before', 'drop-after'));
     document.body.classList.remove('dnd-over-pane');
+  }
+
+  /**
+   * Point d'insertion visé : la carte survolée et le côté (avant / après).
+   * Permet de ranger les graphiques dans l'ordre voulu.
+   */
+  function placeAt(e) {
+    const card = e.target.closest && e.target.closest('.chart-card');
+    if (!card) return null;
+    const r = card.getBoundingClientRect();
+    return { anchorEl: card, after: (e.clientX - r.left) > r.width / 2 };
   }
 
   function hasWidget(dt) {
@@ -121,7 +135,9 @@
     e.dataTransfer.dropEffect = 'move';
     clearHighlight();
     const tabEl = e.target.closest && e.target.closest('.tab');
-    if (tabEl) tabEl.classList.add('dnd-over');
+    if (tabEl) { tabEl.classList.add('dnd-over'); return; }
+    const place = placeAt(e);
+    if (place) place.anchorEl.classList.add(place.after ? 'drop-after' : 'drop-before');
     else document.body.classList.add('dnd-over-pane');
   }
 
@@ -140,14 +156,24 @@
     const tabEl = e.target.closest && e.target.closest('.tab');
     const targetTab = tabEl ? api.tabFromElement(tabEl) : api.activeTab();
     if (!targetTab) return;
+    const place = tabEl ? null : placeAt(e);
 
     // Dépôt au point de départ : rien à faire
-    if (o.origin === winId && dragging && api.isSameTarget(targetTab, dragging.payload)) {
+    if (o.origin === winId && dragging && !place &&
+        api.isSameTarget(targetTab, dragging.payload)) {
       dragging = null;
       return;
     }
 
-    const ok = api.receive(o, targetTab);
+    // 'reordered' : la cible a simplement rangé le widget déjà présent —
+    // la source ne doit surtout pas le retirer.
+    const ok = api.receive(o, targetTab, place, o.origin === winId);
+    if (ok === 'reordered') {
+      const p = pending.get(o.dragId);
+      if (p) { clearTimeout(p.timer); pending.delete(o.dragId); }
+      dragging = null;
+      return;
+    }
     if (!ok) return;
 
     if (o.origin === winId) {
