@@ -19,6 +19,19 @@
   //         chartsGridEl, log }
   const state = { tabs: [], active: null, tabSeq: 0 };
 
+  /** Intitulé complet d'une famille d'adresses, pour les infobulles. */
+  function famTitle(family) {
+    const f = DW.FAMILIES[family];
+    return f ? f.label + ' (' + family + ')' : family;
+  }
+
+  const FILTER_TITLES = {
+    all: 'Toutes les familles de variables',
+    PLC: 'Variables PLC : entrées I, sorties Q, bits mémoire M, variables système S',
+    MB: 'Registres de bus (MB) — mots de 16 bits',
+    CAPI: 'Signaux des modèles, via la C API (Modele.sous_systeme.signal)',
+  };
+
   // ---------- Notifications -------------------------------------------
   function toast(msg, type) {
     const box = $('toasts');
@@ -70,9 +83,11 @@
     pane.className = 'tabpane';
     pane.innerHTML =
       '<section class="card table-card hide">' +
-        '<h3><span class="drag-handle" draggable="true" ' +
-          'title="Glisser le tableau vers un onglet ou une autre fenêtre">⠿</span>' +
-          'Valeurs numériques <span class="tcount"></span></h3>' +
+        '<h3 title="Valeurs instantanées des variables suivies dans cet onglet">' +
+          '<span class="drag-handle" draggable="true" ' +
+          'title="Glisser le tableau entier (avec ses variables) vers un onglet ou une autre fenêtre">⠿</span>' +
+          'Valeurs numériques <span class="tcount" ' +
+          'title="Nombre de variables dans ce tableau"></span></h3>' +
         '<div class="trows"></div>' +
       '</section>' +
       '<div class="charts-grid"></div>';
@@ -159,11 +174,16 @@
       const el = document.createElement('div');
       el.className = 'tab' + (tab === state.active ? ' on' : '');
       el.setAttribute('role', 'tab');
+      el.title = tab === state.active
+        ? 'Onglet actif « ' + tab.name + ' » — appuyez pour le renommer. ' +
+          'Vous pouvez y déposer un graphique ou des variables.'
+        : 'Aller à l’onglet « ' + tab.name + ' ». ' +
+          'Vous pouvez y déposer un graphique ou des variables sans le quitter.';
       el._tab = tab;   // cible de dépôt (voir dnd.js)
       el.innerHTML =
         '<span class="tab-name"></span>' +
-        (tab.log.enabled ? '<i class="recdot" title="Journalisation en cours"></i>' : '') +
-        '<span class="tab-close" title="Fermer l’onglet">✕</span>';
+        (tab.log.enabled ? '<i class="recdot" title="Journal de données en cours d’enregistrement dans cet onglet"></i>' : '') +
+        '<span class="tab-close" title="Fermer cet onglet et libérer ses variables">✕</span>';
       const nameEl = el.querySelector('.tab-name');
       nameEl.textContent = tab.name;
       el.addEventListener('click', (e) => {
@@ -247,7 +267,21 @@
       row.querySelector('.v-label').textContent = e.meta.label +
         (e.periodMs && e.periodMs !== CFG.defaultPeriodMs ? ' · rafr. ' + e.periodMs + ' ms' : '');
       row.querySelector('.v-unit').textContent = e.meta.unit || '';
-      row.querySelector('.v-del').addEventListener('click', () => removeFromTable(tab, e.addr));
+      row.title = e.addr + ' — ' + e.meta.label +
+        (e.meta.unit ? ' (' + e.meta.unit + ')' : '') +
+        ' · rafraîchissement ' + (e.periodMs || CFG.defaultPeriodMs) + ' ms' +
+        ' · glissez cette ligne vers un onglet ou une autre fenêtre';
+      const badge = row.querySelector('.badge');
+      badge.title = famTitle(e.meta.family);
+      row.querySelector('.v-val').title = 'Valeur instantanée' +
+        (e.meta.kind === 'bit' ? ' (0 ou 1)' : '') +
+        (e.meta.family === 'MB' ? ' — décimal et hexadécimal' : '') +
+        '. La ligne clignote quand la variable change après 2 s d’immobilité.';
+      row.querySelector('.v-trend').title =
+        'Tendance sur les 2,5 dernières secondes (↗ hausse, ↘ baisse, → stable)';
+      const del = row.querySelector('.v-del');
+      del.title = 'Retirer ' + e.addr + ' du tableau';
+      del.addEventListener('click', () => removeFromTable(tab, e.addr));
       rows.appendChild(row);
     }
     tab.tableCountEl.textContent = tab.table.length ? tab.table.length + ' variable' + (tab.table.length > 1 ? 's' : '') : '';
@@ -398,6 +432,9 @@
     b.querySelector('.sug-addr').textContent = entry.addr;
     b.querySelector('.sug-label').textContent = entry.label || '';
     b.querySelector('.sug-unit').textContent = entry.unit || '';
+    b.querySelector('.badge').title = famTitle(entry.family);
+    b.title = entry.addr + ' — ' + (entry.label || '') +
+      (entry.unit ? ' (' + entry.unit + ')' : '') + ' · appuyez pour ajouter';
     // pointerdown pour devancer le blur de l'input
     b.addEventListener('pointerdown', (ev) => {
       ev.preventDefault();
@@ -428,6 +465,7 @@
       b.type = 'button';
       b.className = 'fbtn' + (famFilter === key ? ' on' : '');
       b.textContent = label;
+      b.title = FILTER_TITLES[key];
       // pointerdown pour ne pas faire perdre le focus à l'input
       b.addEventListener('pointerdown', (ev) => {
         ev.preventDefault();
@@ -732,18 +770,25 @@
     back.innerHTML =
       '<div class="modal" role="dialog" aria-label="Journalisation">' +
         '<header class="m-head"><h3>Journal de données — <span id="logTabName"></span></h3>' +
-        '<button class="iconbtn m-close" type="button" title="Fermer">✕</button></header>' +
+        '<button class="iconbtn m-close" type="button" title="Fermer cette fenêtre">✕</button></header>' +
         '<div class="log-opts">' +
-          '<label><input type="radio" name="logdest" value="browser"> Navigateur (mémoire de la page)</label>' +
-          '<label><input type="radio" name="logdest" value="controller"> Contrôleur (back-end à venir)' +
+          '<label title="Le journal reste en mémoire de cette page : à télécharger avant de la fermer">' +
+          '<input type="radio" name="logdest" value="browser" title="Journaliser en mémoire du navigateur"> Navigateur (mémoire de la page)</label>' +
+          '<label title="Envoyer les lignes au serveur de diagnostic (POST /api/datalog)">' +
+          '<input type="radio" name="logdest" value="controller" title="Journaliser côté contrôleur"> Contrôleur (back-end à venir)' +
           ' <span class="opt-note">repli navigateur si injoignable</span></label>' +
         '</div>' +
-        '<div class="log-status" id="logStatus">—</div>' +
+        '<div class="log-status" id="logStatus" ' +
+          'title="État du journal : échantillons, variables suivies, durée couverte et taille estimée">—</div>' +
         '<div class="m-actions">' +
-          '<button class="btn primary" id="logToggle" type="button"></button>' +
-          '<button class="btn" id="logDlCsv" type="button">Télécharger CSV</button>' +
-          '<button class="btn" id="logDlJson" type="button">Télécharger JSON</button>' +
-          '<button class="btn" id="logClear" type="button">Vider</button>' +
+          '<button class="btn primary" id="logToggle" type="button" ' +
+            'title="Démarrer ou arrêter l’enregistrement des échantillons de cet onglet"></button>' +
+          '<button class="btn" id="logDlCsv" type="button" ' +
+            'title="Télécharger le journal en CSV (horodatage, adresse, valeur)">Télécharger CSV</button>' +
+          '<button class="btn" id="logDlJson" type="button" ' +
+            'title="Télécharger le journal en JSON">Télécharger JSON</button>' +
+          '<button class="btn" id="logClear" type="button" ' +
+            'title="Effacer les échantillons déjà enregistrés">Vider</button>' +
         '</div>' +
         '<p class="m-note">Le journal enregistre chaque échantillon des variables de l’onglet ' +
         '(période propre à chaque variable), dans la limite de 100 000 lignes (les plus anciennes ' +
@@ -850,14 +895,19 @@
     back.className = 'modal-back';
     back.innerHTML =
       '<div class="modal" role="dialog" aria-label="Configurations">' +
-        '<header class="m-head"><h3>Configurations</h3><button class="iconbtn m-close" type="button" title="Fermer">✕</button></header>' +
+        '<header class="m-head"><h3>Configurations</h3><button class="iconbtn m-close" type="button" title="Fermer cette fenêtre">✕</button></header>' +
         '<label class="m-label" for="layName">Nom de la configuration (onglet actif)</label>' +
-        '<input id="layName" class="m-input" maxlength="60">' +
+        '<input id="layName" class="m-input" maxlength="60" ' +
+          'title="Nom sous lequel enregistrer, télécharger ou copier cette configuration">' +
         '<div class="m-actions acc-row">' +
-          '<button class="btn acc-btn" data-acc="save" type="button">Enregistrer ▾</button>' +
-          '<button class="btn acc-btn" data-acc="download" type="button">Télécharger ▾</button>' +
-          '<button class="btn acc-btn" data-acc="load" type="button">Charger ▾</button>' +
-          '<button class="btn acc-btn" data-acc="copy" type="button">Copier ▾</button>' +
+          '<button class="btn acc-btn" data-acc="save" type="button" ' +
+            'title="Mémoriser cette configuration dans le navigateur ou dans le contrôleur">Enregistrer ▾</button>' +
+          '<button class="btn acc-btn" data-acc="download" type="button" ' +
+            'title="Obtenir un fichier : JSON réimportable, ou CSV de consultation">Télécharger ▾</button>' +
+          '<button class="btn acc-btn" data-acc="load" type="button" ' +
+            'title="Ouvrir une configuration enregistrée ou un fichier, dans un nouvel onglet">Charger ▾</button>' +
+          '<button class="btn acc-btn" data-acc="copy" type="button" ' +
+            'title="Copier la configuration dans le presse-papiers, pour l’envoyer à quelqu’un">Copier ▾</button>' +
         '</div>' +
         '<div id="accPanel" class="acc-panel hide"></div>' +
         '<p class="m-note" id="accNote"></p>' +
@@ -892,8 +942,10 @@
       if (key === 'save') {
         panel.innerHTML =
           '<div class="m-actions">' +
-            '<button class="btn primary" id="laySaveLocal" type="button">Navigateur</button>' +
-            '<button class="btn" id="laySaveCtl" type="button">Contrôleur</button>' +
+            '<button class="btn primary" id="laySaveLocal" type="button" ' +
+              'title="Enregistrer dans ce navigateur (partagé entre toutes ses fenêtres)">Navigateur</button>' +
+            '<button class="btn" id="laySaveCtl" type="button" ' +
+              'title="Enregistrer dans le contrôleur (nécessite le serveur de diagnostic)">Contrôleur</button>' +
           '</div>';
         panel.querySelector('#laySaveLocal').addEventListener('click', () => {
           if (!DW.store.available) { toast('Stockage local indisponible dans ce navigateur.', 'err'); return; }
@@ -913,8 +965,10 @@
       } else if (key === 'download') {
         panel.innerHTML =
           '<div class="m-actions">' +
-            '<button class="btn primary" id="layDlJson" type="button">JSON</button>' +
-            '<button class="btn" id="layDlCsv" type="button">CSV</button>' +
+            '<button class="btn primary" id="layDlJson" type="button" ' +
+              'title="Fichier .diagweb.json — réimportable dans Diagweb">JSON</button>' +
+            '<button class="btn" id="layDlCsv" type="button" ' +
+              'title="Fichier .csv — pour tableur, en lecture seule">CSV</button>' +
           '</div>';
         panel.querySelector('#layDlJson').addEventListener('click', () => {
           const ok = DW.store.download(getName(), DW.store.exportText(getName(), serializeConfig(state.active)));
@@ -927,8 +981,10 @@
       } else if (key === 'copy') {
         panel.innerHTML =
           '<div class="m-actions">' +
-            '<button class="btn primary" id="layCpJson" type="button">JSON</button>' +
-            '<button class="btn" id="layCpCsv" type="button">CSV</button>' +
+            '<button class="btn primary" id="layCpJson" type="button" ' +
+              'title="Copier la configuration au format JSON">JSON</button>' +
+            '<button class="btn" id="layCpCsv" type="button" ' +
+              'title="Copier la liste des variables au format CSV">CSV</button>' +
           '</div>';
         panel.querySelector('#layCpJson').addEventListener('click', async () => {
           const text = DW.store.exportText(getName(), serializeConfig(state.active));
@@ -941,7 +997,8 @@
       } else if (key === 'load') {
         panel.innerHTML =
           '<div class="m-row"><h4>Enregistrées dans ce navigateur</h4>' +
-          '<label class="btn m-import">Importer un fichier<input type="file" id="layImport" accept=".json,application/json" hidden></label></div>' +
+          '<label class="btn m-import" title="Ouvrir un fichier .diagweb.json reçu ou exporté précédemment">' +
+          'Importer un fichier<input type="file" id="layImport" accept=".json,application/json" hidden></label></div>' +
           '<div class="lay-list" id="layList"></div>';
         panel.querySelector('#layImport').addEventListener('change', (ev) => {
           const f = ev.target.files && ev.target.files[0];
@@ -980,10 +1037,11 @@
           String(when.getHours()).padStart(2, '0') + ':' + String(when.getMinutes()).padStart(2, '0') +
           '</span></div>' +
           '<div class="lay-actions">' +
-            '<button class="btn sm" data-a="load" type="button">Charger</button>' +
-            '<button class="iconbtn" data-a="dl" type="button" title="Télécharger JSON">⬇</button>' +
+            '<button class="btn sm" data-a="load" type="button" ' +
+              'title="Ouvrir cette configuration dans un nouvel onglet">Charger</button>' +
+            '<button class="iconbtn" data-a="dl" type="button" title="Télécharger cette configuration en JSON">⬇</button>' +
             '<button class="iconbtn star' + (auto === it.name ? ' on' : '') + '" data-a="auto" type="button" title="Charger automatiquement à l’ouverture">★</button>' +
-            '<button class="iconbtn" data-a="del" type="button" title="Supprimer">🗑</button>' +
+            '<button class="iconbtn" data-a="del" type="button" title="Supprimer cette configuration enregistrée">🗑</button>' +
           '</div>';
         row.querySelector('.lay-id b').textContent = it.name;
         row.addEventListener('click', (e) => {
@@ -1039,7 +1097,7 @@
     back.className = 'modal-back';
     back.innerHTML =
       '<div class="modal"><header class="m-head"><h3></h3>' +
-      '<button class="iconbtn m-close" type="button" title="Fermer">✕</button></header>' +
+      '<button class="iconbtn m-close" type="button" title="Fermer cette fenêtre">✕</button></header>' +
       '<p class="m-note">Sélectionnez tout puis copiez.</p>' +
       '<textarea class="m-text" readonly></textarea></div>';
     back.querySelector('h3').textContent = title;
@@ -1129,6 +1187,58 @@
     });
     for (const b of menuPanel.querySelectorAll('button')) b.addEventListener('click', closeMenu);
 
+    $('helpBtn').addEventListener('click', () => {
+      const root = $('modalRoot');
+      root.innerHTML = '';
+      const back = document.createElement('div');
+      back.className = 'modal-back';
+      const S = (t) => '<h4 class="help-h">' + t + '</h4>';
+      const L = (rows) => '<dl class="help-list">' +
+        rows.map(([k, v]) => '<dt>' + k + '</dt><dd>' + v + '</dd>').join('') + '</dl>';
+      back.innerHTML =
+        '<div class="modal" role="dialog" aria-label="Aide">' +
+          '<header class="m-head"><h3>Commandes et gestes</h3>' +
+          '<button class="iconbtn m-close" type="button" title="Fermer cette fenêtre">✕</button></header>' +
+          '<p class="m-note">Chaque élément de l’interface porte aussi une infobulle ' +
+          '(survol à la souris).</p>' +
+          S('Ajouter des variables') +
+          L([
+            ['Barre de recherche', 'Adresse : <b>I1.2.3.4</b>, <b>Q14.15</b>, <b>M1.14</b>, <b>S0.4</b> (bits), <b>MB414</b> (mot de bus), <b>Modele.signal</b> (C API). Les suggestions se filtrent à la frappe ; les boutons Toutes / PLC / Modbus / Simulink restreignent la liste.'],
+            ['Destination', 'Tableau numérique, un graphique existant, ou un nouveau graphique.'],
+            ['Période', 'Rafraîchissement propre à la variable, 10 ms par défaut.'],
+          ]) +
+          S('Graphiques — gestes sur le tracé') +
+          L([
+            ['Glisser ↔', 'Remonter dans l’historique (330 s). Bouton <b>▶ Direct</b> pour revenir au temps réel.'],
+            ['Glisser ↕', 'Déplacer l’échelle principale (elle passe en manuel 🔒).'],
+            ['Pincer / molette', 'Zoom temporel, de 2 s à 5 min.'],
+            ['Appui bref', 'Poser un curseur de mesure ; nouvel appui dessus pour l’enlever.'],
+            ['Double-appui', 'Retour au temps réel.'],
+          ]) +
+          S('Graphiques — sur une règle d’axe') +
+          L([
+            ['Glisser', 'Déplacer cette échelle (manuel 🔒).'],
+            ['Molette', 'Zoomer cette échelle.'],
+            ['Double-appui', 'Remettre cette échelle en automatique.'],
+          ]) +
+          S('Organiser') +
+          L([
+            ['Poignée ⠿', 'Glisser un graphique ou le tableau vers un onglet, une autre fenêtre, ou sur un autre graphique pour le ranger.'],
+            ['Ligne du tableau', 'Se glisse seule vers un autre onglet ou une autre fenêtre.'],
+            ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
+            ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
+          ]) +
+          S('Courbes') +
+          L([
+            ['Pastille de légende', 'Couleur (palette ou teinte libre), masquer, échelle dédiée, décalage vertical, retrait.'],
+            ['Badge Én', 'Numéro de l’échelle utilisée ; 🔒 signale un réglage manuel.'],
+          ]) +
+        '</div>';
+      back.querySelector('.m-close').addEventListener('click', () => { root.innerHTML = ''; });
+      back.addEventListener('pointerdown', (e) => { if (e.target === back) root.innerHTML = ''; });
+      root.appendChild(back);
+    });
+
     $('aboutBtn').addEventListener('click', () => {
       const root = $('modalRoot');
       root.innerHTML = '';
@@ -1137,7 +1247,7 @@
       back.innerHTML =
         '<div class="modal" role="dialog" aria-label="À propos">' +
           '<header class="m-head"><h3>À propos de Diagweb</h3>' +
-          '<button class="iconbtn m-close" type="button" title="Fermer">✕</button></header>' +
+          '<button class="iconbtn m-close" type="button" title="Fermer cette fenêtre">✕</button></header>' +
           '<p style="margin:6px 0">Diagnostic web des variables et signaux internes du contrôleur : ' +
           'valeurs numériques en direct et courbes multi-échelles, configurations par onglets, ' +
           'journalisation des données.</p>' +

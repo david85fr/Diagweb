@@ -315,7 +315,8 @@ L'implémentation de référence est `server/` (C++20, sans dépendance) : voir
   onglets (＋ inclus), et à droite le tag de version, le bouton de **repli
   de la zone de configuration** (⌃/⌄) et le **menu burger ☰**.
 - **Menu burger ☰ = fonctions globales** (indépendantes des onglets) :
-  aujourd'hui Basculer le thème et À propos (version, mode) ; réservé aux
+  aujourd'hui Basculer le thème, Aide (commandes et gestes) et À propos
+  (version, mode) ; réservé aux
   futures fonctions globales (capture d'interfaces réseau, notes de
   version…, affichées « à venir »). Fermé par sélection ou appui à
   l'extérieur.
@@ -330,6 +331,17 @@ L'implémentation de référence est `server/` (C++20, sans dépendance) : voir
 - La barre reste **empilée** (onglets / zone de configuration) jusqu'à
   1100 px — y compris téléphone en paysage — et passe sur une seule ligne
   au-delà.
+- **Infobulles partout** : chaque objet interactif (onglets, boutons,
+  champs, sélecteurs, badges de famille, lignes du tableau, suggestions,
+  filtres, pastilles de légende, poignées, entrées de menu, nuancier)
+  porte un `title` explicatif — pas seulement son intitulé, mais ce qu'il
+  fait et ses conséquences. Vérifié par un test de couverture
+  (`tests/ui.mjs`) qui balaie toutes les vues et échoue au moindre objet
+  non documenté.
+- **Aide** (menu ☰) : récapitulatif des commandes et des gestes en cinq
+  sections — ajout de variables, gestes sur le tracé, gestes sur les règles
+  d'axes, organisation, courbes. Elle remplace les infobulles sur écran
+  tactile, où elles n'apparaissent pas.
 - **Identification de version** tout en haut à droite, en face de la barre
   d'onglets : `hash court · #n`
   (hash git abrégé + numéro de commit dans la branche), injectée par
@@ -349,6 +361,7 @@ L'implémentation de référence est `server/` (C++20, sans dépendance) : voir
 - [x] Onglets multiples (une configuration par onglet, session v2)
 - [x] Déplacement de widgets entre onglets et entre fenêtres (multi-écran)
 - [x] Duplication de graphiques, rangement de la grille, couleur des courbes
+- [x] Infobulles sur tous les objets + fenêtre d'aide (gestes et commandes)
 - [x] Configurations : session, navigateur, export JSON + CSV, import JSON,
       ★ auto, stub contrôleur
 - [x] Journalisation par onglet (navigateur ; contrôleur en stub)

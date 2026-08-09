@@ -170,11 +170,12 @@
     popAnchor = anchorEl;
     popEl = document.createElement('div');
     popEl.className = 'popmenu';
-    build((label, fn, cls) => {
+    build((label, fn, cls, title) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.innerHTML = label;
       if (cls) b.classList.add(cls);
+      if (title) b.title = title;
       b.addEventListener('click', () => { closePopover(); fn(); });
       popEl.appendChild(b);
       return b;
@@ -223,19 +224,30 @@
       this.root.className = 'card chart-card';
       this.root.innerHTML =
         '<header class="chart-head">' +
-          '<span class="drag-handle" draggable="true" title="Glisser vers un onglet ou une autre fenêtre">⠿</span>' +
-          '<input class="chart-title" maxlength="48" aria-label="Titre du graphique">' +
+          '<span class="drag-handle" draggable="true" ' +
+            'title="Glisser ce graphique (avec sa configuration) vers un onglet, une autre fenêtre, ' +
+            'ou sur un autre graphique pour le ranger">⠿</span>' +
+          '<input class="chart-title" maxlength="48" aria-label="Titre du graphique" ' +
+            'title="Nom du graphique — cliquez pour le modifier ; il sert aussi de destination d’ajout">' +
           '<div class="chart-tools">' +
-            '<select class="chart-window" title="Fenêtre de temps" aria-label="Fenêtre de temps"></select>' +
-            '<button class="iconbtn chart-pause" type="button" title="Figer / reprendre">⏸</button>' +
-            '<button class="iconbtn chart-more" type="button" title="Options du graphique">⋮</button>' +
+            '<select class="chart-window" aria-label="Fenêtre de temps" ' +
+              'title="Durée affichée — modifiable aussi par pincement ou molette sur le tracé"></select>' +
+            '<button class="iconbtn chart-pause" type="button" ' +
+              'title="Figer ce graphique sur l’instant courant, ou revenir au temps réel">⏸</button>' +
+            '<button class="iconbtn chart-more" type="button" ' +
+              'title="Options : dupliquer, échelles automatiques, taille, plein écran, déplacer, fermer">⋮</button>' +
           '</div>' +
         '</header>' +
         '<div class="chart-body">' +
-          '<canvas aria-label="Courbes du graphique"></canvas>' +
+          '<canvas aria-label="Courbes du graphique" ' +
+            'title="Glisser ↔ : remonter le temps · glisser ↕ : déplacer l’échelle · ' +
+            'pincer ou molette : zoom · appui bref : curseur de mesure · double-appui : retour au direct. ' +
+            'Sur une règle d’axe : glisser ou molette pour son échelle, double-appui pour la remettre en automatique."></canvas>' +
           '<div class="chart-tip hide"></div>' +
-          '<button class="chart-live hide" type="button">▶ Direct</button>' +
-          '<div class="chart-move hide"><span class="mv-txt"></span><button class="btn sm" type="button">OK</button></div>' +
+          '<button class="chart-live hide" type="button" ' +
+            'title="Revenir au temps réel (la vue est figée dans l’historique)">▶ Direct</button>' +
+          '<div class="chart-move hide"><span class="mv-txt"></span>' +
+            '<button class="btn sm" type="button" title="Terminer le décalage de cette courbe">OK</button></div>' +
           '<div class="chart-hint">Ajoutez une variable via la barre de recherche, cible « ' +
             '<b class="hint-name"></b> ».</div>' +
         '</div>' +
@@ -350,28 +362,32 @@
 
     openChartMenu(anchor) {
       openPopover(this, anchor, (mk) => {
-        mk('Dupliquer ce graphique', () => this.app.duplicateChart(this));
-        mk('Échelles automatiques', () => this.resetAxes());
+        mk('Dupliquer ce graphique', () => this.app.duplicateChart(this), null,
+          'Créer une copie avec les mêmes courbes, couleurs, échelles et fenêtre de temps, juste après celui-ci');
+        mk('Échelles automatiques', () => this.resetAxes(), null,
+          'Remettre toutes les échelles de ce graphique en cadrage automatique (annule les réglages manuels 🔒)');
         const next = HEIGHT_MODES[(HEIGHT_MODES.indexOf(this.heightMode) + 1) % HEIGHT_MODES.length];
         mk('Taille : ' + this.heightMode + ' → ' + next +
-           (next === 'XL' ? ' (pleine largeur)' : ''), () => this.cycleHeight());
+           (next === 'XL' ? ' (pleine largeur)' : ''), () => this.cycleHeight(), null,
+          'Hauteur du graphique : M (normale), L (grande), XL (grande et pleine largeur de la grille)');
         mk(this.fullscreen ? 'Quitter le plein écran' : 'Plein écran', () =>
-          this.setFullscreen(!this.fullscreen));
+          this.setFullscreen(!this.fullscreen), null,
+          'Afficher ce graphique seul sur tout l’écran (sortie par Échap)');
         // Déplacements (indispensables au tact : pas de glisser-déposer HTML5)
         for (const t of this.app.otherTabs()) {
           mk('Déplacer vers l’onglet « ' + DW.escapeHtml(t.name) + ' »', () => {
             this.app.moveChartToTab(this, t);
-          });
+          }, null, 'Transférer ce graphique et sa configuration dans l’onglet « ' + t.name + ' »');
         }
         mk('Ouvrir dans une nouvelle fenêtre', () => {
           if (this.fullscreen) this.setFullscreen(false);
           DW.dnd.openInNewWindow({ kind: 'chart', chart: this.serialize() },
             () => this.app.removeChart(this));
-        });
+        }, null, 'Sortir ce graphique dans une fenêtre séparée, à poser sur un autre écran');
         mk('Fermer le graphique', () => {
           if (this.fullscreen) this.setFullscreen(false);
           this.app.removeChart(this);
-        }, 'danger');
+        }, 'danger', 'Supprimer ce graphique et libérer ses variables');
       });
     }
 
@@ -668,9 +684,11 @@
           '<span class="chip-axis"></span>';
         chip.querySelector('.chip-addr').textContent = s.addr;
         chip.querySelector('.sw').style.background = colorOf(s);
-        chip.title = s.meta.label + (s.meta.unit ? ' (' + s.meta.unit + ')' : '') +
-          ' · rafr. ' + (s.periodMs || DW.CONFIG.defaultPeriodMs) + ' ms' +
-          (s.offsetY ? ' · décalage ' + DW.fmtVal(s.offsetY, s.meta) : '');
+        chip.title = s.addr + ' — ' + s.meta.label +
+          (s.meta.unit ? ' (' + s.meta.unit + ')' : '') +
+          ' · rafraîchissement ' + (s.periodMs || DW.CONFIG.defaultPeriodMs) + ' ms' +
+          (s.offsetY ? ' · décalage ' + DW.fmtVal(s.offsetY, s.meta) : '') +
+          ' · appuyez pour la couleur, l’échelle dédiée, le décalage ou le retrait';
         chip.addEventListener('click', () => this.openSeriesMenu(s, chip));
         this.legendEl.appendChild(chip);
       }
@@ -684,21 +702,23 @@
           s.visible = !s.visible;
           this.rebuildLegend();
           this.app.onChange();
-        });
+        }, null, 'Retirer la courbe du tracé sans la supprimer (elle reste abonnée)');
         mk((s.axisMode === 'solo' ? '✓ ' : '') + 'Échelle dédiée', () => {
           s.axisMode = s.axisMode === 'solo' ? 'auto' : 'solo';
           this.app.onChange();
           this.app.toast(s.addr + ' : ' + (s.axisMode === 'solo' ? 'échelle dédiée' : 'échelle partagée par unité') + '.');
-        });
-        mk('Décaler verticalement (glisser)', () => this.startMoveMode(s));
+        }, null, 'Donner à cette courbe son propre axe, au lieu de partager celui de son unité');
+        mk('Décaler verticalement (glisser)', () => this.startMoveMode(s), null,
+          'Séparer visuellement cette courbe des autres ; les valeurs affichées restent les valeurs vraies');
         if (s.offsetY) {
           mk('Annuler le décalage (Δ ' + DW.fmtVal(s.offsetY, s.meta) + ')', () => {
             s.offsetY = 0;
             this.rebuildLegend();
             this.app.onChange();
-          });
+          }, null, 'Replacer la courbe à sa position réelle');
         }
-        mk('Retirer du graphique', () => this.removeSeries(s.addr), 'danger');
+        mk('Retirer du graphique', () => this.removeSeries(s.addr), 'danger',
+          'Enlever ' + s.addr + ' de ce graphique');
       });
     }
 
@@ -760,6 +780,11 @@
         const badge = (this._axisBadge && this._axisBadge[s.addr]) || '';
         // Badge visible si plusieurs échelles OU si l'axe est verrouillé 🔒
         axEl.textContent = (this._axisCount > 1 || badge.includes('🔒')) ? badge : '';
+        axEl.title = badge
+          ? 'Échelle utilisée par cette courbe' +
+            (badge.includes('🔒') ? ' — réglée manuellement (double-appui sur sa règle pour revenir en automatique)' : '') +
+            (badge.includes('·') ? ' — sans règle visible, faute de place' : '')
+          : '';
       }
     }
 

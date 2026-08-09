@@ -17,18 +17,19 @@
         </svg>
       </span>
       <div id="tabs" class="tabs" role="tablist"></div>
-      <button id="tabAdd" class="iconbtn" type="button" title="Nouvel onglet">＋</button>
+      <button id="tabAdd" class="iconbtn" type="button" title="Nouvel onglet : un espace de travail vide, avec sa propre configuration">＋</button>
     </div>
 
     <div class="topIcons">
       <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">dev</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
-      <button id="menuBtn" class="iconbtn" type="button" title="Menu général" aria-haspopup="true">☰</button>
+      <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
-        <button id="themeBtn" type="button">◐ Basculer le thème</button>
-        <button id="aboutBtn" type="button">À propos de Diagweb…</button>
-        <button type="button" disabled>Capture d’interfaces réseau (à venir)</button>
-        <button type="button" disabled>Notes de version (à venir)</button>
+        <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
+        <button id="helpBtn" type="button" title="Récapitulatif des commandes et des gestes (utile sur écran tactile, où les infobulles n’apparaissent pas)">Aide — commandes et gestes…</button>
+        <button id="aboutBtn" type="button" title="Version affichée, mode de fonctionnement et source de données">À propos de Diagweb…</button>
+        <button type="button" disabled title="Fonction globale prévue : capture des interfaces réseau du contrôleur">Capture d’interfaces réseau (à venir)</button>
+        <button type="button" disabled title="Fonction globale prévue : historique des versions de l’application">Notes de version (à venir)</button>
       </div>
     </div>
 
@@ -37,20 +38,23 @@
         <input id="searchInput" type="text" inputmode="text" autocomplete="off" autocapitalize="off"
                autocorrect="off" spellcheck="false"
                placeholder="Variable : I1.2.3.4, MB414, Regulation.mesure.vitesse…"
-               aria-label="Adresse de la variable à ajouter">
+               aria-label="Adresse de la variable à ajouter"
+               title="Adresse à diagnostiquer — bits I/Q/M/S (I1.2.3.4), mot de bus (MB414) ou signal de modèle (Regulation.mesure.vitesse). Les suggestions se filtrent à la frappe.">
       </div>
-      <select id="targetSel" aria-label="Destination de la variable"></select>
+      <select id="targetSel" aria-label="Destination de la variable"
+              title="Où ajouter la variable : tableau numérique, graphique existant, ou nouveau graphique"></select>
       <select id="periodSel" aria-label="Période de rafraîchissement" title="Période de rafraîchissement"></select>
-      <button id="addBtn" class="btn primary" type="button">Ajouter</button>
+      <button id="addBtn" class="btn primary" type="button"
+              title="Ajouter la variable saisie à la destination choisie (Entrée)">Ajouter</button>
       <div id="suggestBox" class="suggest hide"></div>
     </div>
   </header>
 
   <div class="tabActions">
-    <button id="addChartBtn" class="btn" type="button" title="Ajouter un graphique dans cet onglet">+ Graphique</button>
-    <button id="layoutsBtn" class="btn" type="button" title="Enregistrer / charger la configuration de cet onglet">Configs</button>
-    <button id="logBtn" class="btn" type="button" title="Journalisation des données de cet onglet">Journal<i id="logInd" class="recdot hide"></i></button>
-    <button id="pauseAllBtn" class="btn" type="button" title="Figer / reprendre les graphiques de cet onglet">⏸ Figer</button>
+    <button id="addChartBtn" class="btn" type="button" title="Créer un graphique vide dans cet onglet ; il devient la destination d’ajout">+ Graphique</button>
+    <button id="layoutsBtn" class="btn" type="button" title="Configurations : enregistrer, télécharger (JSON/CSV), charger, copier la configuration de cet onglet">Configs</button>
+    <button id="logBtn" class="btn" type="button" title="Journal de données : enregistrer tous les échantillons des variables de cet onglet (navigateur ou contrôleur), puis les télécharger en CSV/JSON">Journal<i id="logInd" class="recdot hide"></i></button>
+    <button id="pauseAllBtn" class="btn" type="button" title="Figer ou reprendre d’un coup tous les graphiques de cet onglet">⏸ Figer</button>
   </div>
 
   <section id="emptyState" class="empty hide">
@@ -59,7 +63,8 @@
        numérique ou à un graphique&nbsp;: <b>I1.2.3.4</b>, <b>Q14.15</b>, <b>M1.14</b>,
        <b>S0.4</b>, <b>MB414</b> ou un signal modèle comme <b>Regulation.mesure.vitesse</b>.</p>
     <div class="cta">
-      <button id="demoBtn" class="btn primary" type="button">Charger la disposition de démonstration</button>
+      <button id="demoBtn" class="btn primary" type="button"
+              title="Remplir cet onglet avec un exemple : 6 variables au tableau et 2 graphiques">Charger la disposition de démonstration</button>
     </div>
   </section>
 
@@ -67,8 +72,8 @@
 </div>
 
 <footer class="statusbar">
-  <span id="srcInfo"></span>
-  <span id="statInfo"></span>
+  <span id="srcInfo" title="Source des données et période de rafraîchissement par défaut"></span>
+  <span id="statInfo" title="Nombre de variables actuellement abonnées et nombre d’onglets ouverts"></span>
 </footer>
 
 <div id="toasts" aria-live="polite"></div>

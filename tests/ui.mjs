@@ -224,6 +224,49 @@ await p2.waitForTimeout(300);
 check('clic bref : curseur de mesure épinglé',
   await card.locator('.chart-tip:visible').count() === 1);
 
+// Couverture des infobulles : chaque objet interactif doit être documenté
+const AUDIT = () => {
+  const sel = 'button, select, input, .tab, .chip, .drag-handle, .vrow, .badge,' +
+    ' .sug, .acc-btn, .fbtn, .sw-btn, .sw-custom, .tab-close, .v-del, .recdot';
+  const out = [];
+  for (const el of document.querySelectorAll(sel)) {
+    if (el.getAttribute('title') || el.getAttribute('aria-label')) continue;
+    if (el.closest('[title]')) continue;   // hérite de l'infobulle d'un parent
+    out.push(el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') +
+      '.' + String(el.className || '').split(' ')[0]);
+  }
+  return out;
+};
+let missing = [];
+const sweep = async (open) => {
+  if (open) await open();
+  missing = missing.concat(await p2.evaluate(AUDIT));
+};
+await sweep();
+await sweep(async () => { await p2.click('#searchInput'); await p2.waitForTimeout(250); });
+await p2.keyboard.press('Escape');
+await sweep(async () => {
+  await p2.locator(PANE + '.chart-card').first().locator('.chip').first().click();
+  await p2.waitForTimeout(200);
+});
+await p2.mouse.click(5, 5); await p2.waitForTimeout(150);
+await sweep(async () => {
+  await p2.locator(PANE + '.chart-card').first().locator('.chart-more').click();
+  await p2.waitForTimeout(200);
+});
+await p2.mouse.click(5, 5); await p2.waitForTimeout(150);
+await sweep(async () => { await p2.click('#layoutsBtn'); await p2.waitForTimeout(300); });
+await p2.click('.m-close');
+await sweep(async () => { await p2.click('#logBtn'); await p2.waitForTimeout(300); });
+await p2.click('.m-close');
+await sweep(async () => { await p2.click('#menuBtn'); await p2.waitForTimeout(180); });
+await sweep(async () => { await p2.click('#helpBtn'); await p2.waitForTimeout(250); });
+const helpSections = await p2.locator('.help-h').count();
+check('infobulle sur chaque objet de l\'interface',
+  missing.length === 0 && helpSections >= 5,
+  missing.length ? missing.slice(0, 6).join(', ') : 'toutes les vues + aide (' + helpSections + ' sections)');
+await p2.click('.m-close');
+
 await p2.screenshot({ path: path.join(SHOTS, 'desktop.png') });
 await desk.close();
 await browser.close();
