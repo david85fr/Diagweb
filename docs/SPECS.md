@@ -419,11 +419,12 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
 - **Modèle** : un *lien* (protocole + paramètres de connexion) porte des
   *points* (variables lues). Adresse Diagweb : **`@lien.point`** (famille NET).
 - **Protocoles** : Modbus TCP, Modbus RTU (série), IEC 60870-5-104, CAN brut,
-  J1939, CANopen — pilotes implémentés ; **IEC 61850 (MMS)** et
-  **OPC UA (IEC 62541)** sont *déclarés* : la configuration est acceptée et
+  J1939, CANopen, **SNMP v1 et v2c** — pilotes implémentés ; **SNMP v3 (USM)**,
+  **IEC 61850 (MMS)** et **OPC UA (IEC 62541)** sont *déclarés* : la configuration est acceptée et
   conservée, la lecture viendra avec leur pile respective (ISO/MMS d'un côté,
-  UA-TCP + SecureConversation de l'autre). Un pilote déclaré ne publie
-  **aucune** valeur.
+  UA-TCP + SecureConversation de l'autre ; USM pour SNMPv3). Un pilote déclaré
+  ne publie **aucune** valeur — et un lien SNMP configuré en v3 ne retombe
+  jamais en silence sur v2c, ce qui viderait de son sens le choix de v3.
 - **Bibliothèques tierces** : autorisées côté serveur si leur licence reste
   **gratuite en produit commercial fermé** (MIT, BSD, Apache-2.0, MPL-2.0…) ;
   refusées si GPL/AGPL ou en double licence dont l'usage commercial se paie.

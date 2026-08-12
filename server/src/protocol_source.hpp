@@ -28,6 +28,7 @@
 #include "drivers/j1939/j1939.hpp"
 #include "drivers/modbus/modbus.hpp"
 #include "drivers/opcua/opcua.hpp"
+#include "drivers/snmp/snmp.hpp"
 #include "protocol.hpp"
 #include "sim_source.hpp"
 
@@ -296,6 +297,7 @@ class ProtocolSource : public IVariableSource {
     if (p == "can-raw")    return std::make_unique<CanRawDriver>(link, sink);
     if (p == "j1939")      return std::make_unique<J1939Driver>(link, sink);
     if (p == "canopen")    return std::make_unique<CanOpenDriver>(link, sink);
+    if (p == "snmp")       return std::make_unique<SnmpDriver>(link, sink);
     if (p == "iec61850")   return make_iec61850_driver();
     if (p == "opcua")      return make_opcua_driver();
     return nullptr;

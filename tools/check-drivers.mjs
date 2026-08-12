@@ -40,6 +40,7 @@ const DOSSIERS = {
   'can-raw': 'can',
   'j1939': 'j1939',
   'canopen': 'canopen',
+  'snmp': 'snmp',
   'opcua': 'opcua',
 };
 

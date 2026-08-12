@@ -139,6 +139,7 @@ Chaque protocole a son dossier ; rien ne traîne à la racine de `src/drivers/`.
 | `can/` | CAN, trames brutes | implémenté |
 | `j1939/` | J1939 (PGN mono-trame) | implémenté |
 | `canopen/` | CANopen (TPDO, SDO expédié) | implémenté |
+| `snmp/` | SNMP v1 et v2c (`ber.hpp` + pilote) | implémenté ; v3 déclaré |
 | `iec61850/` | IEC 61850 (MMS) | déclaré |
 | `opcua/` | OPC UA (IEC 62541) | déclaré |
 | `common/` | `net.hpp` (TCP/série), `can_socket.hpp` (socle SocketCAN), `declared.hpp` | — |

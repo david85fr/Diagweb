@@ -1,8 +1,8 @@
 /* Diagweb — liens réseau : description des protocoles, configuration, points.
  *
  * Le serveur de diagnostic sait lire des variables sur des équipements tiers
- * (Modbus, IEC 61850, IEC 60870-5-104, CAN brut, J1939, CANopen, OPC UA). Ce
- * fichier est la SOURCE DE VÉRITÉ de la description de ces protocoles : les
+ * (Modbus, IEC 61850, IEC 60870-5-104, CAN brut, J1939, CANopen, SNMP, OPC UA).
+ * Ce fichier est la SOURCE DE VÉRITÉ de la description de ces protocoles : les
  * champs de configuration, leurs libellés et leurs aides. Chaque protocole a
  * son pilote dans son propre dossier, sous `server/src/drivers/<protocole>/`,
  * et `tools/gen-protocols.mjs` dérive `server/src/protocols.generated.hpp` —
@@ -259,6 +259,62 @@
                       ['f32', 'Flottant 32 bits']],
             when: { mode: ['sdo'] } }),
       ].concat(BITFIELD.map((f) => Object.assign({}, f, { when: { mode: ['tpdo'] } }))).concat(SCALE),
+    },
+    {
+      id: 'snmp',
+      label: 'SNMP',
+      transport: 'UDP (port 161)',
+      state: 'live',
+      help: 'Gestionnaire SNMP en lecture seule : interrogation cyclique d’OID par ' +
+            'GetRequest. v1 et v2c sont implémentées ; v3 (USM) se configure mais ' +
+            'n’est pas encore lue — un lien en v3 s’annonce « non branché » plutôt ' +
+            'que de retomber en silence sur une version non chiffrée. Aucune ' +
+            'écriture (SetRequest) n’est possible.',
+      linkFields: [
+        F('host', 'Hôte', 'text', '', true, 'Adresse IP ou nom réseau de l’agent SNMP.'),
+        F('port', 'Port', 'int', 161, false, 'Port UDP de l’agent (161 par défaut).'),
+        F('version', 'Version', 'enum', 'v2c', true,
+          'v1 : la plus ancienne, sans Counter64 ni exception par variable. v2c : le ' +
+          'choix courant, communauté en clair. v3 : sécurisée (authentification et ' +
+          'chiffrement) — configurable, lecture pas encore implémentée.',
+          { choices: [['v1', 'v1'], ['v2c', 'v2c'], ['v3', 'v3 (non branché)']] }),
+        F('community', 'Communauté', 'text', 'public', false,
+          'Communauté de lecture, transmise EN CLAIR sur le réseau par v1 et v2c : ' +
+          'ne pas y mettre un secret qui compte, et préférer v3 sur un réseau exposé.',
+          { when: { version: ['v1', 'v2c'] } }),
+        F('user', 'Utilisateur (USM)', 'text', '', false,
+          'Nom d’utilisateur du modèle de sécurité USM.', { when: { version: ['v3'] } }),
+        F('level', 'Niveau de sécurité', 'enum', 'authPriv', false,
+          'noAuthNoPriv : ni authentification ni chiffrement. authNoPriv : authentifié. ' +
+          'authPriv : authentifié et chiffré.',
+          { choices: [['noAuthNoPriv', 'Aucun'], ['authNoPriv', 'Authentification'],
+                      ['authPriv', 'Authentification et chiffrement']],
+            when: { version: ['v3'] } }),
+        F('authProto', 'Algorithme d’authentification', 'enum', 'SHA', false,
+          'Fonction de hachage du condensé d’authentification.',
+          { choices: [['MD5', 'HMAC-MD5'], ['SHA', 'HMAC-SHA-1'],
+                      ['SHA256', 'HMAC-SHA-256']], when: { version: ['v3'] } }),
+        F('privProto', 'Algorithme de chiffrement', 'enum', 'AES', false,
+          'Chiffrement de la charge utile.',
+          { choices: [['DES', 'DES-CBC'], ['AES', 'AES-128-CFB']], when: { version: ['v3'] } }),
+        F('secretRef', 'Référence des secrets', 'text', '', false,
+          'Nom sous lequel les phrases secrètes d’authentification et de chiffrement sont ' +
+          'rangées dans le magasin de secrets du contrôleur — une désignation, jamais le ' +
+          'secret lui-même : cette configuration s’exporte en clair.',
+          { when: { version: ['v3'] } }),
+        F('timeoutMs', 'Délai d’attente (ms)', 'int', 1500, false,
+          'Temps maximal d’attente d’une réponse. UDP perd des datagrammes sans le dire : ' +
+          'le lien n’est déclaré en défaut qu’après trois délais consécutifs.'),
+        F('maxVars', 'Groupement (variables)', 'int', 16, false,
+          'Nombre maximal d’OID demandés dans une même requête ; 1 pour les interroger ' +
+          'séparément. Trop élevé, l’agent répond « tooBig ».'),
+      ],
+      pointFields: [
+        F('oid', 'OID', 'text', '1.3.6.1.2.1.1.3.0', true,
+          'Identifiant d’objet en notation pointée. Un scalaire se termine par « .0 » ' +
+          '(ex. 1.3.6.1.2.1.1.3.0 = temps depuis le démarrage) ; une entrée de table ' +
+          'porte son index (ex. 1.3.6.1.2.1.2.2.1.10.2 = octets reçus sur l’interface 2).'),
+      ].concat(SCALE),
     },
     {
       id: 'opcua',

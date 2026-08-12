@@ -2,8 +2,8 @@
 //
 // Vérifie ce qui ne peut pas l'être par le test bout en bout (tests/protocols.mjs) :
 // extraction de champs de bits CAN, décomposition d'un identifiant J1939,
-// filtres noyau et appariement des trois pilotes CAN, grammaire des adresses
-// « @lien.point », lecture de la configuration JSON.
+// filtres noyau et appariement des trois pilotes CAN, codec BER/ASN.1 de SNMP,
+// grammaire des adresses « @lien.point », lecture de la configuration JSON.
 //
 //   g++ -std=c++20 -I server/src -o /tmp/decode tests/decode.cpp && /tmp/decode
 #include <cmath>
@@ -15,6 +15,7 @@
 #include "drivers/can/can_raw.hpp"
 #include "drivers/canopen/canopen.hpp"
 #include "drivers/j1939/j1939.hpp"
+#include "drivers/snmp/ber.hpp"
 #include "protocol.hpp"
 
 using namespace diagweb;
@@ -194,6 +195,72 @@ int main() {
             f.size() == 2 && f[0].id == 0x183 && f[0].mask == 0x7FF && !f[0].ext);
       check("CANopen : filtre de la réponse SDO (0x580 + node-id)",
             f.size() == 2 && f[1].id == 0x583, f.size() == 2 ? std::to_string(f[1].id) : "?");
+    }
+  }
+
+  // ---- BER/ASN.1 (SNMP) -------------------------------------------------
+  // Tout ce que ce codec lit vient du réseau : les cas tronqués comptent
+  // autant que les cas nominaux.
+  {
+    // Aller-retour d'un OID : les deux premiers arcs sont combinés (40×a+b),
+    // les arcs ≥ 128 s'encodent sur plusieurs octets à bit de continuation.
+    for (const char* oid : {"1.3.6.1.2.1.1.3.0", "1.3.6.1.2.1.2.2.1.10.2",
+                            "1.3.6.1.4.1.9999.1", "0.0"}) {
+      const auto enc = ber::put_oid(oid);
+      ber::Cursor c(enc.data(), enc.size());
+      uint8_t tag = 0;
+      const uint8_t* body = nullptr;
+      size_t len = 0;
+      std::string back;
+      const bool ok = ber::read_tlv(c, tag, body, len) && tag == ber::kOid &&
+                      ber::read_oid(body, len, back);
+      check("BER : aller-retour d'OID", ok && back == oid, back);
+    }
+    check("BER : OID fautif refusé", ber::put_oid("1.3.x.1").empty());
+    check("BER : OID à un seul arc refusé", ber::put_oid("1").empty());
+
+    // Longueur en forme longue : au-delà de 127 octets de contenu.
+    {
+      std::vector<uint8_t> big(300, 0x41);
+      const auto enc = ber::wrap(ber::kOctetStr, big);
+      ber::Cursor c(enc.data(), enc.size());
+      uint8_t tag = 0;
+      const uint8_t* body = nullptr;
+      size_t len = 0;
+      check("BER : longueur en forme longue",
+            ber::read_tlv(c, tag, body, len) && len == 300, std::to_string(len));
+    }
+
+    // Une longueur qui dépasse le tampon doit être refusée, pas crue.
+    {
+      const uint8_t tronque[4] = {ber::kOctetStr, 0x40, 0x01, 0x02};
+      ber::Cursor c(tronque, sizeof tronque);
+      uint8_t tag = 0;
+      const uint8_t* body = nullptr;
+      size_t len = 0;
+      check("BER : longueur qui déborde refusée", !ber::read_tlv(c, tag, body, len));
+    }
+
+    // Entiers : signe, encodage minimal, et Counter64 préfixé d'un octet nul.
+    {
+      const int64_t valeurs[] = {0, 1, -1, 127, 128, -128, 32767, -32768,
+                                 2147483647LL, -2147483648LL};
+      for (int64_t v : valeurs) {
+        const auto enc = ber::put_int(v);
+        ber::Cursor c(enc.data(), enc.size());
+        uint8_t tag = 0;
+        const uint8_t* body = nullptr;
+        size_t len = 0;
+        int64_t back = 0;
+        const bool ok = ber::read_tlv(c, tag, body, len) && ber::read_int(body, len, back);
+        check("BER : aller-retour d'entier", ok && back == v, std::to_string(back));
+      }
+      const uint8_t c64[9] = {0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+      uint64_t u = 0;
+      int64_t trop_long = 0;
+      check("BER : Counter64 préfixé d'un octet nul",
+            ber::read_uint(c64, 9, u) && u == 0xFFFFFFFFFFFFFFFFull);
+      check("BER : entier trop long refusé", !ber::read_int(c64, 9, trop_long));
     }
   }
 

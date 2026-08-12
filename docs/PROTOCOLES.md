@@ -155,6 +155,8 @@ donc exactement les champs que le serveur sait lire.
 | CAN (trames brutes) | SocketCAN | implémenté | `drivers/can/` |
 | J1939 | SocketCAN | implémenté (PGN mono-trame) | `drivers/j1939/` |
 | CANopen | SocketCAN | implémenté (TPDO, SDO expédié) | `drivers/canopen/` |
+| SNMP v1 et v2c | UDP/161 | implémenté | `drivers/snmp/` |
+| SNMP v3 | UDP/161 | **déclaré** (USM à écrire) | `drivers/snmp/` |
 | IEC 61850 (MMS) | ISO sur TCP | **déclaré** | `drivers/iec61850/` |
 | OPC UA (IEC 62541) | UA-TCP binaire | **déclaré** | `drivers/opcua/` |
 
@@ -243,6 +245,48 @@ débit du bus relève de l'administration du contrôleur, pas de Diagweb.
   À savoir : un nœud qui n'est pas en état **opérationnel** n'émet aucun TPDO —
   le lien paraît alors établi sans qu'aucune valeur ne remonte.
 
+### SNMP
+
+Gestionnaire en **lecture seule** : interrogation cyclique d'OID par
+GetRequest sur UDP/161. `SetRequest` n'est pas implémenté et ne le sera pas.
+Un point est un OID en notation pointée ; un scalaire se termine par `.0`
+(`1.3.6.1.2.1.1.3.0`), une entrée de table porte son index
+(`1.3.6.1.2.1.2.2.1.10.2` = octets reçus sur l'interface 2).
+
+- **Types décodés** : `Integer32`, `Counter32`, `Gauge32`, `TimeTicks`,
+  `Counter64`, plus les chaînes **entièrement numériques** — certains agents
+  publient une mesure sous forme de texte. Une chaîne non numérique n'est
+  jamais publiée : elle ne serait qu'un zéro déguisé.
+- **Absence de valeur** : `noSuchObject`, `noSuchInstance` (v2c) ou type non
+  numérique ⇒ **aucun échantillon**, et le motif s'affiche dans l'état du lien.
+  L'erreur la plus fréquente est un scalaire écrit sans son `.0` final ; le
+  message le dit explicitement.
+- **Groupement** : plusieurs OID partent dans une même requête (paramètre
+  « Groupement », 16 par défaut). Trop élevé, l'agent répond `tooBig` — le
+  motif remonte tel quel.
+- **UDP perd des datagrammes sans le dire.** Un délai isolé n'est donc pas une
+  erreur : le lien n'est déclaré en défaut qu'après **trois délais
+  consécutifs**. Et la socket est *connectée*, ce qui écarte au niveau du
+  noyau les réponses venues d'une autre machine ; l'identifiant de requête est
+  vérifié en plus, pour qu'un datagramme retardé ne décale pas le flux.
+- **La communauté circule en clair** en v1 et v2c. C'est une propriété du
+  protocole, pas de Diagweb : ne pas y placer un secret qui compte.
+
+**v3 est déclaré, pas implémenté.** La configuration complète se saisit
+(utilisateur, niveau de sécurité, algorithmes d'authentification et de
+chiffrement, référence des secrets) et se conserve, mais un lien en v3
+s'affiche « non branché » et ne lit rien. Le choix mérite d'être explicite :
+il aurait été facile de retomber sur v2c en silence, et ç'aurait été le pire
+comportement possible pour une version choisie précisément pour sa sécurité.
+
+Ce qui manque est le modèle de sécurité USM (RFC 3414) : découverte du moteur
+distant, fenêtre temporelle, dérivation et localisation des clés depuis les
+phrases secrètes, HMAC-MD5/SHA-1/SHA-256, puis DES-CBC ou AES-128-CFB pour le
+chiffrement. Deux routes, maintenant que les bibliothèques sous licence libre
+en produit commercial sont autorisées : écrire USM — faisable, mais c'est du
+code cryptographique — ou s'appuyer sur une pile existante. À décider avant de
+commencer.
+
 ### IEC 61850 — pilote déclaré
 
 La configuration (hôte, port 102, nom d'IED, mode, références d'objet et
@@ -303,6 +347,10 @@ cyclique** (service Read), pour les serveurs qui refusent les abonnements.
 - **GOOSE** (IEC 61850-8-1 couche 2) et **rôle de maître CANopen**.
 - **Écriture et appel de méthode OPC UA** (`Write`, `Call`), **découverte**
   automatique de l'arborescence (`Browse`) et **historique** (`HistoryRead`).
+- **SNMP** : `SetRequest` (écriture), réception de **trappes** et
+  d'`InformRequest` (Diagweb interroge, il n'écoute pas), parcours de MIB
+  (`GetNext`, `GetBulk`) et résolution des noms symboliques — un OID se saisit
+  en notation pointée, aucune MIB n'est chargée.
 
 ## Période, horodatage, qualité
 
@@ -484,11 +532,14 @@ node tests/protocols.mjs        # serveur de diagnostic en fonctionnement
 ```
 
 `tests/decode.cpp` couvre le décodage (champs de bits Intel/Motorola, PGN
-J1939, grammaire `@lien.point`, lecture de la configuration) **et** les filtres
+J1939, codec BER/ASN.1 de SNMP — y compris les longueurs qui débordent du
+tampon reçu — grammaire `@lien.point`, lecture de la configuration) **et** les
+filtres
 noyau des trois pilotes CAN, ainsi que leur appariement de trames — un filtre
 trop large ou trop étroit rendrait une variable silencieusement muette.
-`tests/protocols.mjs` monte un **esclave Modbus TCP** et une **station
-IEC 60870-5-104** en Node, configure les liens par REST et vérifie que les
+`tests/protocols.mjs` monte un **esclave Modbus TCP**, une **station
+IEC 60870-5-104** et un **agent SNMP v2c** en Node, configure les liens par
+REST et vérifie que les
 valeurs arrivent jusqu'au flux WebSocket ; il vérifie aussi que les pilotes
 **déclarés** (IEC 61850, OPC UA) annoncent « non branché » et ne publient
 aucune valeur. Les pilotes CAN ne sont pas couverts de bout en bout faute

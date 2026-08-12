@@ -123,6 +123,58 @@ inline bool read_exact(int fd, uint8_t* out, size_t n, int timeout_ms) {
   return true;
 }
 
+/**
+ * Socket UDP « connectée » vers hôte:port (SNMP). La connexion UDP n'échange
+ * rien sur le réseau : elle fixe le destinataire et, surtout, filtre les
+ * datagrammes venus d'ailleurs — sans quoi n'importe quelle machine pourrait
+ * injecter une réponse dans le flux d'un lien.
+ */
+inline int udp_connect(const std::string& host, int port, std::string& err) {
+  if (host.empty()) { err = "hôte non renseigné"; return -1; }
+  addrinfo hints{};
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_DGRAM;
+  addrinfo* res = nullptr;
+  const std::string service = std::to_string(port);
+  const int rc = ::getaddrinfo(host.c_str(), service.c_str(), &hints, &res);
+  if (rc != 0 || !res) {
+    err = "hôte introuvable (" + std::string(::gai_strerror(rc)) + ")";
+    return -1;
+  }
+  int fd = -1;
+  for (addrinfo* a = res; a; a = a->ai_next) {
+    fd = ::socket(a->ai_family, a->ai_socktype, a->ai_protocol);
+    if (fd < 0) continue;
+    if (::connect(fd, a->ai_addr, a->ai_addrlen) == 0) {
+      ::fcntl(fd, F_SETFL, ::fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+      ::freeaddrinfo(res);
+      return fd;
+    }
+    err = std::strerror(errno);
+    ::close(fd);
+    fd = -1;
+  }
+  ::freeaddrinfo(res);
+  if (err.empty()) err = "socket UDP impossible";
+  return -1;
+}
+
+/** Attend un datagramme et le lit ; -1 si le délai expire. */
+inline ssize_t recv_datagram(int fd, uint8_t* out, size_t max, int timeout_ms) {
+  const double end = mono_s() + timeout_ms / 1000.0;
+  for (;;) {
+    const int left = static_cast<int>((end - mono_s()) * 1000);
+    if (left <= 0) return -1;
+    pollfd p{fd, POLLIN, 0};
+    const int r = ::poll(&p, 1, left);
+    if (r <= 0) return -1;
+    const ssize_t k = ::recv(fd, out, max, 0);
+    if (k >= 0) return k;
+    if (errno == EAGAIN || errno == EINTR) continue;
+    return -1;
+  }
+}
+
 /** Vide ce qui traîne en réception (resynchronisation d'une liaison série). */
 inline void drain(int fd) {
   uint8_t junk[256];

@@ -1,15 +1,17 @@
 /* Diagweb — test bout en bout des liens réseau du serveur de diagnostic.
  *
- * Monte de faux équipements (esclave Modbus TCP, station IEC 60870-5-104),
- * configure les liens par l'API REST du serveur, puis vérifie que les points
- * remontent bien jusqu'au flux WebSocket avec les bonnes valeurs.
+ * Monte de faux équipements (esclave Modbus TCP, station IEC 60870-5-104,
+ * agent SNMP v2c), configure les liens par l'API REST du serveur, puis vérifie
+ * que les points remontent bien jusqu'au flux WebSocket avec les bonnes
+ * valeurs.
  *
  *   node tests/protocols.mjs [http://localhost:8080]
  *
  * Le serveur doit tourner (server/build/diagweb-server). Aucune dépendance :
- * net et WebSocket sont fournis par Node.
+ * net, dgram et WebSocket sont fournis par Node.
  */
 import net from 'node:net';
+import dgram from 'node:dgram';
 
 const BASE = process.argv[2] || 'http://localhost:8080';
 const results = [];
@@ -153,6 +155,107 @@ function startIec104Station() {
   return new Promise((res) => server.listen(0, '127.0.0.1', () => res({ server, port: server.address().port })));
 }
 
+/**
+ * Agent SNMP v2c minimal, sur UDP. Décode le GetRequest, répond avec un type
+ * applicatif différent par OID — c'est justement ce que le pilote doit savoir
+ * distinguer — et exerce les deux cas d'absence de valeur.
+ *
+ *   1.3.6.1.2.1.1.3.0        TimeTicks   123456
+ *   1.3.6.1.2.1.2.2.1.10.2   Counter32   4000000000  (au-delà d'un int32 signé)
+ *   1.3.6.1.4.1.9999.1.0     Integer     -42
+ *   1.3.6.1.4.1.9999.2.0     OctetString "23.5"      (mesure en chaîne)
+ *   1.3.6.1.4.1.9999.3.0     OctetString "hors zone" (non numérique : ignorée)
+ *   1.3.6.1.4.1.9999.9.0     noSuchObject
+ */
+function startSnmpAgent() {
+  // --- BER minimal ---
+  const len = (n) => (n < 0x80 ? [n] : (() => {
+    const b = []; for (let v = n; v; v >>= 8) b.unshift(v & 0xff);
+    return [0x80 | b.length, ...b];
+  })());
+  const tlv = (tag, body) => Buffer.from([tag, ...len(body.length), ...body]);
+  const int = (v) => {
+    const b = []; let x = BigInt(v);
+    do { b.unshift(Number(x & 0xffn)); x >>= 8n; }
+    while (!((x === 0n && !(b[0] & 0x80)) || (x === -1n && (b[0] & 0x80))));
+    return tlv(0x02, b);
+  };
+  const uint = (tag, v) => {
+    const b = []; let x = BigInt(v);
+    do { b.unshift(Number(x & 0xffn)); x >>= 8n; } while (x);
+    if (b[0] & 0x80) b.unshift(0);                 // pas de signe parasite
+    return tlv(tag, b);
+  };
+  const oidEnc = (dotted) => {
+    const a = dotted.split('.').map(Number);
+    const b = [a[0] * 40 + a[1]];
+    for (const arc of a.slice(2)) {
+      const t = []; let v = arc;
+      do { t.unshift(v & 0x7f); v >>= 7; } while (v);
+      for (let i = 0; i < t.length - 1; i++) t[i] |= 0x80;
+      b.push(...t);
+    }
+    return tlv(0x06, b);
+  };
+  const readTlv = (buf, i) => {
+    const tag = buf[i]; let n = buf[i + 1]; let off = i + 2;
+    if (n & 0x80) { const k = n & 0x7f; n = 0; for (let j = 0; j < k; j++) n = (n << 8) | buf[off++]; }
+    return { tag, body: buf.subarray(off, off + n), next: off + n };
+  };
+  const oidDec = (b) => {
+    let s = Math.floor(b[0] / 40) + '.' + (b[0] % 40); let arc = 0;
+    for (let i = 1; i < b.length; i++) {
+      arc = (arc << 7) | (b[i] & 0x7f);
+      if (!(b[i] & 0x80)) { s += '.' + arc; arc = 0; }
+    }
+    return s;
+  };
+
+  const VALUES = {
+    '1.3.6.1.2.1.1.3.0': () => uint(0x43, 123456),
+    '1.3.6.1.2.1.2.2.1.10.2': () => uint(0x41, 4000000000),
+    '1.3.6.1.4.1.9999.1.0': () => int(-42),
+    '1.3.6.1.4.1.9999.2.0': () => tlv(0x04, Buffer.from('23.5')),
+    '1.3.6.1.4.1.9999.3.0': () => tlv(0x04, Buffer.from('hors zone')),
+    '1.3.6.1.4.1.9999.9.0': () => Buffer.from([0x80, 0x00]),   // noSuchObject
+  };
+
+  const sock = dgram.createSocket('udp4');
+  sock.on('message', (msg, rinfo) => {
+    try {
+      const seq = readTlv(msg, 0);
+      let i = 0;
+      const version = readTlv(seq.body, i); i = version.next;
+      const community = readTlv(seq.body, i); i = community.next;
+      if (community.body.toString() !== 'public') return;       // communauté fausse : muet
+      const pdu = readTlv(seq.body, i);
+      if (pdu.tag !== 0xa0) return;                             // seul GetRequest est servi
+      let j = 0;
+      const rid = readTlv(pdu.body, j); j = rid.next;
+      j = readTlv(pdu.body, j).next;                            // error-status
+      j = readTlv(pdu.body, j).next;                            // error-index
+      const binds = readTlv(pdu.body, j);
+
+      const out = [];
+      let k = 0;
+      while (k < binds.body.length) {
+        const vb = readTlv(binds.body, k); k = vb.next;
+        const name = readTlv(vb.body, 0);
+        const oid = oidDec(name.body);
+        const val = VALUES[oid] ? VALUES[oid]() : Buffer.from([0x80, 0x00]);
+        out.push(tlv(0x30, Buffer.concat([oidEnc(oid), val])));
+      }
+      const resp = tlv(0x30, Buffer.concat([
+        tlv(0x02, version.body), tlv(0x04, community.body),
+        tlv(0xa2, Buffer.concat([tlv(0x02, rid.body), int(0), int(0),
+                                 tlv(0x30, Buffer.concat(out))])),
+      ]));
+      sock.send(resp, rinfo.port, rinfo.address);
+    } catch { /* trame incohérente : l'agent reste muet, comme un vrai */ }
+  });
+  return new Promise((res) => sock.bind(0, '127.0.0.1', () => res({ sock, port: sock.address().port })));
+}
+
 // ---------------------------------------------------------------- utilitaires
 async function api(path, options) {
   const r = await fetch(BASE + path, options);
@@ -193,6 +296,7 @@ if (health.status !== 200 || !health.json || health.json.role !== 'diag-server')
 
 const modbus = await startModbusSlave();
 const iec = await startIec104Station();
+const snmp = await startSnmpAgent();
 
 const before = await api('/api/protocols');
 check('description des protocoles publiée par le serveur',
@@ -238,6 +342,34 @@ const config = {
       ],
     },
     {
+      id: 'commut', label: 'Commutateur SNMP', protocol: 'snmp', enabled: true,
+      params: { host: '127.0.0.1', port: snmp.port, version: 'v2c', community: 'public',
+                timeoutMs: 1500, maxVars: 16 },
+      points: [
+        { id: 'uptime', label: 'Temps depuis démarrage', unit: 's', kind: 'float', periodMs: 200,
+          params: { oid: '1.3.6.1.2.1.1.3.0', gain: 0.01, offset: 0 } },
+        { id: 'octets', label: 'Octets reçus if2', unit: 'o', kind: 'float', periodMs: 200,
+          params: { oid: '1.3.6.1.2.1.2.2.1.10.2', gain: 1, offset: 0 } },
+        { id: 'signe', label: 'Entier signé', unit: '', kind: 'float', periodMs: 200,
+          params: { oid: '1.3.6.1.4.1.9999.1.0', gain: 1, offset: 0 } },
+        { id: 'chaine', label: 'Mesure en chaîne', unit: '°C', kind: 'float', periodMs: 200,
+          params: { oid: '1.3.6.1.4.1.9999.2.0', gain: 1, offset: 0 } },
+        { id: 'texte', label: 'Texte non numérique', unit: '', kind: 'float', periodMs: 200,
+          params: { oid: '1.3.6.1.4.1.9999.3.0', gain: 1, offset: 0 } },
+        { id: 'absent', label: 'OID inconnu', unit: '', kind: 'float', periodMs: 200,
+          params: { oid: '1.3.6.1.4.1.9999.9.0', gain: 1, offset: 0 } },
+      ],
+    },
+    {
+      id: 'snmpv3', label: 'Agent SNMPv3', protocol: 'snmp', enabled: true,
+      params: { host: '127.0.0.1', port: snmp.port, version: 'v3', user: 'diag',
+                level: 'authPriv', authProto: 'SHA', privProto: 'AES', timeoutMs: 1500 },
+      points: [
+        { id: 'uptime', label: 'Temps depuis démarrage', unit: 's', kind: 'float', periodMs: 1000,
+          params: { oid: '1.3.6.1.2.1.1.3.0', gain: 1, offset: 0 } },
+      ],
+    },
+    {
       id: 'supervision', label: 'Supervision OPC UA', protocol: 'opcua', enabled: true,
       params: { endpoint: 'opc.tcp://127.0.0.1:4840', securityPolicy: 'None',
                 securityMode: 'None', auth: 'anonymous', mode: 'subscribe',
@@ -273,6 +405,11 @@ check('pilote IEC 61850 annoncé comme non branché (pas de valeur inventée)',
 check('pilote OPC UA annoncé comme non branché (pas de valeur inventée)',
   stMap.supervision && stMap.supervision.state === 'todo',
   stMap.supervision ? stMap.supervision.detail : 'absent');
+check('lien SNMP v2c établi', stMap.commut && stMap.commut.state === 'up',
+  stMap.commut ? stMap.commut.state + ' · ' + stMap.commut.detail : 'absent');
+check('SNMPv3 annoncé non branché (pas de repli silencieux en v2c)',
+  stMap.snmpv3 && stMap.snmpv3.state === 'todo',
+  stMap.snmpv3 ? stMap.snmpv3.detail : 'absent');
 
 const test = await api('/api/protocols/test', {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -283,7 +420,9 @@ check('test de connexion du lien Modbus', test.status === 200 && test.json.ok ==
 
 const { got, metas } = await collect(
   ['@banc.reg0', '@banc.reg5', '@banc.flot', '@banc.bobine', '@banc.absent',
-   '@poste.mesure', '@poste.etat', '@poste61850.courant', '@supervision.debit'], 1400);
+   '@poste.mesure', '@poste.etat', '@poste61850.courant', '@supervision.debit',
+   '@commut.uptime', '@commut.octets', '@commut.signe', '@commut.chaine',
+   '@commut.texte', '@commut.absent', '@snmpv3.uptime'], 1400);
 
 const last = (a) => { const v = got.get(a); return v.length ? v[v.length - 1] : null; };
 
@@ -305,6 +444,20 @@ check('point IEC 61850 sans valeur (pilote non branché)',
   got.get('@poste61850.courant').length === 0);
 check('point OPC UA sans valeur (pilote non branché)',
   got.get('@supervision.debit').length === 0);
+check('SNMP : TimeTicks décodé et mis à l’échelle',
+  Math.abs(last('@commut.uptime') - 1234.56) < 1e-6, 'valeur ' + last('@commut.uptime'));
+check('SNMP : Counter32 au-delà d’un entier 32 bits signé',
+  last('@commut.octets') === 4000000000, 'valeur ' + last('@commut.octets'));
+check('SNMP : entier négatif décodé', last('@commut.signe') === -42,
+  'valeur ' + last('@commut.signe'));
+check('SNMP : mesure publiée sous forme de chaîne', last('@commut.chaine') === 23.5,
+  'valeur ' + last('@commut.chaine'));
+check('SNMP : chaîne non numérique jamais publiée',
+  got.get('@commut.texte').length === 0);
+check('SNMP : noSuchObject ne publie rien',
+  got.get('@commut.absent').length === 0);
+check('SNMP : aucun point lu sur un lien v3',
+  got.get('@snmpv3.uptime').length === 0);
 check('métadonnées transmises (libellé, unité, famille)',
   metas.get('@banc.flot') && metas.get('@banc.flot').unit === '°C' &&
   metas.get('@banc.flot').family === 'NET',
