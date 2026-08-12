@@ -879,13 +879,13 @@ body.cfg-hidden .tabActions { display: none; }
     </div>
 
     <div class="topIcons">
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">91d0932 · #51</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">9bc7df2 · #55</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
         <button id="helpBtn" type="button" title="Récapitulatif des commandes et des gestes (utile sur écran tactile, où les infobulles n’apparaissent pas)">Aide — commandes et gestes…</button>
-        <button id="netBtn" type="button" title="Liens réseau : déclarer des équipements Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939 ou CANopen et choisir les variables à lire">Liens réseau…</button>
+        <button id="netBtn" type="button" title="Liens réseau : déclarer des équipements Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen ou OPC UA et choisir les variables à lire">Liens réseau…</button>
         <button id="aboutBtn" type="button" title="Version affichée, mode de fonctionnement et source de données">À propos de Diagweb…</button>
         <button type="button" disabled title="Fonction globale prévue : capture des interfaces réseau du contrôleur">Capture d’interfaces réseau (à venir)</button>
         <button type="button" disabled title="Fonction globale prévue : historique des versions de l’application">Notes de version (à venir)</button>
@@ -1163,10 +1163,12 @@ body.cfg-hidden .tabActions { display: none; }
 /* Diagweb — liens réseau : description des protocoles, configuration, points.
  *
  * Le serveur de diagnostic sait lire des variables sur des équipements tiers
- * (Modbus, IEC 61850, IEC 60870-5-104, CAN brut, J1939, CANopen). Ce fichier
- * est la SOURCE DE VÉRITÉ de la description de ces protocoles : les champs de
- * configuration, leurs libellés et leurs aides. `tools/gen-protocols.mjs` en
- * dérive `server/src/protocols.generated.hpp` — ne jamais éditer le .hpp.
+ * (Modbus, IEC 61850, IEC 60870-5-104, CAN brut, J1939, CANopen, OPC UA). Ce
+ * fichier est la SOURCE DE VÉRITÉ de la description de ces protocoles : les
+ * champs de configuration, leurs libellés et leurs aides. Chaque protocole a
+ * son pilote dans son propre dossier, sous `server/src/drivers/<protocole>/`,
+ * et `tools/gen-protocols.mjs` dérive `server/src/protocols.generated.hpp` —
+ * ne jamais éditer le .hpp.
  *
  * Vocabulaire (voir docs/PROTOCOLES.md) :
  *   lien  = une connexion vers un équipement ou un réseau (id, protocole,
@@ -1419,6 +1421,75 @@ body.cfg-hidden .tabActions { display: none; }
                       ['f32', 'Flottant 32 bits']],
             when: { mode: ['sdo'] } }),
       ].concat(BITFIELD.map((f) => Object.assign({}, f, { when: { mode: ['tpdo'] } }))).concat(SCALE),
+    },
+    {
+      id: 'opcua',
+      label: 'OPC UA (IEC 62541)',
+      transport: 'UA-TCP binaire (opc.tcp, port 4840)',
+      state: 'declared',
+      help: 'Client OPC UA d’un serveur de supervision ou d’un équipement : lecture ' +
+            'de nœuds désignés par leur NodeId, par interrogation cyclique (Read) ou ' +
+            'par abonnement (MonitoredItems). La configuration et les points se ' +
+            'saisissent dès maintenant ; la lecture effective demande la pile UA ' +
+            '(UA-TCP, SecureConversation, encodage binaire), prévue en phase ' +
+            'ultérieure (voir docs/PROTOCOLES.md). Lecture seule définitive : ni ' +
+            'Write ni Call ne seront implémentés.',
+      linkFields: [
+        F('endpoint', 'Point de terminaison', 'text', 'opc.tcp://192.168.0.10:4840', true,
+          'URL du serveur OPC UA, forme opc.tcp://hôte:port/chemin. Le chemin est facultatif ' +
+          'et dépend du serveur.'),
+        F('securityPolicy', 'Politique de sécurité', 'enum', 'None', false,
+          'Politique annoncée par le serveur pour le canal sécurisé. « Aucune » ne convient ' +
+          'qu’à un réseau de confiance ; les autres exigent un certificat client.',
+          { choices: [['None', 'Aucune'], ['Basic256Sha256', 'Basic256Sha256'],
+                      ['Aes128Sha256RsaOaep', 'Aes128-Sha256-RsaOaep'],
+                      ['Aes256Sha256RsaPss', 'Aes256-Sha256-RsaPss']] }),
+        F('securityMode', 'Mode de sécurité', 'enum', 'None', false,
+          'Aucun (en clair), signature seule, ou signature et chiffrement du canal.',
+          { choices: [['None', 'Aucun'], ['Sign', 'Signature'],
+                      ['SignAndEncrypt', 'Signature et chiffrement']] }),
+        F('auth', 'Authentification', 'enum', 'anonymous', false,
+          'Jeton d’identité présenté à l’ouverture de session.',
+          { choices: [['anonymous', 'Anonyme'], ['username', 'Nom d’utilisateur'],
+                      ['certificate', 'Certificat client']] }),
+        F('username', 'Nom d’utilisateur', 'text', '', false,
+          'Identifiant de session. Le mot de passe n’est JAMAIS enregistré ici : la ' +
+          'configuration des liens est lisible par tout poste connecté et s’exporte en ' +
+          'clair. Le secret est repris du magasin de secrets du contrôleur.',
+          { when: { auth: ['username'] } }),
+        F('secretRef', 'Référence du secret', 'text', '', false,
+          'Nom sous lequel le mot de passe ou la clé privée du certificat est rangé dans le ' +
+          'magasin de secrets du contrôleur — une désignation, jamais le secret lui-même.',
+          { when: { auth: ['username', 'certificate'] } }),
+        F('mode', 'Mode de lecture', 'enum', 'subscribe', false,
+          'Abonnement = le serveur OPC UA notifie les changements (économe, recommandé). ' +
+          'Interrogation cyclique = service Read répété, utile face à un serveur qui ' +
+          'refuse les abonnements.',
+          { choices: [['subscribe', 'Abonnement (MonitoredItems)'],
+                      ['poll', 'Interrogation cyclique (Read)']] }),
+        F('publishMs', 'Intervalle de publication (ms)', 'int', 500, false,
+          'Cadence à laquelle le serveur OPC UA regroupe et renvoie les changements.',
+          { when: { mode: ['subscribe'] } }),
+        F('sessionTimeoutS', 'Expiration de session (s)', 'int', 60, false,
+          'Durée au-delà de laquelle le serveur ferme une session restée sans échange.'),
+      ],
+      pointFields: [
+        F('nodeId', 'NodeId', 'text', 'ns=2;s=', true,
+          'Identifiant du nœud à lire, forme ns=<espace>;<type>=<valeur> — par exemple ' +
+          'ns=2;s=Machine/Pression pour une chaîne, ns=2;i=1234 pour un entier.'),
+        F('attr', 'Attribut', 'enum', 'Value', false,
+          'Attribut du nœud à lire. « Valeur » convient à toutes les variables ; les autres ' +
+          'servent au diagnostic du serveur lui-même.',
+          { choices: [['Value', 'Valeur'], ['StatusCode', 'Code d’état'],
+                      ['SourceTimestamp', 'Horodatage source']] }),
+        F('samplingMs', 'Échantillonnage (ms)', 'int', 200, false,
+          'Cadence à laquelle le serveur OPC UA échantillonne le nœud, quand le lien est en ' +
+          'mode abonnement ; 0 laisse le serveur choisir. Ne peut pas être plus rapide que ' +
+          'la source de la donnée.'),
+        F('deadband', 'Bande morte (%)', 'float', 0, false,
+          'Variation minimale, en pourcentage de l’étendue, avant notification d’un ' +
+          'changement (mode abonnement) ; 0 pour tout notifier.'),
+      ].concat(SCALE),
     },
   ];
 
@@ -4113,7 +4184,8 @@ body.cfg-hidden .tabActions { display: none; }
 </script>
 <script>
 /* Diagweb — fenêtre « Liens réseau » : saisie de la configuration des
- * protocoles (Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen) et des
+ * protocoles (Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen, OPC UA)
+ * et des
  * points à lire, puis ajout de ces points au diagnostic.
  *
  * Fonction globale (indépendante des onglets) : elle vit dans le menu ☰.
@@ -4267,7 +4339,7 @@ body.cfg-hidden .tabActions { display: none; }
     const bar = document.createElement('div');
     bar.className = 'm-actions';
     bar.appendChild(btn('+ Nouveau lien', 'primary',
-      'Déclarer une connexion vers un équipement ou un réseau (Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen)',
+      'Déclarer une connexion vers un équipement ou un réseau (Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen, OPC UA)',
       () => { editing = newLink(); view = 'link'; render(); }));
     bar.appendChild(btn('Exporter', '',
       'Télécharger toute la configuration des liens réseau au format JSON',
@@ -4694,7 +4766,7 @@ body.cfg-hidden .tabActions { display: none; }
     MB: 'Registres de bus (MB) — mots de 16 bits',
     CAPI: 'Signaux des modèles, via la C API (Modele.sous_systeme.signal)',
     NET: 'Points lus sur les liens réseau du serveur de diagnostic (@lien.point) — ' +
-         'Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen',
+         'Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen, OPC UA',
   };
 
   // ---------- Notifications -------------------------------------------
@@ -6177,7 +6249,7 @@ body.cfg-hidden .tabActions { display: none; }
           ]) +
           S('Liens réseau (☰ → Liens réseau)') +
           L([
-            ['Lien', 'Une connexion vers un équipement ou un réseau : Modbus TCP/RTU, IEC 60870-5-104, IEC 61850, CAN, J1939, CANopen. Le serveur de diagnostic ouvre le lien et lit les points.'],
+            ['Lien', 'Une connexion vers un équipement ou un réseau : Modbus TCP/RTU, IEC 60870-5-104, IEC 61850, CAN, J1939, CANopen, OPC UA. Le serveur de diagnostic ouvre le lien et lit les points.'],
             ['Point', 'Une variable lue sur un lien (registre, IOA, SPN, objet…), avec son unité et sa période. Elle s’adresse ensuite <b>@lien.point</b> comme n’importe quelle variable.'],
             ['Sans serveur', 'La configuration reste dans le navigateur et les valeurs des points sont simulées — l’interface est démontrable sans matériel.'],
           ]) +
