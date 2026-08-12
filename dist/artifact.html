@@ -274,11 +274,18 @@ button { font-family: var(--sans); }
 .table-card h3 span { text-transform: none; letter-spacing: 0; color: var(--faint); font-weight: 500; margin-left: 6px; }
 
 /* ---------- Tableau numérique ---------- */
-.table-card { margin-bottom: 12px; }
+.table-card { margin-bottom: 12px; position: relative; }
+.trows { padding: 0 2px 2px; }
+/* Hauteur libre (poignée) : le tableau défile en interne au lieu de pousser
+   les graphiques vers le bas. La poignée reste réservée aux écrans ≥ 700 px. */
+.table-card.has-th .trows { max-height: var(--table-h); overflow-y: auto; }
+.table-card.resizing { outline: 1px solid color-mix(in srgb, var(--accent) 60%, transparent); }
+.table-card.resizing .resize-grip { opacity: 1; }
+.table-grip { bottom: 4px; right: 4px; }
 #tableRows { padding: 2px 6px 8px; }
 .vrow {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   gap: 10px; align-items: center;
   padding: 7px 8px;
   border-radius: 9px;
@@ -287,6 +294,15 @@ button { font-family: var(--sans); }
 .v-id { display: grid; min-width: 0; }
 .v-addr { font-family: var(--mono); font-size: 13px; }
 .v-label { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v-label.renamed { color: var(--ink); font-style: italic; }
+.v-rename, .chip-rename {
+  font: inherit; color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+  border-radius: 6px; padding: 2px 5px;
+  width: 100%; max-width: 220px; min-width: 0;
+}
+.chip-rename { font-size: 12px; width: 120px; }
 .v-val {
   display: flex; align-items: baseline; gap: 6px;
   font-family: var(--mono); font-variant-numeric: tabular-nums;
@@ -312,13 +328,21 @@ button { font-family: var(--sans); }
   display: inline-block;
 }
 .led.on { background: var(--good); border-color: var(--good); box-shadow: 0 0 6px color-mix(in srgb, var(--good) 60%, transparent); }
-.v-del {
+.v-del, .v-edit {
   width: 28px; height: 28px;
   display: grid; place-items: center;
   color: var(--faint); background: none;
   border: 0; border-radius: 7px; cursor: pointer; font-size: 12px;
 }
 .v-del:hover { color: var(--crit); background: var(--panel-2); }
+.v-edit:hover { color: var(--accent); background: var(--panel-2); }
+/* Variable forcée (valeur imposée côté serveur) */
+.v-forced {
+  border: 0; background: none; cursor: pointer;
+  color: var(--warn); font-size: 12px; padding: 0 2px;
+}
+.vrow.forced { box-shadow: inset 3px 0 0 var(--warn); }
+.vrow.forced .val { color: var(--warn); }
 
 /* ---------- Grille de graphiques ---------- */
 /* --col-min : largeur minimale d'une colonne, lue par chart.js pour connaître
@@ -846,7 +870,7 @@ body.cfg-hidden .tabActions { display: none; }
     </div>
 
     <div class="topIcons">
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">830839c · #49</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">91d0932 · #51</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
@@ -863,9 +887,9 @@ body.cfg-hidden .tabActions { display: none; }
       <div class="searchbox">
         <input id="searchInput" type="text" inputmode="text" autocomplete="off" autocapitalize="off"
                autocorrect="off" spellcheck="false"
-               placeholder="Variable : I1.2.3.4, MB414, Regulation.mesure.vitesse, @lien.point…"
+               placeholder="Variable : I1.2.3.4, MB414, Regulation.mesure.vitesse, @lien.point… (Q0.3 = 1 pour forcer)"
                aria-label="Adresse de la variable à ajouter"
-               title="Adresse à diagnostiquer — bits I/Q/M/S (I1.2.3.4), mot de bus (MB414), signal de modèle (Regulation.mesure.vitesse) ou point d’un lien réseau (@lien.point). Les suggestions se filtrent à la frappe.">
+               title="Adresse à diagnostiquer — bits I/Q/M/S (I1.2.3.4), mot de bus (MB414), signal de modèle (Regulation.mesure.vitesse) ou point d’un lien réseau (@lien.point). Les suggestions se filtrent à la frappe. Suffixe « = valeur » (ex. Q0.3 = 1) pour forcer la variable côté serveur.">
       </div>
       <select id="targetSel" aria-label="Destination de la variable"
               title="Où ajouter la variable : tableau numérique, graphique existant, ou nouveau graphique"></select>
@@ -1077,6 +1101,25 @@ body.cfg-hidden .tabActions { display: none; }
         (input[0].toUpperCase() === 'I' ? 'I1.2.3.4' : input[0].toUpperCase() + '1.4') + '.' };
     }
     return { ok: false, error: 'Format non reconnu pour « ' + input + ' ». ' + HELP };
+  };
+
+  /**
+   * Détecte un suffixe d'écriture « adresse = valeur » (ou « adresse := valeur »).
+   * Le « = » ne peut apparaître dans aucune famille d'adresse : il signale donc
+   * sans ambiguïté une demande de forçage de la valeur côté serveur.
+   * @returns {base, value} | {base, bad} (valeur illisible) | null (pas de suffixe)
+   */
+  DW.splitWrite = function (raw) {
+    const s = String(raw == null ? '' : raw);
+    const eq = s.indexOf('=');
+    if (eq < 0) return null;
+    let base = s.slice(0, eq);
+    if (base.endsWith(':')) base = base.slice(0, -1);   // forme « := »
+    base = base.trim();
+    const rhs = s.slice(eq + 1).trim();
+    const value = Number(rhs.replace(',', '.'));
+    if (rhs === '' || !isFinite(value)) return { base, bad: rhs };
+    return { base, value };
   };
 
   /** Métadonnées d'une variable : catalogue si connue, sinon générées. */
@@ -1740,6 +1783,9 @@ body.cfg-hidden .tabActions { display: none; }
   // --- Registre des abonnements ---------------------------------------
   // addr -> { meta, gen, ts:[], vs:[], refs, periodS, nextT }
   const regs = new Map();
+  // Valeurs forcées (diagnostic) : tant qu'une adresse y figure, la simulation
+  // sert cette valeur au lieu du générateur (voir DW.source.write).
+  const forced = new Map();
   const t0 = performance.now() / 1000;
   const now = () => performance.now() / 1000 - t0;
 
@@ -1786,12 +1832,13 @@ body.cfg-hidden .tabActions { display: none; }
   function tick() {
     const t = now();
     const minT = t - CFG.horizonS;
-    for (const rec of regs.values()) {
+    for (const [addr, rec] of regs) {
       // Rattrapage borné : si l'onglet a été suspendu, on saute en avant.
       if (t - rec.nextT > 2) rec.nextT = t;
+      const held = forced.has(addr) ? forced.get(addr) : null;
       while (rec.nextT <= t) {
         rec.ts.push(rec.nextT);
-        rec.vs.push(rec.gen(rec.nextT));
+        rec.vs.push(held != null ? held : rec.gen(rec.nextT));
         rec.nextT += rec.periodS;
       }
       // Purge de l'historique au-delà de l'horizon
@@ -1834,6 +1881,31 @@ body.cfg-hidden .tabActions { display: none; }
       const rec = regs.get(addr);
       return rec ? rec.meta : DW.resolveMeta(addr);
     },
+
+    /**
+     * Force (ou relâche, si value == null) la valeur d'une variable.
+     * Les points réseau (@lien.point) sont en lecture seule : refusés.
+     * @returns {Promise<{ok, error?}>}
+     */
+    write(addr, value) {
+      const p = DW.parseAddr(addr);
+      if (!p.ok) return Promise.resolve({ ok: false, error: 'Adresse invalide : ' + addr });
+      if (p.family === 'NET') {
+        return Promise.resolve({ ok: false, error: 'Point réseau en lecture seule — forçage impossible.' });
+      }
+      if (value == null) forced.delete(p.addr);
+      else forced.set(p.addr, p.kind === 'bit' ? (value >= 0.5 ? 1 : 0) : value);
+      // Effet immédiat sur le dernier échantillon (retour visuel instantané)
+      const rec = regs.get(p.addr);
+      if (rec && value != null && rec.ts.length) rec.vs[rec.vs.length - 1] = forced.get(p.addr);
+      return Promise.resolve({ ok: true });
+    },
+    /** Valeur forcée d'une variable, ou null si elle suit son générateur. */
+    forced(addr) {
+      const p = DW.parseAddr(addr);
+      const key = p.ok ? p.addr : addr;
+      return forced.has(key) ? forced.get(key) : null;
+    },
   };
 
   // Source par défaut ; source.js peut lui substituer le flux du serveur
@@ -1863,6 +1935,8 @@ body.cfg-hidden .tabActions { display: none; }
 
   function createWsSource() {
     const chans = new Map();     // addr -> {meta, ts:[], vs:[], refs, periodMs}
+    const forced = new Map();    // adresses forcées (diagnostic) → valeur
+    const pendingWrites = new Map();   // adresse → résolveur en attente de confirmation
     let ws = null;
     let skew = 0, haveSkew = false;
     let horizonS = CFG.horizonS;
@@ -1903,6 +1977,16 @@ body.cfg-hidden .tabActions { display: none; }
         srcName = m.source || srcName;
         api.name = srcName;
         api.defaultPeriodMs = m.defaultPeriodMs || CFG.defaultPeriodMs;
+        // Redémarrage du serveur : son horloge (t depuis le démarrage) repart
+        // près de zéro. Sans purge, la déduplication (t ≤ dernier t) rejetterait
+        // tout échantillon neuf et les courbes gèleraient définitivement. Si
+        // l'horloge a reculé, on vide l'historique avant de repartir.
+        let maxT = -Infinity;
+        for (const ch of chans.values()) if (ch.ts.length) maxT = Math.max(maxT, ch.ts[ch.ts.length - 1]);
+        if (isFinite(maxT) && m.now < maxT - 1) {
+          for (const ch of chans.values()) { ch.ts.length = 0; ch.vs.length = 0; }
+          setStatus('Serveur redémarré — historique réinitialisé.');
+        }
         skew = m.now - localSec();
         haveSkew = true;
         if (onHello) { const f = onHello; onHello = null; f(); }
@@ -1923,6 +2007,16 @@ body.cfg-hidden .tabActions { display: none; }
       }
       if (m.e === 'err') {
         setStatus(m.addr ? m.addr + ' : ' + m.msg : m.msg, true);
+        return;
+      }
+      if (m.e === 'set') {
+        // Confirmation de forçage : le serveur fait autorité sur l'état forcé.
+        if (m.ok) {
+          if (m.value == null) forced.delete(m.addr);
+          else forced.set(m.addr, m.value);
+        }
+        const w = pendingWrites.get(m.addr);
+        if (w) { pendingWrites.delete(m.addr); w(m.ok ? { ok: true } : { ok: false, error: m.msg || 'refusé' }); }
         return;
       }
       if (m.e === 'd') {
@@ -2044,6 +2138,41 @@ body.cfg-hidden .tabActions { display: none; }
       meta(addr) {
         const ch = chans.get(addr);
         return ch ? ch.meta : DW.resolveMeta(addr);
+      },
+
+      /**
+       * Demande au serveur de forcer (ou relâcher) une variable.
+       * Les points réseau sont refusés côté serveur (lecture seule).
+       * @returns {Promise<{ok, error?}>}
+       */
+      write(addr, value) {
+        const p = DW.parseAddr(addr);
+        if (!p.ok) return Promise.resolve({ ok: false, error: 'Adresse invalide : ' + addr });
+        if (p.family === 'NET') {
+          return Promise.resolve({ ok: false, error: 'Point réseau en lecture seule — forçage impossible.' });
+        }
+        // release en entier (1) : l'analyseur JSON léger du serveur ne lit
+        // pas les booléens (voir server/src/json.hpp).
+        const msg = value == null ? { c: 'set', addr: p.addr, release: 1 }
+                                  : { c: 'set', addr: p.addr, value };
+        if (!send(msg)) return Promise.resolve({ ok: false, error: 'Serveur de diagnostic injoignable.' });
+        return new Promise((resolve) => {
+          const prev = pendingWrites.get(p.addr);
+          if (prev) prev({ ok: false, error: 'remplacé par une nouvelle demande' });
+          const timer = setTimeout(() => {
+            if (pendingWrites.get(p.addr) === wrap) {
+              pendingWrites.delete(p.addr);
+              resolve({ ok: false, error: 'pas de confirmation du serveur (délai dépassé)' });
+            }
+          }, 3000);
+          const wrap = (res) => { clearTimeout(timer); resolve(res); };
+          pendingWrites.set(p.addr, wrap);
+        });
+      },
+      forced(addr) {
+        const p = DW.parseAddr(addr);
+        const key = p.ok ? p.addr : addr;
+        return forced.has(key) ? forced.get(key) : null;
       },
 
       close() {
@@ -2887,6 +3016,7 @@ body.cfg-hidden .tabActions { display: none; }
       this.series.push({
         addr, meta, colorIdx,
         color: typeof opts.color === 'string' ? opts.color : undefined,
+        name: typeof opts.name === 'string' && opts.name ? opts.name : undefined,
         axisMode: opts.axisMode === 'solo' ? 'solo' : 'auto',
         visible: opts.visible !== false,
         periodMs: opts.periodMs || undefined,
@@ -2906,6 +3036,41 @@ body.cfg-hidden .tabActions { display: none; }
       this.app.onChange();
     }
 
+    /** Renommage en place du nom d'affichage d'une courbe (dans sa pastille). */
+    renameSeries(s) {
+      closePopover();
+      let chip = null;
+      for (const c of this.legendEl.children) if (c.dataset.addr === s.addr) chip = c;
+      if (!chip) return;
+      const nameEl = chip.querySelector('.chip-addr');
+      const input = document.createElement('input');
+      input.className = 'chip-rename';
+      input.value = s.name || '';
+      input.maxLength = 48;
+      input.placeholder = s.meta.label || s.addr;
+      nameEl.textContent = '';
+      nameEl.appendChild(input);
+      input.focus();
+      input.select();
+      let done = false;
+      const commit = () => {
+        if (done) return;
+        done = true;
+        const v = input.value.trim();
+        s.name = v || undefined;
+        this.rebuildLegend();
+        this.app.onChange();
+      };
+      input.addEventListener('blur', commit);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') input.blur();
+        if (e.key === 'Escape') { input.value = s.name || ''; input.blur(); }
+      });
+      // Sans cela, le clic atteint la pastille et rouvre le menu
+      input.addEventListener('click', (e) => e.stopPropagation());
+      input.addEventListener('pointerdown', (e) => e.stopPropagation());
+    }
+
     // ---------- Légende ------------------------------------------------
     rebuildLegend() {
       closePopover();
@@ -2923,13 +3088,13 @@ body.cfg-hidden .tabActions { display: none; }
           '<span class="chip-val">—</span>' +
           '<span class="chip-off hide" title="Courbe décalée verticalement">Δ</span>' +
           '<span class="chip-axis"></span>';
-        chip.querySelector('.chip-addr').textContent = s.addr;
+        chip.querySelector('.chip-addr').textContent = s.name || s.addr;
         chip.querySelector('.sw').style.background = colorOf(s);
-        chip.title = s.addr + ' — ' + s.meta.label +
+        chip.title = s.addr + ' — ' + (s.name ? s.name + ' (' + s.meta.label + ')' : s.meta.label) +
           (s.meta.unit ? ' (' + s.meta.unit + ')' : '') +
           ' · rafraîchissement ' + (s.periodMs || DW.CONFIG.defaultPeriodMs) + ' ms' +
           (s.offsetY ? ' · décalage ' + DW.fmtVal(s.offsetY, s.meta) : '') +
-          ' · appuyez pour la couleur, l’échelle dédiée, le décalage ou le retrait';
+          ' · appuyez pour le nom, la couleur, l’échelle dédiée, le décalage ou le retrait';
         chip.addEventListener('click', () => this.openSeriesMenu(s, chip));
         this.legendEl.appendChild(chip);
       }
@@ -2939,6 +3104,8 @@ body.cfg-hidden .tabActions { display: none; }
     openSeriesMenu(s, chip) {
       openPopover(s, chip, (mk, add) => {
         add(this.buildColorPicker(s));
+        mk('Renommer la courbe…', () => this.renameSeries(s), null,
+          'Nom d’affichage dans la légende (vide = adresse ou libellé du catalogue)');
         mk(s.visible ? 'Masquer la courbe' : 'Afficher la courbe', () => {
           s.visible = !s.visible;
           this.rebuildLegend();
@@ -3381,6 +3548,7 @@ body.cfg-hidden .tabActions { display: none; }
         colSpan: this.colSpan || undefined,
         series: this.series.map((s) => ({
           addr: s.addr,
+          name: s.name || undefined,
           axisMode: s.axisMode,
           visible: s.visible,
           periodMs: s.periodMs,
@@ -4577,6 +4745,10 @@ body.cfg-hidden .tabActions { display: none; }
           'Valeurs numériques <span class="tcount" ' +
           'title="Nombre de variables dans ce tableau"></span></h3>' +
         '<div class="trows"></div>' +
+        '<span class="resize-grip table-grip" role="separator" ' +
+          'aria-label="Redimensionner le tableau" ' +
+          'title="Glisser ↕ pour fixer la hauteur du tableau (défilement interne) — ' +
+          'double-clic pour revenir à la hauteur automatique"></span>' +
       '</section>' +
       '<div class="charts-grid"></div>';
     $('panes').appendChild(pane);
@@ -4591,10 +4763,10 @@ body.cfg-hidden .tabActions { display: none; }
       tableCountEl: pane.querySelector('.tcount'),
       chartsGridEl: pane.querySelector('.charts-grid'),
       log: {
+        // dest 'browser' : accumulation en mémoire de la page ;
+        // dest 'server'  : journalisation autonome côté serveur (page fermée OK).
         enabled: false, dest: 'browser',
-        rows: [], lastT: {}, enableT: 0,
-        truncated: false, ctlWarned: false,
-        sentIdx: 0,        // lignes déjà transmises au contrôleur
+        rows: [], lastT: {}, enableT: 0, truncated: false,
       },
     };
     // Le tableau numérique entier (avec ses variables) est déplaçable
@@ -4604,12 +4776,14 @@ body.cfg-hidden .tabActions { display: none; }
         for (const entry of [...tab.table]) removeFromTable(tab, entry.addr);
       });
     });
+    bindTableResize(tab);
 
     state.tabs.push(tab);
     switchTab(tab);
     if (data) applyConfigToActive(data);
     if (logOpts) {
-      tab.log.dest = logOpts.dest === 'controller' ? 'controller' : 'browser';
+      // 'controller' est l'ancien nom de la journalisation côté serveur.
+      tab.log.dest = (logOpts.dest === 'server' || logOpts.dest === 'controller') ? 'server' : 'browser';
       if (logOpts.enabled) startLogging(tab);
     }
     rebuildTabbar();
@@ -4713,14 +4887,49 @@ body.cfg-hidden .tabActions { display: none; }
   // ---------- Tableau numérique (onglet actif) ------------------------
   function inTable(tab, addr) { return tab.table.some((e) => e.addr === addr); }
 
-  function addToTable(addr, periodMs) {
+  function addToTable(addr, periodMs, name) {
     const tab = state.active;
     if (inTable(tab, addr)) return { ok: false, error: addr + ' est déjà dans le tableau de cet onglet.' };
     const meta = appApi.acquire(addr, periodMs);
     if (!meta) return { ok: false, error: 'Adresse invalide : ' + addr };
-    tab.table.push({ addr, meta, periodMs: periodMs || undefined });
+    tab.table.push({ addr, meta, periodMs: periodMs || undefined, name: name || undefined });
     renderTable(tab);
     return { ok: true };
+  }
+
+  /** Libellé affiché d'une variable : nom d'affichage choisi, sinon libellé du catalogue. */
+  function displayLabel(e) { return e.name || e.meta.label; }
+
+  /** Renommage en place du nom d'affichage d'une variable du tableau. */
+  function renameTableEntry(tab, e, labelEl) {
+    if (labelEl.querySelector('input')) return;
+    const input = document.createElement('input');
+    input.className = 'v-rename';
+    input.value = e.name || '';
+    input.maxLength = 48;
+    input.placeholder = e.meta.label;
+    input.title = 'Nom d’affichage — laissez vide pour revenir au libellé du catalogue';
+    labelEl.textContent = '';
+    labelEl.appendChild(input);
+    input.focus();
+    input.select();
+    let done = false;
+    const commit = () => {
+      if (done) return;
+      done = true;
+      const v = input.value.trim();
+      e.name = v || undefined;
+      renderTable(tab);
+      refreshTargets();
+      onChange();
+    };
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') input.blur();
+      if (ev.key === 'Escape') { input.value = e.name || ''; input.blur(); }
+    });
+    // Empêche le glisser-déposer de la ligne pendant l'édition
+    input.addEventListener('pointerdown', (ev) => ev.stopPropagation());
   }
 
   function removeFromTable(tab, addr) {
@@ -4749,13 +4958,19 @@ body.cfg-hidden .tabActions { display: none; }
       row.innerHTML =
         '<span class="badge fam-' + e.meta.family + '">' + e.meta.family + '</span>' +
         '<div class="v-id"><span class="v-addr"></span><span class="v-label"></span></div>' +
-        '<div class="v-val"><b class="val">—</b><span class="v-unit"></span><span class="v-trend"></span></div>' +
+        '<div class="v-val"><button class="v-forced hide" type="button" ' +
+          'title="Valeur forcée — cliquer pour relâcher">⏻</button>' +
+          '<b class="val">—</b><span class="v-unit"></span><span class="v-trend"></span></div>' +
+        '<button class="v-edit" type="button" title="Renommer l’affichage de cette variable">✎</button>' +
         '<button class="v-del" type="button" title="Retirer du tableau">✕</button>';
       row.querySelector('.v-addr').textContent = e.addr;
-      row.querySelector('.v-label').textContent = e.meta.label +
+      const labelEl = row.querySelector('.v-label');
+      labelEl.textContent = displayLabel(e) +
         (e.periodMs && e.periodMs !== CFG.defaultPeriodMs ? ' · rafr. ' + e.periodMs + ' ms' : '');
+      labelEl.classList.toggle('renamed', !!e.name);
       row.querySelector('.v-unit').textContent = e.meta.unit || '';
-      row.title = e.addr + ' — ' + e.meta.label +
+      row.title = e.addr + ' — ' + displayLabel(e) +
+        (e.name ? ' (' + e.meta.label + ')' : '') +
         (e.meta.unit ? ' (' + e.meta.unit + ')' : '') +
         ' · rafraîchissement ' + (e.periodMs || CFG.defaultPeriodMs) + ' ms' +
         ' · glissez cette ligne vers un onglet ou une autre fenêtre';
@@ -4767,6 +4982,10 @@ body.cfg-hidden .tabActions { display: none; }
         '. La ligne clignote quand la variable change après 2 s d’immobilité.';
       row.querySelector('.v-trend').title =
         'Tendance sur les 2,5 dernières secondes (↗ hausse, ↘ baisse, → stable)';
+      const edit = row.querySelector('.v-edit');
+      edit.title = 'Nom d’affichage de ' + e.addr + ' (vide = libellé du catalogue)';
+      edit.addEventListener('click', () => renameTableEntry(tab, e, labelEl));
+      row.querySelector('.v-forced').addEventListener('click', () => releaseVariable(e.addr));
       const del = row.querySelector('.v-del');
       del.title = 'Retirer ' + e.addr + ' du tableau';
       del.addEventListener('click', () => removeFromTable(tab, e.addr));
@@ -4777,13 +4996,73 @@ body.cfg-hidden .tabActions { display: none; }
     updateEmptyState();
   }
 
+  // ---------- Redimensionnement du tableau numérique ------------------
+  const TABLE_MIN_H = 90;
+  const TABLE_MAX_H = 1400;
+
+  /** Applique la hauteur libre du tableau (défilement interne) ou l'annule. */
+  function applyTableSize(tab) {
+    const card = tab.tableCardEl;
+    if (!card) return;
+    if (tab.tableH) {
+      card.classList.add('has-th');
+      card.style.setProperty('--table-h', tab.tableH + 'px');
+    } else {
+      card.classList.remove('has-th');
+      card.style.removeProperty('--table-h');
+    }
+  }
+
+  function bindTableResize(tab) {
+    const grip = tab.tableCardEl.querySelector('.table-grip');
+    const rows = tab.tableRowsEl;
+    let g = null;
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.button > 0) return;
+      g = { id: e.pointerId, y: e.clientY, h: rows.getBoundingClientRect().height };
+      try { grip.setPointerCapture(e.pointerId); } catch (err) { /* capture facultative */ }
+      tab.tableCardEl.classList.add('resizing');
+      e.preventDefault();
+    });
+    grip.addEventListener('pointermove', (e) => {
+      if (!g || e.pointerId !== g.id) return;
+      const h = Math.round(g.h + (e.clientY - g.y));
+      tab.tableH = Math.max(TABLE_MIN_H, Math.min(TABLE_MAX_H, h));
+      applyTableSize(tab);
+      e.preventDefault();
+    });
+    const end = (e) => {
+      if (!g || (e && e.pointerId !== g.id)) return;
+      g = null;
+      tab.tableCardEl.classList.remove('resizing');
+      onChange();
+    };
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+    grip.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      if (tab.tableH == null) return;
+      tab.tableH = undefined;
+      applyTableSize(tab);
+      onChange();
+      toast('Hauteur automatique du tableau rétablie.');
+    });
+  }
+
   function updateTableValues() {
     const tab = state.active;
     if (!tab) return;
     const rows = tab.tableRowsEl.children;
     const nowT = DW.source.now();
+    const canForce = typeof DW.source.forced === 'function';
     for (let i = 0; i < tab.table.length && i < rows.length; i++) {
       const e = tab.table[i];
+      // Marquage « forcé » : valeur imposée côté serveur (diagnostic)
+      if (canForce) {
+        const f = DW.source.forced(e.addr);
+        rows[i].classList.toggle('forced', f != null);
+        rows[i].querySelector('.v-forced').classList.toggle('hide', f == null);
+      }
       const last = DW.source.latest(e.addr);
       const valEl = rows[i].querySelector('.val');
       if (!last) { valEl.textContent = '—'; continue; }
@@ -4863,7 +5142,17 @@ body.cfg-hidden .tabActions { display: none; }
 
   // ---------- Ajout d'une variable ------------------------------------
   function addVariable(rawAddr, forcePeriodMs) {
-    const p = DW.parseAddr(rawAddr != null ? rawAddr : $('searchInput').value);
+    const raw = rawAddr != null ? rawAddr : $('searchInput').value;
+    // Suffixe d'écriture « adresse = valeur » : forçage de la variable côté serveur.
+    const w = DW.splitWrite(raw);
+    if (w) {
+      if (w.bad !== undefined) {
+        toast('Valeur à forcer illisible : « ' + w.bad + ' ». Exemple : Q0.3 = 1', 'err');
+        return false;
+      }
+      return forceVariable(w.base, w.value);
+    }
+    const p = DW.parseAddr(raw);
     if (!p.ok) { toast(p.error, 'err'); return false; }
     const target = $('targetSel').value;
     // Un point réseau porte sa propre période de lecture (configuration du lien).
@@ -4898,6 +5187,49 @@ body.cfg-hidden .tabActions { display: none; }
     onChange();
     toast(p.addr + ' → ' + destLabel);
     return true;
+  }
+
+  // ---------- Forçage de variables (diagnostic) -----------------------
+  /** Force une variable à une valeur ; l'ajoute au tableau pour la rendre visible. */
+  function forceVariable(base, value) {
+    const p = DW.parseAddr(base);
+    if (!p.ok) { toast(p.error, 'err'); return false; }
+    if (p.family === 'NET') {
+      toast('Point réseau en lecture seule — forçage impossible (' + p.addr + ').', 'err');
+      return false;
+    }
+    if (typeof DW.source.write !== 'function') {
+      toast('Le forçage n’est pas disponible avec cette source de données.', 'err');
+      return false;
+    }
+    // Rendre la variable visible pour que l'effet du forçage se voie.
+    if (!inTable(state.active, p.addr) && !chartsHave(state.active, p.addr)) {
+      addToTable(p.addr, undefined);
+    }
+    const shown = p.kind === 'bit' ? (value >= 0.5 ? '1' : '0') : DW.fmtVal(value, { kind: p.kind });
+    Promise.resolve(DW.source.write(p.addr, value)).then((res) => {
+      if (res && res.ok) {
+        $('searchInput').value = '';
+        hideSuggest();
+        toast(p.addr + ' forcé à ' + shown + '.');
+      } else {
+        toast('Forçage refusé : ' + ((res && res.error) || 'raison inconnue'), 'err');
+      }
+    });
+    return true;
+  }
+
+  /** Relâche une variable forcée (retour à son évolution normale). */
+  function releaseVariable(addr) {
+    if (typeof DW.source.write !== 'function') return;
+    Promise.resolve(DW.source.write(addr, null)).then((res) => {
+      if (res && res.ok) toast(addr + ' relâché (valeur non forcée).');
+      else toast('Impossible de relâcher : ' + ((res && res.error) || 'raison inconnue'), 'err');
+    });
+  }
+
+  function chartsHave(tab, addr) {
+    return tab.charts.some((c) => c.series.some((s) => s.addr === addr));
   }
 
   // ---------- Autocomplétion ------------------------------------------
@@ -5025,13 +5357,14 @@ body.cfg-hidden .tabActions { display: none; }
 
   // ---------- Sérialisation -------------------------------------------
   function serializeTable(tab) {
-    return tab.table.map((e) => ({ addr: e.addr, periodMs: e.periodMs }));
+    return tab.table.map((e) => ({ addr: e.addr, periodMs: e.periodMs, name: e.name }));
   }
 
   function serializeConfig(tab) {
     return {
       version: 1,
       table: serializeTable(tab),
+      tableH: tab.tableH || undefined,
       charts: tab.charts.map((c) => c.serialize()),
     };
   }
@@ -5060,7 +5393,7 @@ body.cfg-hidden .tabActions { display: none; }
           chart.addSeries(p.addr, {
             axisMode: s.axisMode, visible: s.visible !== false,
             periodMs: s.periodMs, offsetY: s.offsetY,
-            colorIdx: s.colorIdx, color: s.color,
+            colorIdx: s.colorIdx, color: s.color, name: s.name,
           });
         }
       }
@@ -5101,11 +5434,12 @@ body.cfg-hidden .tabActions { display: none; }
     for (const entry of list || []) {
       const addr = typeof entry === 'string' ? entry : entry.addr;
       const periodMs = typeof entry === 'string' ? undefined : entry.periodMs;
+      const name = typeof entry === 'string' ? undefined : entry.name;
       const p = DW.parseAddr(addr);
       if (!p.ok || inTable(target, p.addr)) continue;
       const meta = appApi.acquire(p.addr, periodMs);
       if (!meta) continue;
-      target.table.push({ addr: p.addr, meta, periodMs: periodMs || undefined });
+      target.table.push({ addr: p.addr, meta, periodMs: periodMs || undefined, name: name || undefined });
       n++;
     }
     if (n) renderTable(target);
@@ -5114,9 +5448,12 @@ body.cfg-hidden .tabActions { display: none; }
 
   function moveChartToTab(chart, tab) {
     const cfg = chart.serialize();
-    appApi.removeChart(chart);
+    // Créer d'abord dans la cible : si elle est pleine (limite de graphiques),
+    // l'original n'est pas détruit — jamais de perte.
     const created = addChartFromConfig(cfg, tab);
-    if (created) toast('« ' + cfg.title + ' » déplacé vers « ' + tab.name + ' ».');
+    if (!created) return;   // addChartFromConfig a déjà signalé la limite
+    appApi.removeChart(chart);
+    toast('« ' + cfg.title + ' » déplacé vers « ' + tab.name + ' ».');
     onChange();
   }
 
@@ -5165,12 +5502,15 @@ body.cfg-hidden .tabActions { display: none; }
   function applyConfigToActive(data) {
     const tab = state.active;
     clearTab(tab);
+    tab.tableH = (data && isFinite(data.tableH) && data.tableH > 0) ? data.tableH : undefined;
+    applyTableSize(tab);
     for (const entry of data.table || []) {
       // Rétro-compatibilité : entrée sous forme de chaîne (format initial)
       const addr = typeof entry === 'string' ? entry : entry.addr;
       const periodMs = typeof entry === 'string' ? undefined : entry.periodMs;
+      const name = typeof entry === 'string' ? undefined : entry.name;
       const p = DW.parseAddr(addr);
-      if (p.ok) addToTable(p.addr, periodMs);
+      if (p.ok) addToTable(p.addr, periodMs, name);
     }
     for (const c of data.charts || []) {
       const chart = createChart({
@@ -5184,7 +5524,7 @@ body.cfg-hidden .tabActions { display: none; }
           chart.addSeries(p.addr, {
             axisMode: s.axisMode, visible: s.visible !== false,
             periodMs: s.periodMs, offsetY: s.offsetY,
-            colorIdx: s.colorIdx, color: s.color,
+            colorIdx: s.colorIdx, color: s.color, name: s.name,
           });
         }
       }
@@ -5202,7 +5542,9 @@ body.cfg-hidden .tabActions { display: none; }
     return set;
   }
 
+  /** Journalisation navigateur ou serveur, selon la destination de l'onglet. */
   function startLogging(tab) {
+    if (tab.log.dest === 'server') return startServerLog(tab);
     tab.log.enabled = true;
     tab.log.enableT = DW.source.now();
     tab.log.lastT = {};
@@ -5211,10 +5553,62 @@ body.cfg-hidden .tabActions { display: none; }
     onChange();
   }
   function stopLogging(tab) {
+    if (tab.log.dest === 'server') return stopServerLog(tab);
     tab.log.enabled = false;
     rebuildTabbar();
     updateLogUi();
     onChange();
+  }
+
+  /** La journalisation serveur n'est possible que si la page est servie par lui. */
+  function serverLogAvailable() { return DW.sourceMode === 'ws'; }
+
+  function startServerLog(tab) {
+    if (!serverLogAvailable()) {
+      toast('Journalisation serveur indisponible : cette page n’est pas servie par le serveur de diagnostic.', 'err');
+      return;
+    }
+    const addrs = [...tabAddrs(tab)].map((addr) => {
+      const src = tab.table.find((e) => e.addr === addr);
+      let periodMs = src && src.periodMs;
+      for (const c of tab.charts) for (const s of c.series) if (s.addr === addr && s.periodMs) {
+        periodMs = periodMs ? Math.min(periodMs, s.periodMs) : s.periodMs;
+      }
+      return { addr, periodMs: periodMs || CFG.defaultPeriodMs };
+    });
+    if (!addrs.length) { toast('Aucune variable à journaliser dans cet onglet.', 'err'); return; }
+    fetch('/api/datalog/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: tab.name, addrs }),
+    }).then((r) => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+      .then(() => {
+        tab.log.enabled = true;
+        rebuildTabbar();
+        updateLogUi();
+        onChange();
+        toast('Journalisation serveur démarrée — elle continue même page fermée.');
+      })
+      .catch(() => toast('Le serveur a refusé de démarrer la journalisation.', 'err'));
+  }
+
+  function stopServerLog(tab) {
+    fetch('/api/datalog/stop', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: tab.name }),
+    }).catch(() => {}).finally(() => {
+      tab.log.enabled = false;
+      rebuildTabbar();
+      updateLogUi();
+      onChange();
+    });
+  }
+
+  /** État des campagnes de journalisation côté serveur (ou [] si indisponible). */
+  function fetchServerLogStatus() {
+    if (!serverLogAvailable()) return Promise.resolve([]);
+    return fetch('/api/datalog', { cache: 'no-store' })
+      .then((r) => r.ok ? r.json() : [])
+      .catch(() => []);
   }
 
   function lowerBound(arr, x) {
@@ -5226,8 +5620,9 @@ body.cfg-hidden .tabActions { display: none; }
   function logTick() {
     for (const tab of state.tabs) {
       const lg = tab.log;
-      if (!lg.enabled) continue;
-      let appended = 0;
+      // Seule la journalisation « navigateur » accumule en mémoire de la page.
+      // La journalisation « serveur » est autonome (elle continue page fermée).
+      if (!lg.enabled || lg.dest === 'server') continue;
       for (const addr of tabAddrs(tab)) {
         const d = DW.source.data(addr);
         if (!d.ts.length) continue;
@@ -5236,32 +5631,11 @@ body.cfg-hidden .tabActions { display: none; }
         for (let i = i0; i < d.ts.length; i++) {
           lg.rows.push([d.ts[i], addr, d.vs[i]]);
         }
-        if (i0 < d.ts.length) { lg.lastT[addr] = d.ts[d.ts.length - 1]; appended += d.ts.length - i0; }
+        if (i0 < d.ts.length) lg.lastT[addr] = d.ts[d.ts.length - 1];
       }
       if (lg.rows.length > LOG_MAX_ROWS) {
-        const dropped = lg.rows.length - LOG_MAX_ROWS;
-        lg.rows.splice(0, dropped);
-        lg.sentIdx = Math.max(0, lg.sentIdx - dropped);
+        lg.rows.splice(0, lg.rows.length - LOG_MAX_ROWS);
         lg.truncated = true;
-      }
-      // Destination « contrôleur » : envoi des lignes au serveur de diagnostic
-      // (POST /api/datalog) ; en cas d'échec, le tampon navigateur fait office
-      // de repli et l'utilisateur est averti une fois.
-      if (lg.dest === 'controller' && lg.rows.length > lg.sentIdx) {
-        const batch = lg.rows.slice(lg.sentIdx);
-        lg.sentIdx = lg.rows.length;
-        fetch('/api/datalog', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tab: tab.name, rows: batch }),
-        }).then((r) => {
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          lg.ctlWarned = false;
-        }).catch(() => {
-          if (lg.ctlWarned) return;
-          lg.ctlWarned = true;
-          toast('Serveur de diagnostic injoignable — le journal reste en mémoire du navigateur.', 'err');
-        });
       }
     }
   }
@@ -5274,6 +5648,7 @@ body.cfg-hidden .tabActions { display: none; }
     root.innerHTML = '';
     const back = document.createElement('div');
     back.className = 'modal-back';
+    const available = serverLogAvailable();
     back.innerHTML =
       '<div class="modal" role="dialog" aria-label="Journalisation">' +
         '<header class="m-head"><h3>Journal de données — <span id="logTabName"></span></h3>' +
@@ -5281,79 +5656,132 @@ body.cfg-hidden .tabActions { display: none; }
         '<div class="log-opts">' +
           '<label title="Le journal reste en mémoire de cette page : à télécharger avant de la fermer">' +
           '<input type="radio" name="logdest" value="browser" title="Journaliser en mémoire du navigateur"> Navigateur (mémoire de la page)</label>' +
-          '<label title="Envoyer les lignes au serveur de diagnostic (POST /api/datalog)">' +
-          '<input type="radio" name="logdest" value="controller" title="Journaliser côté contrôleur"> Contrôleur (back-end à venir)' +
-          ' <span class="opt-note">repli navigateur si injoignable</span></label>' +
+          '<label title="Le serveur de diagnostic enregistre sur disque, même la page fermée">' +
+          '<input type="radio" name="logdest" value="server"' + (available ? '' : ' disabled') +
+          ' title="Journaliser côté serveur (autonome)"> Serveur (autonome, sur disque)' +
+          '<span class="opt-note" id="logServerNote"></span></label>' +
         '</div>' +
         '<div class="log-status" id="logStatus" ' +
-          'title="État du journal : échantillons, variables suivies, durée couverte et taille estimée">—</div>' +
-        '<div class="m-actions">' +
-          '<button class="btn primary" id="logToggle" type="button" ' +
-            'title="Démarrer ou arrêter l’enregistrement des échantillons de cet onglet"></button>' +
-          '<button class="btn" id="logDlCsv" type="button" ' +
-            'title="Télécharger le journal en CSV (horodatage, adresse, valeur)">Télécharger CSV</button>' +
-          '<button class="btn" id="logDlJson" type="button" ' +
-            'title="Télécharger le journal en JSON">Télécharger JSON</button>' +
-          '<button class="btn" id="logClear" type="button" ' +
-            'title="Effacer les échantillons déjà enregistrés">Vider</button>' +
-        '</div>' +
-        '<p class="m-note">Le journal enregistre chaque échantillon des variables de l’onglet ' +
-        '(période propre à chaque variable), dans la limite de 100 000 lignes (les plus anciennes ' +
-        'sont éliminées). Il est conservé en mémoire : téléchargez-le avant de fermer ou recharger la page.</p>' +
+          'title="État du journal : échantillons, variables suivies, taille">—</div>' +
+        '<div class="m-actions" id="logActions"></div>' +
+        '<p class="m-note" id="logNote"></p>' +
       '</div>';
     root.appendChild(back);
     back.querySelector('#logTabName').textContent = tab.name;
+    if (!available) {
+      back.querySelector('#logServerNote').textContent =
+        ' — indisponible : page non servie par le serveur de diagnostic';
+      if (lg.dest === 'server') lg.dest = 'browser';
+    }
 
+    let statusTimer = 0;
     const close = () => { clearInterval(statusTimer); root.innerHTML = ''; };
     back.addEventListener('pointerdown', (e) => { if (e.target === back) close(); });
     back.querySelector('.m-close').addEventListener('click', close);
 
+    const statusEl = back.querySelector('#logStatus');
+    const noteEl = back.querySelector('#logNote');
+    const actionsEl = back.querySelector('#logActions');
+
     for (const r of back.querySelectorAll('input[name="logdest"]')) {
       r.checked = r.value === lg.dest;
       r.addEventListener('change', () => {
+        if (r.disabled) return;
         lg.dest = r.value;
-        lg.ctlWarned = false;
         onChange();
+        renderActions();
+        refresh();
       });
     }
 
-    const toggleBtn = back.querySelector('#logToggle');
-    const refresh = () => {
-      toggleBtn.textContent = lg.enabled ? '⏹ Arrêter la journalisation' : '⏺ Démarrer la journalisation';
-      const n = lg.rows.length;
+    // --- Rendu des actions selon la destination ----------------------
+    function actBtn(id, label, cls, title) {
+      const b = document.createElement('button');
+      b.id = id; b.type = 'button'; b.className = 'btn' + (cls ? ' ' + cls : '');
+      b.textContent = label; b.title = title;
+      actionsEl.appendChild(b);
+      return b;
+    }
+    function renderActions() {
+      actionsEl.innerHTML = '';
+      const toggle = actBtn('logToggle', '', 'primary',
+        'Démarrer ou arrêter l’enregistrement des variables de cet onglet');
+      toggle.textContent = lg.enabled ? '⏹ Arrêter la journalisation' : '⏺ Démarrer la journalisation';
+      toggle.addEventListener('click', () => {
+        lg.enabled ? stopLogging(tab) : startLogging(tab);
+        setTimeout(refresh, 150);
+      });
+      if (lg.dest === 'server') {
+        actBtn('logDl', 'Télécharger CSV', '', 'Télécharger le journal enregistré par le serveur')
+          .addEventListener('click', () => {
+            window.open('/api/datalog/file?name=' + encodeURIComponent(tab.name), '_blank');
+          });
+        noteEl.textContent = 'La journalisation serveur écrit sur le disque du contrôleur et ' +
+          'continue même si vous fermez ou rechargez cette page. Le CSV se télécharge à tout moment.';
+      } else {
+        actBtn('logDlCsv', 'Télécharger CSV', '', 'Télécharger le journal en CSV (horodatage, adresse, valeur)')
+          .addEventListener('click', () => {
+            if (!lg.rows.length) { toast('Journal vide.', 'err'); return; }
+            DW.store.download('journal_' + tab.name, DW.store.logCsv(lg.rows), 'csv', 'text/csv');
+          });
+        actBtn('logDlJson', 'Télécharger JSON', '', 'Télécharger le journal en JSON')
+          .addEventListener('click', () => {
+            if (!lg.rows.length) { toast('Journal vide.', 'err'); return; }
+            const payload = JSON.stringify({ app: 'diagweb-journal', version: 1, tab: tab.name, rows: lg.rows });
+            DW.store.download('journal_' + tab.name, payload, 'json', 'application/json');
+          });
+        actBtn('logClear', 'Vider', '', 'Effacer les échantillons déjà enregistrés en mémoire')
+          .addEventListener('click', () => {
+            lg.rows = []; lg.truncated = false; lg.lastT = {}; lg.enableT = DW.source.now();
+            refresh();
+            toast('Journal vidé.');
+          });
+        noteEl.textContent = 'Le journal reste en mémoire de cette page (100 000 lignes au plus) : ' +
+          'téléchargez-le avant de fermer ou recharger. Pour un enregistrement durable, choisissez ' +
+          '« Serveur ».';
+      }
+    }
+
+    // --- Rafraîchissement de l'état ----------------------------------
+    function refresh() {
       const nVars = tabAddrs(tab).size;
+      if (lg.dest === 'server') {
+        fetchServerLogStatus().then((list) => {
+          const c = list.find((x) => x.name === serverCampaignName(tab.name));
+          const on = !!c;
+          if (on !== lg.enabled) { lg.enabled = on; rebuildTabbar(); updateLogUi(); }
+          const n = c ? c.samples : 0;
+          const size = c ? c.sizeBytes : 0;
+          statusEl.innerHTML = (on ? '⏺ En cours (serveur)' : '⏸ À l’arrêt') + ' · ' +
+            n.toLocaleString('fr-FR') + ' échantillon' + (n > 1 ? 's' : '') + ' · ' +
+            (c ? c.vars : nVars) + ' variable' + ((c ? c.vars : nVars) > 1 ? 's' : '') + ' · ' +
+            (size / 1048576).toFixed(2) + ' Mo sur disque';
+          const t = back.querySelector('#logToggle');
+          if (t) t.textContent = on ? '⏹ Arrêter la journalisation' : '⏺ Démarrer la journalisation';
+        });
+        return;
+      }
+      const n = lg.rows.length;
       const durS = n ? (lg.rows[n - 1][0] - lg.rows[0][0]) : 0;
       const sizeMo = (n * 34 / 1048576);
-      back.querySelector('#logStatus').innerHTML =
+      statusEl.innerHTML =
         (lg.enabled ? '⏺ En cours' : '⏸ À l’arrêt') + ' · ' +
         n.toLocaleString('fr-FR') + ' échantillon' + (n > 1 ? 's' : '') + ' · ' +
         nVars + ' variable' + (nVars > 1 ? 's' : '') + ' · ' +
         durS.toFixed(0) + ' s couvertes · ~' + sizeMo.toFixed(1) + ' Mo CSV' +
         (lg.truncated ? '<br>⚠ plafond atteint : les lignes les plus anciennes ont été éliminées' : '');
-    };
-    refresh();
-    const statusTimer = setInterval(refresh, 1000);
+    }
 
-    toggleBtn.addEventListener('click', () => {
-      lg.enabled ? stopLogging(tab) : startLogging(tab);
-      refresh();
-    });
-    back.querySelector('#logDlCsv').addEventListener('click', () => {
-      if (!lg.rows.length) { toast('Journal vide.', 'err'); return; }
-      const ok = DW.store.download('journal_' + tab.name, DW.store.logCsv(lg.rows), 'csv', 'text/csv');
-      if (!ok) toast('Téléchargement bloqué dans cet environnement.', 'err');
-    });
-    back.querySelector('#logDlJson').addEventListener('click', () => {
-      if (!lg.rows.length) { toast('Journal vide.', 'err'); return; }
-      const payload = JSON.stringify({ app: 'diagweb-journal', version: 1, tab: tab.name, rows: lg.rows });
-      const ok = DW.store.download('journal_' + tab.name, payload, 'json', 'application/json');
-      if (!ok) toast('Téléchargement bloqué dans cet environnement.', 'err');
-    });
-    back.querySelector('#logClear').addEventListener('click', () => {
-      lg.rows = []; lg.truncated = false; lg.lastT = {}; lg.enableT = DW.source.now();
-      refresh();
-      toast('Journal vidé.');
-    });
+    renderActions();
+    refresh();
+    statusTimer = setInterval(refresh, 1000);
+  }
+
+  /** Nom de campagne serveur : mêmes règles d'assainissement que le serveur. */
+  function serverCampaignName(name) {
+    let clean = String(name || '').replace(/[/\\.:\0]/g, '_').slice(0, 80);
+    if (!clean) clean = 'sans-nom';
+    return clean;
   }
 
   function updateLogUi() {
@@ -5710,9 +6138,10 @@ body.cfg-hidden .tabActions { display: none; }
           '(survol à la souris).</p>' +
           S('Ajouter des variables') +
           L([
-            ['Barre de recherche', 'Adresse : <b>I1.2.3.4</b>, <b>Q14.15</b>, <b>M1.14</b>, <b>S0.4</b> (bits), <b>MB414</b> (mot de bus), <b>Modele.signal</b> (C API). Les suggestions se filtrent à la frappe ; les boutons Toutes / PLC / Modbus / Simulink restreignent la liste.'],
+            ['Barre de recherche', 'Adresse : <b>I1.2.3.4</b>, <b>Q14.15</b>, <b>M1.14</b>, <b>S0.4</b> (bits), <b>MB414</b> (mot de bus), <b>Modele.signal</b> (C API). Les suggestions se filtrent à la frappe ; les boutons Toutes / PLC / Modbus / Simulink / Réseau restreignent la liste.'],
             ['Destination', 'Tableau numérique, un graphique existant, ou un nouveau graphique.'],
             ['Période', 'Rafraîchissement propre à la variable, 10 ms par défaut.'],
+            ['Forcer une valeur', 'Suffixe <b>= valeur</b> dans la barre : <b>Q0.3 = 1</b>, <b>MB400 = 12500</b> impose la valeur côté serveur (diagnostic). La ligne du tableau est surlignée ; ⏻ relâche. Les points réseau (@lien.point) restent en lecture seule.'],
           ]) +
           S('Graphiques — gestes sur le tracé') +
           L([
@@ -5732,7 +6161,8 @@ body.cfg-hidden .tabActions { display: none; }
           L([
             ['Poignée ⠿', 'Glisser un graphique ou le tableau vers un onglet, une autre fenêtre, ou sur un autre graphique pour le ranger.'],
             ['Ligne du tableau', 'Se glisse seule vers un autre onglet ou une autre fenêtre.'],
-            ['Poignée ◢ (coin bas-droit)', 'Redimensionner un graphique à la souris : ↕ hauteur libre, ↔ largeur en nombre de colonnes. Double-clic pour revenir à la taille automatique. Sur mobile la disposition reste en une colonne, avec les hauteurs M/L/XL.'],
+            ['Poignée ◢ (coin bas-droit)', 'Redimensionner un graphique à la souris : ↕ hauteur libre, ↔ largeur en nombre de colonnes. Sur le tableau numérique : ↕ fixe sa hauteur (défilement interne). Double-clic pour revenir à la taille automatique.'],
+            ['Renommer', 'Bouton ✎ sur une ligne du tableau, ou « Renommer la courbe… » dans le menu d’une pastille : un nom d’affichage remplace le libellé du catalogue (vide = valeur d’origine).'],
             ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
           ]) +
@@ -5870,7 +6300,32 @@ body.cfg-hidden .tabActions { display: none; }
     }
     refreshTargets();
     updateEmptyState();
+    reconcileServerLogging();
     requestAnimationFrame(loop);
+  }
+
+  /**
+   * Aligne l'état des onglets « journal serveur » sur la réalité du serveur :
+   * une campagne lancée avant la fermeture de la page tourne encore, la pastille
+   * d'enregistrement doit donc être exacte au rechargement.
+   */
+  function reconcileServerLogging() {
+    if (!serverLogAvailable()) {
+      for (const tab of state.tabs) if (tab.log.dest === 'server') tab.log.enabled = false;
+      rebuildTabbar();
+      updateLogUi();
+      return;
+    }
+    fetchServerLogStatus().then((list) => {
+      const active = new Set(list.map((x) => x.name));
+      let changed = false;
+      for (const tab of state.tabs) {
+        if (tab.log.dest !== 'server') continue;
+        const on = active.has(serverCampaignName(tab.name));
+        if (on !== tab.log.enabled) { tab.log.enabled = on; changed = true; }
+      }
+      if (changed) { rebuildTabbar(); updateLogUi(); }
+    });
   }
 
   // La source (simulation ou serveur de diagnostic) doit être choisie avant
