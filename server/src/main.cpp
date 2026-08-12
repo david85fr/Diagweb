@@ -18,7 +18,10 @@
 //   GET  /api/layouts           liste des configurations enregistrées
 //   GET  /api/layouts/<nom>     une configuration
 //   PUT  /api/layouts/<nom>     enregistre une configuration
-//   POST /api/datalog           journal de données (ajout en JSON Lines)
+//   GET  /api/datalog           état des campagnes de journalisation
+//   POST /api/datalog/start     démarre une campagne autonome (navigateur fermé)
+//   POST /api/datalog/stop      arrête une campagne
+//   GET  /api/datalog/file?name= télécharge le CSV d'une campagne
 //   GET  /...                   fichiers statiques sous --root
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -29,6 +32,7 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <charconv>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
@@ -46,6 +50,7 @@
 #include "jvalue.hpp"
 #include "protocol_source.hpp"
 #include "protocols.generated.hpp"
+#include "recorder.hpp"
 #include "source.hpp"
 #include "ws.hpp"
 
@@ -68,6 +73,27 @@ struct Options {
 
 /** Liens réseau : instance unique, partagée par les requêtes HTTP. */
 ProtocolSource* g_net = nullptr;
+
+/** Enregistreur de données autonome (journalisation navigateur fermé). */
+Recorder* g_rec = nullptr;
+
+/** État des campagnes de journalisation, au format attendu par l'interface. */
+std::string datalog_status_json() {
+  std::ostringstream o;
+  o << '[';
+  if (g_rec) {
+    bool first = true;
+    for (const auto& s : g_rec->status()) {
+      if (!first) o << ',';
+      first = false;
+      o << "{\"name\":\"" << jesc(s.name) << "\",\"since\":" << jnum(s.since, 1)
+        << ",\"samples\":" << s.samples << ",\"vars\":" << s.vars
+        << ",\"sizeBytes\":" << s.size_bytes << '}';
+    }
+  }
+  o << ']';
+  return o.str();
+}
 
 fs::path protocols_file(const Options& opt) {
   return fs::path(opt.data_dir) / "protocols.json";
@@ -162,9 +188,16 @@ bool read_request(int fd, std::string& buf, Request& req) {
   }
   buf.erase(0, head_end + 4);
 
+  // Content-Length : analyse défensive. Un en-tête non numérique ou démesuré
+  // ne doit jamais lever d'exception (elle tuerait le thread, donc le serveur).
   size_t content_length = 0;
   if (auto it = req.headers.find("content-length"); it != req.headers.end()) {
-    content_length = static_cast<size_t>(std::stoul(it->second));
+    const std::string& cl = it->second;
+    unsigned long long v = 0;
+    const auto end = cl.data() + cl.size();
+    const auto res = std::from_chars(cl.data(), end, v);
+    if (res.ec != std::errc() || res.ptr != end || v > (64ull << 20)) return false;
+    content_length = static_cast<size_t>(v);
   }
   while (buf.size() < content_length) {
     char tmp[8192];
@@ -206,14 +239,28 @@ const char* mime_of(const std::string& path) {
   return "application/octet-stream";
 }
 
+/** Un caractère hexadécimal → sa valeur, ou -1 s'il n'en est pas un. */
+inline int hex_digit(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+
 /** Nom de fichier sûr pour une configuration (pas de traversée de chemin). */
 std::string safe_name(const std::string& raw) {
   std::string out;
   for (size_t i = 0; i < raw.size(); ++i) {
-    if (raw[i] == '%' && i + 2 < raw.size()) {   // décodage pour-cent
-      out += static_cast<char>(std::stoi(raw.substr(i + 1, 2), nullptr, 16));
-      i += 2;
-      continue;
+    // Décodage pour-cent défensif : un « %zz » invalide est recopié tel quel
+    // plutôt que de lever une exception (qui ferait tomber le serveur).
+    if (raw[i] == '%' && i + 2 < raw.size()) {
+      const int hi = hex_digit(raw[i + 1]);
+      const int lo = hex_digit(raw[i + 2]);
+      if (hi >= 0 && lo >= 0) {
+        out += static_cast<char>(hi * 16 + lo);
+        i += 2;
+        continue;
+      }
     }
     out += raw[i] == '+' ? ' ' : raw[i];
   }
@@ -329,14 +376,50 @@ bool handle_api(int fd, const Request& req, IVariableSource& src, const Options&
     }
   }
 
-  if (t == "/api/datalog" && (req.method == "POST" || req.method == "PUT")) {
-    std::error_code ec;
-    const fs::path dir = fs::path(opt.data_dir) / "datalog";
-    fs::create_directories(dir, ec);
-    std::ofstream f(dir / "journal.jsonl", std::ios::binary | std::ios::app);
-    if (!f) { respond_json(fd, "{\"error\":\"ecriture impossible\"}", 500); return true; }
-    f << req.body << '\n';
-    respond_json(fd, "{\"ok\":true}");
+  // ---- journalisation autonome côté serveur ------------------------
+  if (t == "/api/datalog" && req.method == "GET") {
+    respond_json(fd, datalog_status_json());
+    return true;
+  }
+  if (t == "/api/datalog/start" && (req.method == "POST" || req.method == "PUT")) {
+    if (!g_rec) { respond_json(fd, "{\"error\":\"indisponible\"}", 503); return true; }
+    bool ok = false;
+    const JValue j = jparse(req.body, &ok);
+    if (!ok) { respond_json(fd, "{\"error\":\"JSON invalide\"}", 400); return true; }
+    std::vector<std::pair<std::string, int>> addrs;
+    for (const JValue& a : j.list("addrs")) {
+      const std::string addr = a.str("addr");
+      if (!addr.empty()) addrs.emplace_back(addr, static_cast<int>(a.num("periodMs", 200)));
+    }
+    const std::string err = g_rec->start(j.str("name", "journal"), addrs);
+    if (!err.empty()) { respond_json(fd, "{\"error\":\"" + jesc(err) + "\"}", 400); return true; }
+    std::cout << "  journalisation serveur : campagne « " << jesc(j.str("name", "journal"))
+              << " » (" << addrs.size() << " variable(s))" << std::endl;
+    respond_json(fd, "{\"ok\":true,\"status\":" + datalog_status_json() + "}");
+    return true;
+  }
+  if (t == "/api/datalog/stop" && (req.method == "POST" || req.method == "PUT")) {
+    if (!g_rec) { respond_json(fd, "{\"error\":\"indisponible\"}", 503); return true; }
+    bool ok = false;
+    const JValue j = jparse(req.body, &ok);
+    const bool stopped = ok && g_rec->stop(j.str("name", ""));
+    respond_json(fd, "{\"ok\":" + std::string(stopped ? "true" : "false") +
+                     ",\"status\":" + datalog_status_json() + "}");
+    return true;
+  }
+  if (t.rfind("/api/datalog/file", 0) == 0 && req.method == "GET" && g_rec) {
+    // Nom passé en requête : /api/datalog/file?name=<campagne>
+    std::string name;
+    const size_t q = req.target.find("name=");
+    if (q != std::string::npos) name = safe_name(req.target.substr(q + 5));
+    const fs::path file = g_rec->dir() / (Recorder::safe_name(name) + ".csv");
+    std::ifstream f(file, std::ios::binary);
+    if (!f) { respond_json(fd, "{\"error\":\"journal inconnu\"}", 404); return true; }
+    std::ostringstream body;
+    body << f.rdbuf();
+    respond(fd, 200, "OK", "text/csv; charset=utf-8", body.str(),
+            "Content-Disposition: attachment; filename=\"journal_" +
+                Recorder::safe_name(name) + ".csv\"\r\n");
     return true;
   }
 
@@ -438,10 +521,27 @@ void ws_session(int fd, const Request& req, IVariableSource& src, const Options&
             << ",\"family\":\"" << jesc(m->family) << "\""
             << ",\"known\":" << (m->known ? "true" : "false") << '}';
           if (!send_all(fd, ws_encode(Op::Text, o.str()))) goto done;
-          subs[m->addr] = src.now() - opt.history_s;
+          // Un « sub » répété (ex. pour resserrer la période) a déjà resserré
+          // et incrémenté le compteur de références ; on annule ce ref
+          // supplémentaire, sinon la variable resterait abonnée à la
+          // déconnexion (fuite). Un seul ref par adresse et par session.
+          if (subs.count(m->addr)) src.unsubscribe(m->addr);
+          else subs[m->addr] = src.now() - opt.history_s;
         } else if (cmd == "unsub" && !addr.empty()) {
           const ParsedAddr pa = parse_addr(addr);
           if (pa.ok && subs.erase(pa.addr)) src.unsubscribe(pa.addr);
+        } else if (cmd == "set" && !addr.empty()) {
+          // Forçage d'une variable (diagnostic) ; « release » relâche.
+          const bool release = jnumber(fr.payload, "release", 0) != 0;
+          double v = jnumber(fr.payload, "value", 0);
+          std::string werr;
+          const bool ok = src.write(addr, release ? nullptr : &v, werr);
+          std::ostringstream o;
+          o << "{\"e\":\"set\",\"addr\":\"" << jesc(addr) << "\",\"ok\":" << (ok ? "true" : "false");
+          if (ok) o << ",\"value\":" << (release ? "null" : jnum(v, 4));
+          else o << ",\"msg\":\"" << jesc(werr) << "\"";
+          o << '}';
+          if (!send_all(fd, ws_encode(Op::Text, o.str()))) goto done;
         }
       }
     }
@@ -483,18 +583,27 @@ void handle_connection(int fd, IVariableSource& src, const Options& opt) {
   int one = 1;
   ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
 
-  std::string buf;
-  while (!g_stop) {
-    Request req;
-    if (!read_request(fd, buf, req)) break;
+  // Filet de sécurité : ce corps s'exécute dans un thread. Une exception qui
+  // s'en échapperait appellerait std::terminate et tuerait tout le serveur —
+  // un seul client mal intentionné suffirait. On ferme plutôt la connexion.
+  try {
+    std::string buf;
+    while (!g_stop) {
+      Request req;
+      if (!read_request(fd, buf, req)) break;
 
-    const auto upgrade = req.headers.find("upgrade");
-    if (upgrade != req.headers.end() && lower(upgrade->second).find("websocket") != std::string::npos) {
-      ws_session(fd, req, src, opt);
-      break;
+      const auto upgrade = req.headers.find("upgrade");
+      if (upgrade != req.headers.end() && lower(upgrade->second).find("websocket") != std::string::npos) {
+        ws_session(fd, req, src, opt);
+        break;
+      }
+      if (handle_api(fd, req, src, opt)) continue;
+      handle_static(fd, req, opt);
     }
-    if (handle_api(fd, req, src, opt)) continue;
-    handle_static(fd, req, opt);
+  } catch (const std::exception& e) {
+    std::cerr << "  connexion abandonnee : " << e.what() << std::endl;
+  } catch (...) {
+    std::cerr << "  connexion abandonnee (exception inconnue)" << std::endl;
   }
   ::close(fd);
 }
@@ -531,11 +640,23 @@ int main(int argc, char** argv) {
   net.apply(load_protocols(opt));
   CompositeSource source(controller, net);
 
+  // Enregistreur autonome : journalise même sans navigateur connecté.
+  Recorder recorder(source, opt.data_dir);
+  g_rec = &recorder;
+
   // Thread d'acquisition : rôle du lien avec le controller
   std::thread sampler([&controller] {
     while (!g_stop) {
       controller.tick();
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+  });
+
+  // Thread d'écriture des journaux (indépendant des clients WebSocket)
+  std::thread logger([&recorder] {
+    while (!g_stop) {
+      recorder.flush();
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
   });
 
@@ -550,7 +671,7 @@ int main(int argc, char** argv) {
   addr.sin_port = htons(static_cast<uint16_t>(opt.port));
   if (::bind(srv, reinterpret_cast<sockaddr*>(&addr), sizeof addr) < 0) {
     std::cerr << "bind " << opt.port << " : " << std::strerror(errno) << "\n";
-    g_stop = true; sampler.join(); return 1;
+    g_stop = true; sampler.join(); logger.join(); return 1;
   }
   ::listen(srv, 16);
 
@@ -581,6 +702,8 @@ int main(int argc, char** argv) {
   ::close(srv);
   g_stop = true;
   sampler.join();
+  logger.join();
+  g_rec = nullptr;
   for (auto& t : workers) if (t.joinable()) t.detach();
   std::cout << "Arret." << std::endl;
   return 0;

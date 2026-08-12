@@ -46,7 +46,8 @@ web/            sources de l'application (page de dev : web/index.html)
   js/app.js     onglets, recherche, tableau, journal, boucle de rendu
 server/         serveur de diagnostic C++20 (HTTP + WebSocket, sans dépendance)
   src/source.hpp     contrat IVariableSource — à implémenter pour le controller
-  src/sim_source.hpp source simulée (bouchon) + générateurs
+  src/sim_source.hpp source simulée (bouchon) + générateurs + forçage
+  src/recorder.hpp   journalisation autonome (navigateur fermé)
   src/protocol.hpp   modèle des liens réseau + contrat IProtocolDriver
   src/protocol_source.hpp  liens réseau (@lien.point) + aiguillage composite
   src/drivers/       pilotes : modbus, iec104, can (brut/J1939/CANopen), net
@@ -58,10 +59,11 @@ tools/check-dist.py  dist/ à jour + page autonome (aucune ressource externe)
 tools/gen-catalog.mjs  régénère server/src/catalog.generated.hpp depuis config.js
 tools/gen-protocols.mjs régénère server/src/protocols.generated.hpp depuis protocols.js
 tools/serve.py  serveur d'aperçu (port 8080, en-têtes anti-cache)
-tests/ui.mjs    tests d'interface Playwright (20 vérifications)
+tests/ui.mjs    tests d'interface Playwright (24 vérifications)
 tests/dnd.mjs   tests de déplacement de widgets (7 vérifications, http requis)
 tests/protocols.mjs  liens réseau bout en bout (équipements simulés, serveur requis)
 tests/decode.cpp     décodage des protocoles (cible CMake diagweb-decode-test)
+tests/server.mjs     forçage + journalisation autonome (serveur requis)
 dist/           livrables générés (commités) : index.html autonome + artifact.html
 docs/           PROJET.md, SPECS.md, PROTOCOLES.md
 .devcontainer/  configuration GitHub Codespaces (Python + Node + aperçu 8080)
@@ -97,9 +99,9 @@ Espace de noms JS global : `window.DW`. Scripts en IIFE, pas de modules ES
 vérifications de l'intégration continue (`.github/workflows/ci.yml`), qui
 s'exécute sur `main`, sur les pull requests et sur les branches `claude/**` :
 compilation C++ avec `-Werror`, tests de décodage, liens réseau de bout en
-bout, syntaxe JS, en-têtes générés à jour, `dist/` à jour et sans ressource
-externe, tests d'interface et de déplacement de widgets. Toute vérification
-ajoutée ici doit l'être aux deux endroits.
+bout, forçage + journalisation autonome, syntaxe JS, en-têtes générés à jour,
+`dist/` à jour et sans ressource externe, tests d'interface et de déplacement
+de widgets. Toute vérification ajoutée ici doit l'être aux deux endroits.
 
 ## Points d'architecture à respecter
 
@@ -121,10 +123,22 @@ ajoutée ici doit l'être aux deux endroits.
   valeur inventée) et le lien affiche « non branché ».
 - `DW.source` est le **contrat DataSource** (`subscribe(addr, {periodMs})`,
   unsubscribe/latest/past/data/meta/now — période par variable, défaut
-  10 ms). Le futur back-end (WebSocket via le processus serveur de diag du
-  contrôleur, voir docs/PROJET.md « Architecture cible ») devra le remplacer
-  sans toucher au reste — ne pas créer de dépendances directes au simulateur
-  ailleurs que via ce contrat.
+  10 ms — plus `write(addr, value)`/`forced(addr)` pour le forçage, refusé
+  pour les points réseau). Le futur back-end (WebSocket via le processus
+  serveur de diag du contrôleur, voir docs/PROJET.md « Architecture cible »)
+  devra le remplacer sans toucher au reste — ne pas créer de dépendances
+  directes au simulateur ailleurs que via ce contrat.
+- **Forçage** : seules les variables internes (I/Q/M/S, MB, C API) sont
+  forçables (`write`), jamais les points réseau `@lien.point` (lecture seule,
+  sûreté). Côté serveur `IVariableSource::write` défaut = refus ; SimSource
+  tient la valeur ; ProtocolSource refuse les `@`.
+- **Nom d'affichage** : `name` sur chaque entrée de tableau et chaque courbe
+  (sérialisé) ; l'adresse ne change jamais. Lire l'affichage via ce nom, sinon
+  le libellé du catalogue.
+- **Robustesse serveur** : toute conversion `std::sto*` sur une entrée réseau
+  est bornée ou protégée (une exception dans un thread tuerait le processus) ;
+  `handle_connection` est sous `try/catch`. Ne jamais réintroduire de `sto*`
+  non gardé sur des données venues du réseau.
 - Multi-échelles : regroupement automatique par unité + « échelle dédiée »
   par courbe ; max 4 règles d'axe visibles (voir `docs/SPECS.md` §5).
 - Couleurs de courbes : palette catégorielle fixe de `config.js`, attribution

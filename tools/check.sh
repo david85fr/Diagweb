@@ -72,6 +72,7 @@ if [ "$CIBLE" = tout ] || [ "$CIBLE" = serveur ]; then
     SRV=$!
     if attendre "http://localhost:$PORT/api/health"; then
       etape "liens réseau de bout en bout" node tests/protocols.mjs "http://localhost:$PORT"
+      etape "forçage et journalisation autonome" node tests/server.mjs "http://localhost:$PORT"
     else
       printf '  \033[31m✗\033[0m le serveur n’a pas démarré (voir /tmp/diagweb-ci.log)\n'
       ECHECS=$((ECHECS + 1))

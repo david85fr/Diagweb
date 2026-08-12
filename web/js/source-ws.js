@@ -18,6 +18,8 @@
 
   function createWsSource() {
     const chans = new Map();     // addr -> {meta, ts:[], vs:[], refs, periodMs}
+    const forced = new Map();    // adresses forcées (diagnostic) → valeur
+    const pendingWrites = new Map();   // adresse → résolveur en attente de confirmation
     let ws = null;
     let skew = 0, haveSkew = false;
     let horizonS = CFG.horizonS;
@@ -58,6 +60,16 @@
         srcName = m.source || srcName;
         api.name = srcName;
         api.defaultPeriodMs = m.defaultPeriodMs || CFG.defaultPeriodMs;
+        // Redémarrage du serveur : son horloge (t depuis le démarrage) repart
+        // près de zéro. Sans purge, la déduplication (t ≤ dernier t) rejetterait
+        // tout échantillon neuf et les courbes gèleraient définitivement. Si
+        // l'horloge a reculé, on vide l'historique avant de repartir.
+        let maxT = -Infinity;
+        for (const ch of chans.values()) if (ch.ts.length) maxT = Math.max(maxT, ch.ts[ch.ts.length - 1]);
+        if (isFinite(maxT) && m.now < maxT - 1) {
+          for (const ch of chans.values()) { ch.ts.length = 0; ch.vs.length = 0; }
+          setStatus('Serveur redémarré — historique réinitialisé.');
+        }
         skew = m.now - localSec();
         haveSkew = true;
         if (onHello) { const f = onHello; onHello = null; f(); }
@@ -78,6 +90,16 @@
       }
       if (m.e === 'err') {
         setStatus(m.addr ? m.addr + ' : ' + m.msg : m.msg, true);
+        return;
+      }
+      if (m.e === 'set') {
+        // Confirmation de forçage : le serveur fait autorité sur l'état forcé.
+        if (m.ok) {
+          if (m.value == null) forced.delete(m.addr);
+          else forced.set(m.addr, m.value);
+        }
+        const w = pendingWrites.get(m.addr);
+        if (w) { pendingWrites.delete(m.addr); w(m.ok ? { ok: true } : { ok: false, error: m.msg || 'refusé' }); }
         return;
       }
       if (m.e === 'd') {
@@ -199,6 +221,41 @@
       meta(addr) {
         const ch = chans.get(addr);
         return ch ? ch.meta : DW.resolveMeta(addr);
+      },
+
+      /**
+       * Demande au serveur de forcer (ou relâcher) une variable.
+       * Les points réseau sont refusés côté serveur (lecture seule).
+       * @returns {Promise<{ok, error?}>}
+       */
+      write(addr, value) {
+        const p = DW.parseAddr(addr);
+        if (!p.ok) return Promise.resolve({ ok: false, error: 'Adresse invalide : ' + addr });
+        if (p.family === 'NET') {
+          return Promise.resolve({ ok: false, error: 'Point réseau en lecture seule — forçage impossible.' });
+        }
+        // release en entier (1) : l'analyseur JSON léger du serveur ne lit
+        // pas les booléens (voir server/src/json.hpp).
+        const msg = value == null ? { c: 'set', addr: p.addr, release: 1 }
+                                  : { c: 'set', addr: p.addr, value };
+        if (!send(msg)) return Promise.resolve({ ok: false, error: 'Serveur de diagnostic injoignable.' });
+        return new Promise((resolve) => {
+          const prev = pendingWrites.get(p.addr);
+          if (prev) prev({ ok: false, error: 'remplacé par une nouvelle demande' });
+          const timer = setTimeout(() => {
+            if (pendingWrites.get(p.addr) === wrap) {
+              pendingWrites.delete(p.addr);
+              resolve({ ok: false, error: 'pas de confirmation du serveur (délai dépassé)' });
+            }
+          }, 3000);
+          const wrap = (res) => { clearTimeout(timer); resolve(res); };
+          pendingWrites.set(p.addr, wrap);
+        });
+      },
+      forced(addr) {
+        const p = DW.parseAddr(addr);
+        const key = p.ok ? p.addr : addr;
+        return forced.has(key) ? forced.get(key) : null;
       },
 
       close() {

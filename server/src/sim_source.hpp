@@ -268,11 +268,31 @@ class SimSource : public IVariableSource {
     const double t = now();
     for (auto& [addr, ch] : chans_) {
       if (t - ch.next_t > 2.0) ch.next_t = t;   // rattrapage borné
+      const auto fit = forced_.find(addr);
+      const bool held = fit != forced_.end();
       while (ch.next_t <= t) {
-        push(ch, ch.next_t, (*ch.gen)(ch.next_t));
+        push(ch, ch.next_t, held ? fit->second : (*ch.gen)(ch.next_t));
         ch.next_t += ch.period_s;
       }
     }
+  }
+
+  /**
+   * Force la valeur d'une variable, ou la relâche si `value == nullptr`.
+   * Diagnostic : représente un forçage d'E/S ou de mémoire côté controller.
+   */
+  bool write(const std::string& raw, const double* value, std::string& err) override {
+    const ParsedAddr p = parse_addr(raw);
+    if (!p.ok) { err = "adresse invalide"; return false; }
+    std::lock_guard<std::mutex> lock(mu_);
+    if (!value) {
+      forced_.erase(p.addr);
+      return true;
+    }
+    double v = *value;
+    if (p.kind == Kind::Bit) v = v >= 0.5 ? 1 : 0;
+    forced_[p.addr] = v;
+    return true;
   }
 
   size_t channel_count() {
@@ -323,6 +343,7 @@ class SimSource : public IVariableSource {
 
   std::map<std::string, const CatalogEntry*> cat_;
   std::map<std::string, Channel> chans_;
+  std::map<std::string, double> forced_;   // valeurs forcées (diagnostic)
   std::mutex mu_;
   double horizon_s_;
   int default_period_ms_;

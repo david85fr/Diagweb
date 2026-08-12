@@ -60,8 +60,15 @@ cmake -B build-arm -S . -DCMAKE_TOOLCHAIN_FILE=<sdk>/toolchain.cmake
 | POST | `/api/protocols/test` | test de connexion d'un lien |
 | GET | `/api/layouts` | configurations enregistrées |
 | GET/PUT | `/api/layouts/<nom>` | lecture / enregistrement d'une configuration |
-| POST | `/api/datalog` | journal de données (ajout en JSON Lines) |
+| GET | `/api/datalog` | état des campagnes de journalisation |
+| POST | `/api/datalog/start` | démarre une journalisation autonome (navigateur fermé) |
+| POST | `/api/datalog/stop` | arrête une campagne |
+| GET | `/api/datalog/file?name=` | télécharge le CSV d'une campagne |
 | GET | `/…` | fichiers statiques sous `--root` |
+
+Le flux WebSocket accepte aussi `{"c":"set","addr":…,"value":…}` (forçage
+d'une variable ; `{…,"release":1}` relâche) — refusé pour les points réseau,
+qui restent en lecture seule.
 
 ## Protocole du flux (trames texte JSON)
 
@@ -95,7 +102,8 @@ Serveur → client :
 |---|---|
 | `src/main.cpp` | serveur HTTP + WebSocket, REST, boucle d'émission |
 | `src/source.hpp` | **contrat** `IVariableSource` + grammaire des adresses |
-| `src/sim_source.hpp` | source simulée (à remplacer par le binding du `controller`) |
+| `src/sim_source.hpp` | source simulée (à remplacer par le binding du `controller`) + forçage |
+| `src/recorder.hpp` | journalisation autonome sur disque (indépendante des clients) |
 | `src/protocol.hpp` | modèle des liens/points + contrat `IProtocolDriver` |
 | `src/protocol_source.hpp` | liens réseau (`@lien.point`) + aiguillage composite |
 | `src/drivers/modbus.hpp` | Modbus TCP et RTU (lecture seule) |

@@ -320,10 +320,70 @@ check('le point réseau apparaît dans les suggestions (filtre « Réseau »)',
   sugNet === 1 && netOnly.length > 0 && netOnly.every((t) => t === 'NET'),
   netOnly.join(', ') || 'aucune suggestion');
 
+// Nom d'affichage : renommer une variable du tableau, conservé au rechargement
+await p2.keyboard.press('Escape');            // fermer toute suggestion ouverte
+await p2.fill('#searchInput', 'Capteurs.debit_pompe');
+await p2.selectOption('#targetSel', 'table');
+await p2.click('#addBtn');
+await p2.waitForTimeout(250);
+const dpRow = () => p2.locator(PANE + '.vrow').filter({ hasText: 'Capteurs.debit_pompe' }).first();
+await dpRow().locator('.v-edit').click();
+await p2.waitForTimeout(150);
+await p2.locator(PANE + '.vrow .v-rename').fill('Débit ligne A');
+await p2.keyboard.press('Enter');
+await p2.waitForTimeout(250);
+const renamedLabel = await dpRow().locator('.v-label').textContent();
+await p2.waitForTimeout(700);                  // > debounce de sauvegarde (500 ms)
+await p2.reload();
+await p2.waitForSelector(PANE + '.chart-card', { timeout: 20000 });
+await p2.waitForTimeout(1000);
+const renamedAfter = await p2.locator(PANE + '.vrow').filter({ hasText: 'Capteurs.debit_pompe' })
+  .first().locator('.v-label').textContent();
+check('nom d’affichage d’une variable, conservé au rechargement',
+  /Débit ligne A/.test(renamedLabel) && /Débit ligne A/.test(renamedAfter),
+  renamedAfter);
+
+// Forçage : « Q0.3 = 1 » impose la valeur (simulation locale), ⏻ relâche
+await p2.fill('#searchInput', 'Q0.3 = 1');
+await p2.click('#addBtn');
+await p2.waitForTimeout(600);
+const qRow = () => p2.locator(PANE + '.vrow').filter({ hasText: 'Q0.3' }).first();
+const forcedOn = await qRow().evaluate((el) => el.classList.contains('forced'));
+const forcedVal = (await qRow().locator('.val').textContent()).trim();
+await qRow().locator('.v-forced').click();
+await p2.waitForTimeout(600);
+const forcedOff = await qRow().evaluate((el) => el.classList.contains('forced'));
+check('forçage d’une variable par suffixe « = » puis relâchement',
+  forcedOn && forcedVal.startsWith('1') && !forcedOff,
+  'forcé=' + forcedOn + ' valeur=' + forcedVal + ' relâché=' + !forcedOff);
+
+// Point réseau en lecture seule : le forçage est refusé
+await p2.fill('#searchInput', '@x.y = 1');
+await p2.click('#addBtn');
+await p2.waitForTimeout(200);
+check('forçage d’un point réseau refusé (lecture seule)',
+  await p2.locator('.toast.err').filter({ hasText: 'lecture seule' }).count() >= 1);
+
+// Redimensionnement du tableau numérique : hauteur libre + défilement interne
+const tgrip = p2.locator(PANE + '.table-card .table-grip');
+await tgrip.scrollIntoViewIfNeeded();
+const tb = await tgrip.boundingBox();
+await p2.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2);
+await p2.mouse.down();
+await p2.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2 - 90, { steps: 8 });
+await p2.mouse.up();
+await p2.waitForTimeout(200);
+const tableSized = await p2.locator(PANE + '.table-card').evaluate((el) => ({
+  has: el.classList.contains('has-th'),
+  overflow: getComputedStyle(el.querySelector('.trows')).overflowY,
+}));
+check('redimensionnement du tableau numérique (hauteur + défilement interne)',
+  tableSized.has && tableSized.overflow === 'auto', JSON.stringify(tableSized));
+
 // Couverture des infobulles : chaque objet interactif doit être documenté
 const AUDIT = () => {
   const sel = 'button, select, input, .tab, .chip, .drag-handle, .vrow, .badge,' +
-    ' .sug, .acc-btn, .fbtn, .sw-btn, .sw-custom, .tab-close, .v-del, .recdot, .resize-grip';
+    ' .sug, .acc-btn, .fbtn, .sw-btn, .sw-custom, .tab-close, .v-del, .v-edit, .v-forced, .recdot, .resize-grip';
   const out = [];
   for (const el of document.querySelectorAll(sel)) {
     if (el.getAttribute('title') || el.getAttribute('aria-label')) continue;

@@ -91,6 +91,10 @@
           'Valeurs numériques <span class="tcount" ' +
           'title="Nombre de variables dans ce tableau"></span></h3>' +
         '<div class="trows"></div>' +
+        '<span class="resize-grip table-grip" role="separator" ' +
+          'aria-label="Redimensionner le tableau" ' +
+          'title="Glisser ↕ pour fixer la hauteur du tableau (défilement interne) — ' +
+          'double-clic pour revenir à la hauteur automatique"></span>' +
       '</section>' +
       '<div class="charts-grid"></div>';
     $('panes').appendChild(pane);
@@ -105,10 +109,10 @@
       tableCountEl: pane.querySelector('.tcount'),
       chartsGridEl: pane.querySelector('.charts-grid'),
       log: {
+        // dest 'browser' : accumulation en mémoire de la page ;
+        // dest 'server'  : journalisation autonome côté serveur (page fermée OK).
         enabled: false, dest: 'browser',
-        rows: [], lastT: {}, enableT: 0,
-        truncated: false, ctlWarned: false,
-        sentIdx: 0,        // lignes déjà transmises au contrôleur
+        rows: [], lastT: {}, enableT: 0, truncated: false,
       },
     };
     // Le tableau numérique entier (avec ses variables) est déplaçable
@@ -118,12 +122,14 @@
         for (const entry of [...tab.table]) removeFromTable(tab, entry.addr);
       });
     });
+    bindTableResize(tab);
 
     state.tabs.push(tab);
     switchTab(tab);
     if (data) applyConfigToActive(data);
     if (logOpts) {
-      tab.log.dest = logOpts.dest === 'controller' ? 'controller' : 'browser';
+      // 'controller' est l'ancien nom de la journalisation côté serveur.
+      tab.log.dest = (logOpts.dest === 'server' || logOpts.dest === 'controller') ? 'server' : 'browser';
       if (logOpts.enabled) startLogging(tab);
     }
     rebuildTabbar();
@@ -227,14 +233,49 @@
   // ---------- Tableau numérique (onglet actif) ------------------------
   function inTable(tab, addr) { return tab.table.some((e) => e.addr === addr); }
 
-  function addToTable(addr, periodMs) {
+  function addToTable(addr, periodMs, name) {
     const tab = state.active;
     if (inTable(tab, addr)) return { ok: false, error: addr + ' est déjà dans le tableau de cet onglet.' };
     const meta = appApi.acquire(addr, periodMs);
     if (!meta) return { ok: false, error: 'Adresse invalide : ' + addr };
-    tab.table.push({ addr, meta, periodMs: periodMs || undefined });
+    tab.table.push({ addr, meta, periodMs: periodMs || undefined, name: name || undefined });
     renderTable(tab);
     return { ok: true };
+  }
+
+  /** Libellé affiché d'une variable : nom d'affichage choisi, sinon libellé du catalogue. */
+  function displayLabel(e) { return e.name || e.meta.label; }
+
+  /** Renommage en place du nom d'affichage d'une variable du tableau. */
+  function renameTableEntry(tab, e, labelEl) {
+    if (labelEl.querySelector('input')) return;
+    const input = document.createElement('input');
+    input.className = 'v-rename';
+    input.value = e.name || '';
+    input.maxLength = 48;
+    input.placeholder = e.meta.label;
+    input.title = 'Nom d’affichage — laissez vide pour revenir au libellé du catalogue';
+    labelEl.textContent = '';
+    labelEl.appendChild(input);
+    input.focus();
+    input.select();
+    let done = false;
+    const commit = () => {
+      if (done) return;
+      done = true;
+      const v = input.value.trim();
+      e.name = v || undefined;
+      renderTable(tab);
+      refreshTargets();
+      onChange();
+    };
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') input.blur();
+      if (ev.key === 'Escape') { input.value = e.name || ''; input.blur(); }
+    });
+    // Empêche le glisser-déposer de la ligne pendant l'édition
+    input.addEventListener('pointerdown', (ev) => ev.stopPropagation());
   }
 
   function removeFromTable(tab, addr) {
@@ -263,13 +304,19 @@
       row.innerHTML =
         '<span class="badge fam-' + e.meta.family + '">' + e.meta.family + '</span>' +
         '<div class="v-id"><span class="v-addr"></span><span class="v-label"></span></div>' +
-        '<div class="v-val"><b class="val">—</b><span class="v-unit"></span><span class="v-trend"></span></div>' +
+        '<div class="v-val"><button class="v-forced hide" type="button" ' +
+          'title="Valeur forcée — cliquer pour relâcher">⏻</button>' +
+          '<b class="val">—</b><span class="v-unit"></span><span class="v-trend"></span></div>' +
+        '<button class="v-edit" type="button" title="Renommer l’affichage de cette variable">✎</button>' +
         '<button class="v-del" type="button" title="Retirer du tableau">✕</button>';
       row.querySelector('.v-addr').textContent = e.addr;
-      row.querySelector('.v-label').textContent = e.meta.label +
+      const labelEl = row.querySelector('.v-label');
+      labelEl.textContent = displayLabel(e) +
         (e.periodMs && e.periodMs !== CFG.defaultPeriodMs ? ' · rafr. ' + e.periodMs + ' ms' : '');
+      labelEl.classList.toggle('renamed', !!e.name);
       row.querySelector('.v-unit').textContent = e.meta.unit || '';
-      row.title = e.addr + ' — ' + e.meta.label +
+      row.title = e.addr + ' — ' + displayLabel(e) +
+        (e.name ? ' (' + e.meta.label + ')' : '') +
         (e.meta.unit ? ' (' + e.meta.unit + ')' : '') +
         ' · rafraîchissement ' + (e.periodMs || CFG.defaultPeriodMs) + ' ms' +
         ' · glissez cette ligne vers un onglet ou une autre fenêtre';
@@ -281,6 +328,10 @@
         '. La ligne clignote quand la variable change après 2 s d’immobilité.';
       row.querySelector('.v-trend').title =
         'Tendance sur les 2,5 dernières secondes (↗ hausse, ↘ baisse, → stable)';
+      const edit = row.querySelector('.v-edit');
+      edit.title = 'Nom d’affichage de ' + e.addr + ' (vide = libellé du catalogue)';
+      edit.addEventListener('click', () => renameTableEntry(tab, e, labelEl));
+      row.querySelector('.v-forced').addEventListener('click', () => releaseVariable(e.addr));
       const del = row.querySelector('.v-del');
       del.title = 'Retirer ' + e.addr + ' du tableau';
       del.addEventListener('click', () => removeFromTable(tab, e.addr));
@@ -291,13 +342,73 @@
     updateEmptyState();
   }
 
+  // ---------- Redimensionnement du tableau numérique ------------------
+  const TABLE_MIN_H = 90;
+  const TABLE_MAX_H = 1400;
+
+  /** Applique la hauteur libre du tableau (défilement interne) ou l'annule. */
+  function applyTableSize(tab) {
+    const card = tab.tableCardEl;
+    if (!card) return;
+    if (tab.tableH) {
+      card.classList.add('has-th');
+      card.style.setProperty('--table-h', tab.tableH + 'px');
+    } else {
+      card.classList.remove('has-th');
+      card.style.removeProperty('--table-h');
+    }
+  }
+
+  function bindTableResize(tab) {
+    const grip = tab.tableCardEl.querySelector('.table-grip');
+    const rows = tab.tableRowsEl;
+    let g = null;
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.button > 0) return;
+      g = { id: e.pointerId, y: e.clientY, h: rows.getBoundingClientRect().height };
+      try { grip.setPointerCapture(e.pointerId); } catch (err) { /* capture facultative */ }
+      tab.tableCardEl.classList.add('resizing');
+      e.preventDefault();
+    });
+    grip.addEventListener('pointermove', (e) => {
+      if (!g || e.pointerId !== g.id) return;
+      const h = Math.round(g.h + (e.clientY - g.y));
+      tab.tableH = Math.max(TABLE_MIN_H, Math.min(TABLE_MAX_H, h));
+      applyTableSize(tab);
+      e.preventDefault();
+    });
+    const end = (e) => {
+      if (!g || (e && e.pointerId !== g.id)) return;
+      g = null;
+      tab.tableCardEl.classList.remove('resizing');
+      onChange();
+    };
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+    grip.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      if (tab.tableH == null) return;
+      tab.tableH = undefined;
+      applyTableSize(tab);
+      onChange();
+      toast('Hauteur automatique du tableau rétablie.');
+    });
+  }
+
   function updateTableValues() {
     const tab = state.active;
     if (!tab) return;
     const rows = tab.tableRowsEl.children;
     const nowT = DW.source.now();
+    const canForce = typeof DW.source.forced === 'function';
     for (let i = 0; i < tab.table.length && i < rows.length; i++) {
       const e = tab.table[i];
+      // Marquage « forcé » : valeur imposée côté serveur (diagnostic)
+      if (canForce) {
+        const f = DW.source.forced(e.addr);
+        rows[i].classList.toggle('forced', f != null);
+        rows[i].querySelector('.v-forced').classList.toggle('hide', f == null);
+      }
       const last = DW.source.latest(e.addr);
       const valEl = rows[i].querySelector('.val');
       if (!last) { valEl.textContent = '—'; continue; }
@@ -377,7 +488,17 @@
 
   // ---------- Ajout d'une variable ------------------------------------
   function addVariable(rawAddr, forcePeriodMs) {
-    const p = DW.parseAddr(rawAddr != null ? rawAddr : $('searchInput').value);
+    const raw = rawAddr != null ? rawAddr : $('searchInput').value;
+    // Suffixe d'écriture « adresse = valeur » : forçage de la variable côté serveur.
+    const w = DW.splitWrite(raw);
+    if (w) {
+      if (w.bad !== undefined) {
+        toast('Valeur à forcer illisible : « ' + w.bad + ' ». Exemple : Q0.3 = 1', 'err');
+        return false;
+      }
+      return forceVariable(w.base, w.value);
+    }
+    const p = DW.parseAddr(raw);
     if (!p.ok) { toast(p.error, 'err'); return false; }
     const target = $('targetSel').value;
     // Un point réseau porte sa propre période de lecture (configuration du lien).
@@ -412,6 +533,49 @@
     onChange();
     toast(p.addr + ' → ' + destLabel);
     return true;
+  }
+
+  // ---------- Forçage de variables (diagnostic) -----------------------
+  /** Force une variable à une valeur ; l'ajoute au tableau pour la rendre visible. */
+  function forceVariable(base, value) {
+    const p = DW.parseAddr(base);
+    if (!p.ok) { toast(p.error, 'err'); return false; }
+    if (p.family === 'NET') {
+      toast('Point réseau en lecture seule — forçage impossible (' + p.addr + ').', 'err');
+      return false;
+    }
+    if (typeof DW.source.write !== 'function') {
+      toast('Le forçage n’est pas disponible avec cette source de données.', 'err');
+      return false;
+    }
+    // Rendre la variable visible pour que l'effet du forçage se voie.
+    if (!inTable(state.active, p.addr) && !chartsHave(state.active, p.addr)) {
+      addToTable(p.addr, undefined);
+    }
+    const shown = p.kind === 'bit' ? (value >= 0.5 ? '1' : '0') : DW.fmtVal(value, { kind: p.kind });
+    Promise.resolve(DW.source.write(p.addr, value)).then((res) => {
+      if (res && res.ok) {
+        $('searchInput').value = '';
+        hideSuggest();
+        toast(p.addr + ' forcé à ' + shown + '.');
+      } else {
+        toast('Forçage refusé : ' + ((res && res.error) || 'raison inconnue'), 'err');
+      }
+    });
+    return true;
+  }
+
+  /** Relâche une variable forcée (retour à son évolution normale). */
+  function releaseVariable(addr) {
+    if (typeof DW.source.write !== 'function') return;
+    Promise.resolve(DW.source.write(addr, null)).then((res) => {
+      if (res && res.ok) toast(addr + ' relâché (valeur non forcée).');
+      else toast('Impossible de relâcher : ' + ((res && res.error) || 'raison inconnue'), 'err');
+    });
+  }
+
+  function chartsHave(tab, addr) {
+    return tab.charts.some((c) => c.series.some((s) => s.addr === addr));
   }
 
   // ---------- Autocomplétion ------------------------------------------
@@ -539,13 +703,14 @@
 
   // ---------- Sérialisation -------------------------------------------
   function serializeTable(tab) {
-    return tab.table.map((e) => ({ addr: e.addr, periodMs: e.periodMs }));
+    return tab.table.map((e) => ({ addr: e.addr, periodMs: e.periodMs, name: e.name }));
   }
 
   function serializeConfig(tab) {
     return {
       version: 1,
       table: serializeTable(tab),
+      tableH: tab.tableH || undefined,
       charts: tab.charts.map((c) => c.serialize()),
     };
   }
@@ -574,7 +739,7 @@
           chart.addSeries(p.addr, {
             axisMode: s.axisMode, visible: s.visible !== false,
             periodMs: s.periodMs, offsetY: s.offsetY,
-            colorIdx: s.colorIdx, color: s.color,
+            colorIdx: s.colorIdx, color: s.color, name: s.name,
           });
         }
       }
@@ -615,11 +780,12 @@
     for (const entry of list || []) {
       const addr = typeof entry === 'string' ? entry : entry.addr;
       const periodMs = typeof entry === 'string' ? undefined : entry.periodMs;
+      const name = typeof entry === 'string' ? undefined : entry.name;
       const p = DW.parseAddr(addr);
       if (!p.ok || inTable(target, p.addr)) continue;
       const meta = appApi.acquire(p.addr, periodMs);
       if (!meta) continue;
-      target.table.push({ addr: p.addr, meta, periodMs: periodMs || undefined });
+      target.table.push({ addr: p.addr, meta, periodMs: periodMs || undefined, name: name || undefined });
       n++;
     }
     if (n) renderTable(target);
@@ -628,9 +794,12 @@
 
   function moveChartToTab(chart, tab) {
     const cfg = chart.serialize();
-    appApi.removeChart(chart);
+    // Créer d'abord dans la cible : si elle est pleine (limite de graphiques),
+    // l'original n'est pas détruit — jamais de perte.
     const created = addChartFromConfig(cfg, tab);
-    if (created) toast('« ' + cfg.title + ' » déplacé vers « ' + tab.name + ' ».');
+    if (!created) return;   // addChartFromConfig a déjà signalé la limite
+    appApi.removeChart(chart);
+    toast('« ' + cfg.title + ' » déplacé vers « ' + tab.name + ' ».');
     onChange();
   }
 
@@ -679,12 +848,15 @@
   function applyConfigToActive(data) {
     const tab = state.active;
     clearTab(tab);
+    tab.tableH = (data && isFinite(data.tableH) && data.tableH > 0) ? data.tableH : undefined;
+    applyTableSize(tab);
     for (const entry of data.table || []) {
       // Rétro-compatibilité : entrée sous forme de chaîne (format initial)
       const addr = typeof entry === 'string' ? entry : entry.addr;
       const periodMs = typeof entry === 'string' ? undefined : entry.periodMs;
+      const name = typeof entry === 'string' ? undefined : entry.name;
       const p = DW.parseAddr(addr);
-      if (p.ok) addToTable(p.addr, periodMs);
+      if (p.ok) addToTable(p.addr, periodMs, name);
     }
     for (const c of data.charts || []) {
       const chart = createChart({
@@ -698,7 +870,7 @@
           chart.addSeries(p.addr, {
             axisMode: s.axisMode, visible: s.visible !== false,
             periodMs: s.periodMs, offsetY: s.offsetY,
-            colorIdx: s.colorIdx, color: s.color,
+            colorIdx: s.colorIdx, color: s.color, name: s.name,
           });
         }
       }
@@ -716,7 +888,9 @@
     return set;
   }
 
+  /** Journalisation navigateur ou serveur, selon la destination de l'onglet. */
   function startLogging(tab) {
+    if (tab.log.dest === 'server') return startServerLog(tab);
     tab.log.enabled = true;
     tab.log.enableT = DW.source.now();
     tab.log.lastT = {};
@@ -725,10 +899,62 @@
     onChange();
   }
   function stopLogging(tab) {
+    if (tab.log.dest === 'server') return stopServerLog(tab);
     tab.log.enabled = false;
     rebuildTabbar();
     updateLogUi();
     onChange();
+  }
+
+  /** La journalisation serveur n'est possible que si la page est servie par lui. */
+  function serverLogAvailable() { return DW.sourceMode === 'ws'; }
+
+  function startServerLog(tab) {
+    if (!serverLogAvailable()) {
+      toast('Journalisation serveur indisponible : cette page n’est pas servie par le serveur de diagnostic.', 'err');
+      return;
+    }
+    const addrs = [...tabAddrs(tab)].map((addr) => {
+      const src = tab.table.find((e) => e.addr === addr);
+      let periodMs = src && src.periodMs;
+      for (const c of tab.charts) for (const s of c.series) if (s.addr === addr && s.periodMs) {
+        periodMs = periodMs ? Math.min(periodMs, s.periodMs) : s.periodMs;
+      }
+      return { addr, periodMs: periodMs || CFG.defaultPeriodMs };
+    });
+    if (!addrs.length) { toast('Aucune variable à journaliser dans cet onglet.', 'err'); return; }
+    fetch('/api/datalog/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: tab.name, addrs }),
+    }).then((r) => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+      .then(() => {
+        tab.log.enabled = true;
+        rebuildTabbar();
+        updateLogUi();
+        onChange();
+        toast('Journalisation serveur démarrée — elle continue même page fermée.');
+      })
+      .catch(() => toast('Le serveur a refusé de démarrer la journalisation.', 'err'));
+  }
+
+  function stopServerLog(tab) {
+    fetch('/api/datalog/stop', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: tab.name }),
+    }).catch(() => {}).finally(() => {
+      tab.log.enabled = false;
+      rebuildTabbar();
+      updateLogUi();
+      onChange();
+    });
+  }
+
+  /** État des campagnes de journalisation côté serveur (ou [] si indisponible). */
+  function fetchServerLogStatus() {
+    if (!serverLogAvailable()) return Promise.resolve([]);
+    return fetch('/api/datalog', { cache: 'no-store' })
+      .then((r) => r.ok ? r.json() : [])
+      .catch(() => []);
   }
 
   function lowerBound(arr, x) {
@@ -740,8 +966,9 @@
   function logTick() {
     for (const tab of state.tabs) {
       const lg = tab.log;
-      if (!lg.enabled) continue;
-      let appended = 0;
+      // Seule la journalisation « navigateur » accumule en mémoire de la page.
+      // La journalisation « serveur » est autonome (elle continue page fermée).
+      if (!lg.enabled || lg.dest === 'server') continue;
       for (const addr of tabAddrs(tab)) {
         const d = DW.source.data(addr);
         if (!d.ts.length) continue;
@@ -750,32 +977,11 @@
         for (let i = i0; i < d.ts.length; i++) {
           lg.rows.push([d.ts[i], addr, d.vs[i]]);
         }
-        if (i0 < d.ts.length) { lg.lastT[addr] = d.ts[d.ts.length - 1]; appended += d.ts.length - i0; }
+        if (i0 < d.ts.length) lg.lastT[addr] = d.ts[d.ts.length - 1];
       }
       if (lg.rows.length > LOG_MAX_ROWS) {
-        const dropped = lg.rows.length - LOG_MAX_ROWS;
-        lg.rows.splice(0, dropped);
-        lg.sentIdx = Math.max(0, lg.sentIdx - dropped);
+        lg.rows.splice(0, lg.rows.length - LOG_MAX_ROWS);
         lg.truncated = true;
-      }
-      // Destination « contrôleur » : envoi des lignes au serveur de diagnostic
-      // (POST /api/datalog) ; en cas d'échec, le tampon navigateur fait office
-      // de repli et l'utilisateur est averti une fois.
-      if (lg.dest === 'controller' && lg.rows.length > lg.sentIdx) {
-        const batch = lg.rows.slice(lg.sentIdx);
-        lg.sentIdx = lg.rows.length;
-        fetch('/api/datalog', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tab: tab.name, rows: batch }),
-        }).then((r) => {
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          lg.ctlWarned = false;
-        }).catch(() => {
-          if (lg.ctlWarned) return;
-          lg.ctlWarned = true;
-          toast('Serveur de diagnostic injoignable — le journal reste en mémoire du navigateur.', 'err');
-        });
       }
     }
   }
@@ -788,6 +994,7 @@
     root.innerHTML = '';
     const back = document.createElement('div');
     back.className = 'modal-back';
+    const available = serverLogAvailable();
     back.innerHTML =
       '<div class="modal" role="dialog" aria-label="Journalisation">' +
         '<header class="m-head"><h3>Journal de données — <span id="logTabName"></span></h3>' +
@@ -795,79 +1002,132 @@
         '<div class="log-opts">' +
           '<label title="Le journal reste en mémoire de cette page : à télécharger avant de la fermer">' +
           '<input type="radio" name="logdest" value="browser" title="Journaliser en mémoire du navigateur"> Navigateur (mémoire de la page)</label>' +
-          '<label title="Envoyer les lignes au serveur de diagnostic (POST /api/datalog)">' +
-          '<input type="radio" name="logdest" value="controller" title="Journaliser côté contrôleur"> Contrôleur (back-end à venir)' +
-          ' <span class="opt-note">repli navigateur si injoignable</span></label>' +
+          '<label title="Le serveur de diagnostic enregistre sur disque, même la page fermée">' +
+          '<input type="radio" name="logdest" value="server"' + (available ? '' : ' disabled') +
+          ' title="Journaliser côté serveur (autonome)"> Serveur (autonome, sur disque)' +
+          '<span class="opt-note" id="logServerNote"></span></label>' +
         '</div>' +
         '<div class="log-status" id="logStatus" ' +
-          'title="État du journal : échantillons, variables suivies, durée couverte et taille estimée">—</div>' +
-        '<div class="m-actions">' +
-          '<button class="btn primary" id="logToggle" type="button" ' +
-            'title="Démarrer ou arrêter l’enregistrement des échantillons de cet onglet"></button>' +
-          '<button class="btn" id="logDlCsv" type="button" ' +
-            'title="Télécharger le journal en CSV (horodatage, adresse, valeur)">Télécharger CSV</button>' +
-          '<button class="btn" id="logDlJson" type="button" ' +
-            'title="Télécharger le journal en JSON">Télécharger JSON</button>' +
-          '<button class="btn" id="logClear" type="button" ' +
-            'title="Effacer les échantillons déjà enregistrés">Vider</button>' +
-        '</div>' +
-        '<p class="m-note">Le journal enregistre chaque échantillon des variables de l’onglet ' +
-        '(période propre à chaque variable), dans la limite de 100 000 lignes (les plus anciennes ' +
-        'sont éliminées). Il est conservé en mémoire : téléchargez-le avant de fermer ou recharger la page.</p>' +
+          'title="État du journal : échantillons, variables suivies, taille">—</div>' +
+        '<div class="m-actions" id="logActions"></div>' +
+        '<p class="m-note" id="logNote"></p>' +
       '</div>';
     root.appendChild(back);
     back.querySelector('#logTabName').textContent = tab.name;
+    if (!available) {
+      back.querySelector('#logServerNote').textContent =
+        ' — indisponible : page non servie par le serveur de diagnostic';
+      if (lg.dest === 'server') lg.dest = 'browser';
+    }
 
+    let statusTimer = 0;
     const close = () => { clearInterval(statusTimer); root.innerHTML = ''; };
     back.addEventListener('pointerdown', (e) => { if (e.target === back) close(); });
     back.querySelector('.m-close').addEventListener('click', close);
 
+    const statusEl = back.querySelector('#logStatus');
+    const noteEl = back.querySelector('#logNote');
+    const actionsEl = back.querySelector('#logActions');
+
     for (const r of back.querySelectorAll('input[name="logdest"]')) {
       r.checked = r.value === lg.dest;
       r.addEventListener('change', () => {
+        if (r.disabled) return;
         lg.dest = r.value;
-        lg.ctlWarned = false;
         onChange();
+        renderActions();
+        refresh();
       });
     }
 
-    const toggleBtn = back.querySelector('#logToggle');
-    const refresh = () => {
-      toggleBtn.textContent = lg.enabled ? '⏹ Arrêter la journalisation' : '⏺ Démarrer la journalisation';
-      const n = lg.rows.length;
+    // --- Rendu des actions selon la destination ----------------------
+    function actBtn(id, label, cls, title) {
+      const b = document.createElement('button');
+      b.id = id; b.type = 'button'; b.className = 'btn' + (cls ? ' ' + cls : '');
+      b.textContent = label; b.title = title;
+      actionsEl.appendChild(b);
+      return b;
+    }
+    function renderActions() {
+      actionsEl.innerHTML = '';
+      const toggle = actBtn('logToggle', '', 'primary',
+        'Démarrer ou arrêter l’enregistrement des variables de cet onglet');
+      toggle.textContent = lg.enabled ? '⏹ Arrêter la journalisation' : '⏺ Démarrer la journalisation';
+      toggle.addEventListener('click', () => {
+        lg.enabled ? stopLogging(tab) : startLogging(tab);
+        setTimeout(refresh, 150);
+      });
+      if (lg.dest === 'server') {
+        actBtn('logDl', 'Télécharger CSV', '', 'Télécharger le journal enregistré par le serveur')
+          .addEventListener('click', () => {
+            window.open('/api/datalog/file?name=' + encodeURIComponent(tab.name), '_blank');
+          });
+        noteEl.textContent = 'La journalisation serveur écrit sur le disque du contrôleur et ' +
+          'continue même si vous fermez ou rechargez cette page. Le CSV se télécharge à tout moment.';
+      } else {
+        actBtn('logDlCsv', 'Télécharger CSV', '', 'Télécharger le journal en CSV (horodatage, adresse, valeur)')
+          .addEventListener('click', () => {
+            if (!lg.rows.length) { toast('Journal vide.', 'err'); return; }
+            DW.store.download('journal_' + tab.name, DW.store.logCsv(lg.rows), 'csv', 'text/csv');
+          });
+        actBtn('logDlJson', 'Télécharger JSON', '', 'Télécharger le journal en JSON')
+          .addEventListener('click', () => {
+            if (!lg.rows.length) { toast('Journal vide.', 'err'); return; }
+            const payload = JSON.stringify({ app: 'diagweb-journal', version: 1, tab: tab.name, rows: lg.rows });
+            DW.store.download('journal_' + tab.name, payload, 'json', 'application/json');
+          });
+        actBtn('logClear', 'Vider', '', 'Effacer les échantillons déjà enregistrés en mémoire')
+          .addEventListener('click', () => {
+            lg.rows = []; lg.truncated = false; lg.lastT = {}; lg.enableT = DW.source.now();
+            refresh();
+            toast('Journal vidé.');
+          });
+        noteEl.textContent = 'Le journal reste en mémoire de cette page (100 000 lignes au plus) : ' +
+          'téléchargez-le avant de fermer ou recharger. Pour un enregistrement durable, choisissez ' +
+          '« Serveur ».';
+      }
+    }
+
+    // --- Rafraîchissement de l'état ----------------------------------
+    function refresh() {
       const nVars = tabAddrs(tab).size;
+      if (lg.dest === 'server') {
+        fetchServerLogStatus().then((list) => {
+          const c = list.find((x) => x.name === serverCampaignName(tab.name));
+          const on = !!c;
+          if (on !== lg.enabled) { lg.enabled = on; rebuildTabbar(); updateLogUi(); }
+          const n = c ? c.samples : 0;
+          const size = c ? c.sizeBytes : 0;
+          statusEl.innerHTML = (on ? '⏺ En cours (serveur)' : '⏸ À l’arrêt') + ' · ' +
+            n.toLocaleString('fr-FR') + ' échantillon' + (n > 1 ? 's' : '') + ' · ' +
+            (c ? c.vars : nVars) + ' variable' + ((c ? c.vars : nVars) > 1 ? 's' : '') + ' · ' +
+            (size / 1048576).toFixed(2) + ' Mo sur disque';
+          const t = back.querySelector('#logToggle');
+          if (t) t.textContent = on ? '⏹ Arrêter la journalisation' : '⏺ Démarrer la journalisation';
+        });
+        return;
+      }
+      const n = lg.rows.length;
       const durS = n ? (lg.rows[n - 1][0] - lg.rows[0][0]) : 0;
       const sizeMo = (n * 34 / 1048576);
-      back.querySelector('#logStatus').innerHTML =
+      statusEl.innerHTML =
         (lg.enabled ? '⏺ En cours' : '⏸ À l’arrêt') + ' · ' +
         n.toLocaleString('fr-FR') + ' échantillon' + (n > 1 ? 's' : '') + ' · ' +
         nVars + ' variable' + (nVars > 1 ? 's' : '') + ' · ' +
         durS.toFixed(0) + ' s couvertes · ~' + sizeMo.toFixed(1) + ' Mo CSV' +
         (lg.truncated ? '<br>⚠ plafond atteint : les lignes les plus anciennes ont été éliminées' : '');
-    };
-    refresh();
-    const statusTimer = setInterval(refresh, 1000);
+    }
 
-    toggleBtn.addEventListener('click', () => {
-      lg.enabled ? stopLogging(tab) : startLogging(tab);
-      refresh();
-    });
-    back.querySelector('#logDlCsv').addEventListener('click', () => {
-      if (!lg.rows.length) { toast('Journal vide.', 'err'); return; }
-      const ok = DW.store.download('journal_' + tab.name, DW.store.logCsv(lg.rows), 'csv', 'text/csv');
-      if (!ok) toast('Téléchargement bloqué dans cet environnement.', 'err');
-    });
-    back.querySelector('#logDlJson').addEventListener('click', () => {
-      if (!lg.rows.length) { toast('Journal vide.', 'err'); return; }
-      const payload = JSON.stringify({ app: 'diagweb-journal', version: 1, tab: tab.name, rows: lg.rows });
-      const ok = DW.store.download('journal_' + tab.name, payload, 'json', 'application/json');
-      if (!ok) toast('Téléchargement bloqué dans cet environnement.', 'err');
-    });
-    back.querySelector('#logClear').addEventListener('click', () => {
-      lg.rows = []; lg.truncated = false; lg.lastT = {}; lg.enableT = DW.source.now();
-      refresh();
-      toast('Journal vidé.');
-    });
+    renderActions();
+    refresh();
+    statusTimer = setInterval(refresh, 1000);
+  }
+
+  /** Nom de campagne serveur : mêmes règles d'assainissement que le serveur. */
+  function serverCampaignName(name) {
+    let clean = String(name || '').replace(/[/\\.:\0]/g, '_').slice(0, 80);
+    if (!clean) clean = 'sans-nom';
+    return clean;
   }
 
   function updateLogUi() {
@@ -1224,9 +1484,10 @@
           '(survol à la souris).</p>' +
           S('Ajouter des variables') +
           L([
-            ['Barre de recherche', 'Adresse : <b>I1.2.3.4</b>, <b>Q14.15</b>, <b>M1.14</b>, <b>S0.4</b> (bits), <b>MB414</b> (mot de bus), <b>Modele.signal</b> (C API). Les suggestions se filtrent à la frappe ; les boutons Toutes / PLC / Modbus / Simulink restreignent la liste.'],
+            ['Barre de recherche', 'Adresse : <b>I1.2.3.4</b>, <b>Q14.15</b>, <b>M1.14</b>, <b>S0.4</b> (bits), <b>MB414</b> (mot de bus), <b>Modele.signal</b> (C API). Les suggestions se filtrent à la frappe ; les boutons Toutes / PLC / Modbus / Simulink / Réseau restreignent la liste.'],
             ['Destination', 'Tableau numérique, un graphique existant, ou un nouveau graphique.'],
             ['Période', 'Rafraîchissement propre à la variable, 10 ms par défaut.'],
+            ['Forcer une valeur', 'Suffixe <b>= valeur</b> dans la barre : <b>Q0.3 = 1</b>, <b>MB400 = 12500</b> impose la valeur côté serveur (diagnostic). La ligne du tableau est surlignée ; ⏻ relâche. Les points réseau (@lien.point) restent en lecture seule.'],
           ]) +
           S('Graphiques — gestes sur le tracé') +
           L([
@@ -1246,7 +1507,8 @@
           L([
             ['Poignée ⠿', 'Glisser un graphique ou le tableau vers un onglet, une autre fenêtre, ou sur un autre graphique pour le ranger.'],
             ['Ligne du tableau', 'Se glisse seule vers un autre onglet ou une autre fenêtre.'],
-            ['Poignée ◢ (coin bas-droit)', 'Redimensionner un graphique à la souris : ↕ hauteur libre, ↔ largeur en nombre de colonnes. Double-clic pour revenir à la taille automatique. Sur mobile la disposition reste en une colonne, avec les hauteurs M/L/XL.'],
+            ['Poignée ◢ (coin bas-droit)', 'Redimensionner un graphique à la souris : ↕ hauteur libre, ↔ largeur en nombre de colonnes. Sur le tableau numérique : ↕ fixe sa hauteur (défilement interne). Double-clic pour revenir à la taille automatique.'],
+            ['Renommer', 'Bouton ✎ sur une ligne du tableau, ou « Renommer la courbe… » dans le menu d’une pastille : un nom d’affichage remplace le libellé du catalogue (vide = valeur d’origine).'],
             ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
           ]) +
@@ -1384,7 +1646,32 @@
     }
     refreshTargets();
     updateEmptyState();
+    reconcileServerLogging();
     requestAnimationFrame(loop);
+  }
+
+  /**
+   * Aligne l'état des onglets « journal serveur » sur la réalité du serveur :
+   * une campagne lancée avant la fermeture de la page tourne encore, la pastille
+   * d'enregistrement doit donc être exacte au rechargement.
+   */
+  function reconcileServerLogging() {
+    if (!serverLogAvailable()) {
+      for (const tab of state.tabs) if (tab.log.dest === 'server') tab.log.enabled = false;
+      rebuildTabbar();
+      updateLogUi();
+      return;
+    }
+    fetchServerLogStatus().then((list) => {
+      const active = new Set(list.map((x) => x.name));
+      let changed = false;
+      for (const tab of state.tabs) {
+        if (tab.log.dest !== 'server') continue;
+        const on = active.has(serverCampaignName(tab.name));
+        if (on !== tab.log.enabled) { tab.log.enabled = on; changed = true; }
+      }
+      if (changed) { rebuildTabbar(); updateLogUi(); }
+    });
   }
 
   // La source (simulation ou serveur de diagnostic) doit être choisie avant

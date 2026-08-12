@@ -83,11 +83,15 @@ inline ParsedAddr parse_addr(const std::string& raw) {
     return r;
   }
 
-  // Mot de bus : MB<registre>
+  // Mot de bus : MB<registre> — 1 à 5 chiffres (miroir exact de parser.js).
+  // La borne de longueur est indispensable : sans elle, std::stol lèverait
+  // std::out_of_range sur une entrée réseau trop longue et ferait tomber le
+  // serveur (l'adresse arrive brute du flux WebSocket, sans revalidation).
   if ((in[0] == 'M' || in[0] == 'm') && in.size() > 2 && (in[1] == 'B' || in[1] == 'b')) {
     std::string digits = in.substr(2);
-    if (!digits.empty() && digits.find_first_not_of("0123456789") == std::string::npos) {
-      const long reg = std::stol(digits);
+    if (!digits.empty() && digits.size() <= 5 &&
+        digits.find_first_not_of("0123456789") == std::string::npos) {
+      const long reg = std::stol(digits);   // ≤ 5 chiffres : conversion sûre
       if (reg > 65535) { r.error = "registre hors plage (0 a 65535)"; return r; }
       r.ok = true; r.addr = "MB" + std::to_string(reg); r.family = "MB"; r.kind = Kind::Word;
       return r;
@@ -149,6 +153,17 @@ class IVariableSource {
   /** Échantillons postérieurs à `since_t` (au plus `max_out`, décimés). */
   virtual size_t read(const std::string& addr, double since_t,
                       std::vector<Sample>& out, size_t max_out) = 0;
+
+  /**
+   * Force la valeur d'une variable (diagnostic), ou la relâche si `value`
+   * vaut nullptr. Par défaut : non géré (renvoie false avec un motif). Les
+   * points réseau restent en lecture seule.
+   */
+  virtual bool write(const std::string& addr, const double* value, std::string& err) {
+    (void)addr; (void)value;
+    err = "forcage non gere par cette source";
+    return false;
+  }
 
   /** Horloge de la source, en secondes depuis son démarrage. */
   virtual double now() const = 0;

@@ -273,11 +273,18 @@ button { font-family: var(--sans); }
 .table-card h3 span { text-transform: none; letter-spacing: 0; color: var(--faint); font-weight: 500; margin-left: 6px; }
 
 /* ---------- Tableau numérique ---------- */
-.table-card { margin-bottom: 12px; }
+.table-card { margin-bottom: 12px; position: relative; }
+.trows { padding: 0 2px 2px; }
+/* Hauteur libre (poignée) : le tableau défile en interne au lieu de pousser
+   les graphiques vers le bas. La poignée reste réservée aux écrans ≥ 700 px. */
+.table-card.has-th .trows { max-height: var(--table-h); overflow-y: auto; }
+.table-card.resizing { outline: 1px solid color-mix(in srgb, var(--accent) 60%, transparent); }
+.table-card.resizing .resize-grip { opacity: 1; }
+.table-grip { bottom: 4px; right: 4px; }
 #tableRows { padding: 2px 6px 8px; }
 .vrow {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   gap: 10px; align-items: center;
   padding: 7px 8px;
   border-radius: 9px;
@@ -286,6 +293,15 @@ button { font-family: var(--sans); }
 .v-id { display: grid; min-width: 0; }
 .v-addr { font-family: var(--mono); font-size: 13px; }
 .v-label { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v-label.renamed { color: var(--ink); font-style: italic; }
+.v-rename, .chip-rename {
+  font: inherit; color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+  border-radius: 6px; padding: 2px 5px;
+  width: 100%; max-width: 220px; min-width: 0;
+}
+.chip-rename { font-size: 12px; width: 120px; }
 .v-val {
   display: flex; align-items: baseline; gap: 6px;
   font-family: var(--mono); font-variant-numeric: tabular-nums;
@@ -311,13 +327,21 @@ button { font-family: var(--sans); }
   display: inline-block;
 }
 .led.on { background: var(--good); border-color: var(--good); box-shadow: 0 0 6px color-mix(in srgb, var(--good) 60%, transparent); }
-.v-del {
+.v-del, .v-edit {
   width: 28px; height: 28px;
   display: grid; place-items: center;
   color: var(--faint); background: none;
   border: 0; border-radius: 7px; cursor: pointer; font-size: 12px;
 }
 .v-del:hover { color: var(--crit); background: var(--panel-2); }
+.v-edit:hover { color: var(--accent); background: var(--panel-2); }
+/* Variable forcée (valeur imposée côté serveur) */
+.v-forced {
+  border: 0; background: none; cursor: pointer;
+  color: var(--warn); font-size: 12px; padding: 0 2px;
+}
+.vrow.forced { box-shadow: inset 3px 0 0 var(--warn); }
+.vrow.forced .val { color: var(--warn); }
 
 /* ---------- Grille de graphiques ---------- */
 /* --col-min : largeur minimale d'une colonne, lue par chart.js pour connaître

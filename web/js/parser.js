@@ -74,6 +74,25 @@
     return { ok: false, error: 'Format non reconnu pour « ' + input + ' ». ' + HELP };
   };
 
+  /**
+   * Détecte un suffixe d'écriture « adresse = valeur » (ou « adresse := valeur »).
+   * Le « = » ne peut apparaître dans aucune famille d'adresse : il signale donc
+   * sans ambiguïté une demande de forçage de la valeur côté serveur.
+   * @returns {base, value} | {base, bad} (valeur illisible) | null (pas de suffixe)
+   */
+  DW.splitWrite = function (raw) {
+    const s = String(raw == null ? '' : raw);
+    const eq = s.indexOf('=');
+    if (eq < 0) return null;
+    let base = s.slice(0, eq);
+    if (base.endsWith(':')) base = base.slice(0, -1);   // forme « := »
+    base = base.trim();
+    const rhs = s.slice(eq + 1).trim();
+    const value = Number(rhs.replace(',', '.'));
+    if (rhs === '' || !isFinite(value)) return { base, bad: rhs };
+    return { base, value };
+  };
+
   /** Métadonnées d'une variable : catalogue si connue, sinon générées. */
   DW.resolveMeta = function (addr, parsed) {
     const p = parsed || DW.parseAddr(addr);

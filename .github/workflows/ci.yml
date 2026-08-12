@@ -53,6 +53,9 @@ jobs:
             || { echo "le serveur n'a pas démarré :"; cat "$RUNNER_TEMP/serveur.log"; exit 1; }
           node tests/protocols.mjs http://localhost:8080
 
+      - name: Forçage et journalisation autonome (serveur d'acquisition)
+        run: node tests/server.mjs http://localhost:8080
+
       - name: Journal du serveur
         if: always()
         run: cat "$RUNNER_TEMP/serveur.log" || true

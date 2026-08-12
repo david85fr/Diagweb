@@ -112,13 +112,28 @@ restent partagées entre toutes les fenêtres (stockage local).
 ## 3. Tableau numérique
 
 - Colonnes : badge famille, adresse (mono), libellé, valeur vivante, unité,
-  tendance (↗/↘/→ sur ~2,5 s, sauf bits), bouton retirer.
+  tendance (↗/↘/→ sur ~2,5 s, sauf bits), bouton **✎** (renommer), bouton
+  retirer.
 - Bits : LED + 0/1. Mots `MB` : décimal + hexadécimal `0xNNNN`.
+- **Nom d'affichage** (✎ sur la ligne, ou « Renommer la courbe… » pour une
+  courbe) : remplace le libellé du catalogue à l'écran, sans changer
+  l'adresse. Vide = retour au libellé d'origine. Mémorisé dans la
+  configuration (`name` sur l'entrée de tableau et sur la courbe) et suivi
+  lors d'une duplication ou d'un déplacement.
 - **Flash de changement** : une variable dont la valeur était immobile
   depuis **≥ 2 s** et qui change à nouveau fait flasher sa ligne (fond
   accentué qui s'estompe en ~1 s). Repère immédiat des variables qui
   bougent, même pour un changement d'un seul cycle. (Les grandeurs
   continues, qui changent en permanence, ne flashent donc pas.)
+- **Redimensionnement** : une poignée ◢ (coin bas-droit, écrans ≥ 700 px) fixe
+  la hauteur du tableau ; au-delà, il **défile en interne** au lieu de pousser
+  les graphiques vers le bas. Double-clic sur la poignée = hauteur automatique.
+  Mémorisé dans la configuration (`tableH`, pixels).
+- **Forçage** (diagnostic) : suffixe `= valeur` dans la barre de recherche
+  (`Q0.3 = 1`, `MB400 = 12500`) impose la valeur **côté serveur** ; la ligne
+  est surlignée et porte un ⏻ qui relâche. Les bits sont ramenés à 0/1. Les
+  points réseau `@lien.point` restent en **lecture seule** (refusés). Voir §7
+  (commande `set` du contrat) et §7 bis.
 - Rafraîchissement ~5 Hz. Masqué quand il est vide.
 
 ## 4. Graphiques
@@ -269,7 +284,7 @@ configuration à la racine) est acceptée et convertie en un onglet.
   « Copier le JSON » / collage manuel si le téléchargement est bloqué.
 - **Fichier CSV** (export de consultation, non importable) : séparateur
   « ; », en-tête `emplacement;graphique;fenetre_s;adresse;periode_ms;`
-  `echelle;visible` — une ligne par variable du tableau et par courbe.
+  `echelle;visible;decalage` — une ligne par variable du tableau et par courbe.
 - **Contrôleur** : `PUT /api/layouts/<nom>` et `GET /api/layouts` (timeout
   2,5 s). Tant que le back-end n'existe pas, échec propre avec message
   explicite. À brancher en phase 2.
@@ -284,14 +299,27 @@ configuration à la racine) est acceptée et convertie en un onglet.
   - **Navigateur** : tampon en mémoire de la page, plafond
     **100 000 lignes** (les plus anciennes éliminées, signalé dans l'état).
     Perdu au rechargement — à télécharger avant.
-  - **Contrôleur** : `POST /api/datalog` (back-end à venir) ; tant qu'il est
-    injoignable, avertissement et repli sur le tampon navigateur.
-- État affiché : en cours/arrêt, nb d'échantillons, nb de variables, durée
-  couverte, taille CSV estimée. Actions : démarrer/arrêter, télécharger
-  **CSV** (`horodatage_iso;t_s;adresse;valeur`) ou **JSON**
+  - **Serveur (autonome)** : le serveur de diagnostic — qui est aussi serveur
+    d'acquisition — enregistre lui-même sur disque
+    (`<data-dir>/datalog/<onglet>.csv`) et **continue même la page fermée ou
+    rechargée**. Il garde ses propres abonnements, indépendamment de tout
+    client WebSocket. Au rechargement, la pastille d'enregistrement est
+    réalignée sur l'état réel du serveur. Le CSV se télécharge à tout moment.
+    Indisponible si la page n'est pas servie par le serveur (fichier local,
+    Artifact) : l'option est alors désactivée.
+- État affiché : en cours/arrêt, nb d'échantillons, nb de variables ; taille
+  du fichier (serveur) ou durée couverte et taille CSV estimée (navigateur).
+  Actions navigateur : démarrer/arrêter, télécharger **CSV**
+  (`horodatage_iso;t_s;adresse;valeur`) ou **JSON**
   (`{app:'diagweb-journal', version, tab, rows:[[t,addr,v]…]}`), vider.
+  Actions serveur : démarrer/arrêter, télécharger le CSV.
+- REST (serveur) : `GET /api/datalog` (état des campagnes), `POST
+  /api/datalog/start` (`{name, addrs:[{addr,periodMs}]}`), `POST
+  /api/datalog/stop` (`{name}`), `GET /api/datalog/file?name=` (CSV). Le nom
+  de campagne est celui de l'onglet (assaini : `/ \ . :` remplacés).
 - L'activation et la destination sont mémorisées dans la session (la
-  journalisation redémarre au rechargement si elle était active).
+  journalisation navigateur redémarre au rechargement si elle était active ;
+  la journalisation serveur, elle, n'a jamais cessé).
 
 ## 7. Contrat DataSource (frontière front/back)
 
@@ -324,7 +352,18 @@ configuration à la racine) est acceptée et convertie en un onglet.
 `subscribe(addr, {periodMs})` (comptage de références ; une seconde
 souscription avec une période plus courte resserre le flux existant),
 `unsubscribe(addr)`, `latest(addr)`, `past(addr, delta)`, `data(addr)` →
-`{ts[], vs[]}` (secondes, croissant), `meta(addr)`, `count()`.
+`{ts[], vs[]}` (secondes, croissant), `meta(addr)`, `count()`, et, pour le
+**forçage** (diagnostic) : `write(addr, value)` → `Promise<{ok, error?}>`
+(value `null` relâche) et `forced(addr)` → valeur forcée ou `null`. Les
+points réseau sont refusés (lecture seule). Côté WebSocket, `write` envoie
+`{c:'set', addr, value}` (ou `{…, release:1}`) et le serveur confirme par
+`{e:'set', addr, ok, value}` ; la simulation locale tient la valeur elle-même.
+
+**Robustesse de la source WebSocket** : au message `hello`, si l'horloge du
+serveur a **reculé** (redémarrage du serveur en cours de session), les
+tampons d'historique sont **vidés** avant de repartir — sans cela la
+déduplication (`t ≤ dernier t`) rejetterait tout échantillon neuf et les
+courbes gèleraient.
 
 **Deux implémentations** interchangeables, choisies au démarrage par
 `web/js/source.js` (`DW.sourceReady` est attendue par `app.js` avant de
@@ -348,9 +387,11 @@ processus cœur, C++). La période de rafraîchissement de chaque abonnement
 
 ### Protocole du flux (WebSocket `/ws`, trames texte JSON)
 
-- client → `{"c":"sub","addr":…,"periodMs":…}` · `{"c":"unsub","addr":…}`
+- client → `{"c":"sub","addr":…,"periodMs":…}` · `{"c":"unsub","addr":…}` ·
+  `{"c":"set","addr":…,"value":…}` (forçage ; `{…,"release":1}` relâche)
 - serveur → `{"e":"hello","now":…,"horizonS":…,"defaultPeriodMs":…,"source":…}`,
-  puis `{"e":"meta",…}` par variable, `{"e":"err","addr":…,"msg":…}` et les
+  puis `{"e":"meta",…}` par variable, `{"e":"err","addr":…,"msg":…}`,
+  `{"e":"set","addr":…,"ok":…,"value":…}` (confirmation de forçage) et les
   lots `{"e":"d","now":…,"s":{"<adresse>":[[t,v],…]}}`.
 - `t` est en secondes depuis le démarrage du serveur ; le navigateur recale
   son horloge sur `now` (lissage de la gigue réseau).
@@ -438,10 +479,11 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
   fait et ses conséquences. Vérifié par un test de couverture
   (`tests/ui.mjs`) qui balaie toutes les vues et échoue au moindre objet
   non documenté.
-- **Aide** (menu ☰) : récapitulatif des commandes et des gestes en cinq
-  sections — ajout de variables, gestes sur le tracé, gestes sur les règles
-  d'axes, organisation (poignées ⠿ et ◢, menu ⋮, onglets), courbes. Elle remplace les infobulles sur écran
-  tactile, où elles n'apparaissent pas.
+- **Aide** (menu ☰) : récapitulatif des commandes et des gestes — ajout de
+  variables (dont forçage `= valeur`), gestes sur le tracé, gestes sur les
+  règles d'axes, organisation (poignées ⠿ et ◢, renommage, menu ⋮, onglets),
+  liens réseau, courbes. Elle remplace les infobulles sur écran tactile, où
+  elles n'apparaissent pas.
 - **Identification de version** tout en haut à droite, en face de la barre
   d'onglets : `hash court · #n`
   (hash git abrégé + numéro de commit dans la branche), injectée par
@@ -462,7 +504,10 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
 - [x] Déplacement de widgets entre onglets et entre fenêtres (multi-écran)
 - [x] Duplication de graphiques, rangement de la grille, couleur des courbes
 - [x] Dimensionnement libre à la poignée (hauteur + largeur en colonnes),
-      neutralisé sur mobile
+      neutralisé sur mobile ; hauteur du tableau numérique (défilement interne)
+- [x] Nom d'affichage par variable (tableau et courbes)
+- [x] Forçage de variables (diagnostic) par suffixe `= valeur`, refusé pour
+      les points réseau (lecture seule)
 - [x] Infobulles sur tous les objets + fenêtre d'aide (gestes et commandes)
 - [x] Liens réseau : Modbus TCP/RTU, IEC 60870-5-104, CAN, J1939, CANopen
       (pilotes implémentés et testés) ; IEC 61850 déclaré, pile ISO/MMS à venir
@@ -472,7 +517,8 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
       rejouables en local par `bash tools/check.sh`)
 - [x] Configurations : session, navigateur, export JSON + CSV, import JSON,
       ★ auto, stub contrôleur
-- [x] Journalisation par onglet (navigateur ; contrôleur en stub)
+- [x] Journalisation par onglet : navigateur (mémoire) ou **serveur autonome**
+      (sur disque, continue page fermée ; REST /api/datalog/start|stop|file)
 - [x] Période de rafraîchissement par variable (défaut 10 ms)
 - [x] Simulation (catalogue ~37 variables + hors catalogue, période honorée)
 - [x] Thèmes clair/sombre, responsive téléphone → 32″

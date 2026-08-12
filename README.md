@@ -7,7 +7,9 @@ embarqué (Linux embarqué) : valeurs numériques en direct et courbes
 multi-échelles, depuis un smartphone comme sur un écran 24–32″.
 
 **Statut : prototype front-end** — les données proviennent d'une simulation
-locale (10 Hz) ; le back-end embarqué viendra en phase 2.
+locale (période 10 ms par défaut, soit jusqu'à 100 Hz par variable) ; le
+serveur de diagnostic (C++) assure déjà l'acquisition réseau et la
+journalisation, le lien avec le `controller` viendra en phase 2.
 
 ## Essayer
 

@@ -108,6 +108,9 @@
   // --- Registre des abonnements ---------------------------------------
   // addr -> { meta, gen, ts:[], vs:[], refs, periodS, nextT }
   const regs = new Map();
+  // Valeurs forcées (diagnostic) : tant qu'une adresse y figure, la simulation
+  // sert cette valeur au lieu du générateur (voir DW.source.write).
+  const forced = new Map();
   const t0 = performance.now() / 1000;
   const now = () => performance.now() / 1000 - t0;
 
@@ -154,12 +157,13 @@
   function tick() {
     const t = now();
     const minT = t - CFG.horizonS;
-    for (const rec of regs.values()) {
+    for (const [addr, rec] of regs) {
       // Rattrapage borné : si l'onglet a été suspendu, on saute en avant.
       if (t - rec.nextT > 2) rec.nextT = t;
+      const held = forced.has(addr) ? forced.get(addr) : null;
       while (rec.nextT <= t) {
         rec.ts.push(rec.nextT);
-        rec.vs.push(rec.gen(rec.nextT));
+        rec.vs.push(held != null ? held : rec.gen(rec.nextT));
         rec.nextT += rec.periodS;
       }
       // Purge de l'historique au-delà de l'horizon
@@ -201,6 +205,31 @@
     meta(addr) {
       const rec = regs.get(addr);
       return rec ? rec.meta : DW.resolveMeta(addr);
+    },
+
+    /**
+     * Force (ou relâche, si value == null) la valeur d'une variable.
+     * Les points réseau (@lien.point) sont en lecture seule : refusés.
+     * @returns {Promise<{ok, error?}>}
+     */
+    write(addr, value) {
+      const p = DW.parseAddr(addr);
+      if (!p.ok) return Promise.resolve({ ok: false, error: 'Adresse invalide : ' + addr });
+      if (p.family === 'NET') {
+        return Promise.resolve({ ok: false, error: 'Point réseau en lecture seule — forçage impossible.' });
+      }
+      if (value == null) forced.delete(p.addr);
+      else forced.set(p.addr, p.kind === 'bit' ? (value >= 0.5 ? 1 : 0) : value);
+      // Effet immédiat sur le dernier échantillon (retour visuel instantané)
+      const rec = regs.get(p.addr);
+      if (rec && value != null && rec.ts.length) rec.vs[rec.vs.length - 1] = forced.get(p.addr);
+      return Promise.resolve({ ok: true });
+    },
+    /** Valeur forcée d'une variable, ou null si elle suit son générateur. */
+    forced(addr) {
+      const p = DW.parseAddr(addr);
+      const key = p.ok ? p.addr : addr;
+      return forced.has(key) ? forced.get(key) : null;
     },
   };
 

@@ -427,6 +427,13 @@ class CompositeSource : public IVariableSource {
               std::vector<Sample>& out, size_t max_out) override {
     return pick(addr).read(addr, since_t, out, max_out);
   }
+  bool write(const std::string& addr, const double* value, std::string& err) override {
+    if (!addr.empty() && addr[0] == '@') {
+      err = "point reseau en lecture seule";
+      return false;
+    }
+    return controller_.write(addr, value, err);
+  }
 
  private:
   IVariableSource& pick(const std::string& addr) {

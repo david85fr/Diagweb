@@ -759,6 +759,7 @@
       this.series.push({
         addr, meta, colorIdx,
         color: typeof opts.color === 'string' ? opts.color : undefined,
+        name: typeof opts.name === 'string' && opts.name ? opts.name : undefined,
         axisMode: opts.axisMode === 'solo' ? 'solo' : 'auto',
         visible: opts.visible !== false,
         periodMs: opts.periodMs || undefined,
@@ -778,6 +779,41 @@
       this.app.onChange();
     }
 
+    /** Renommage en place du nom d'affichage d'une courbe (dans sa pastille). */
+    renameSeries(s) {
+      closePopover();
+      let chip = null;
+      for (const c of this.legendEl.children) if (c.dataset.addr === s.addr) chip = c;
+      if (!chip) return;
+      const nameEl = chip.querySelector('.chip-addr');
+      const input = document.createElement('input');
+      input.className = 'chip-rename';
+      input.value = s.name || '';
+      input.maxLength = 48;
+      input.placeholder = s.meta.label || s.addr;
+      nameEl.textContent = '';
+      nameEl.appendChild(input);
+      input.focus();
+      input.select();
+      let done = false;
+      const commit = () => {
+        if (done) return;
+        done = true;
+        const v = input.value.trim();
+        s.name = v || undefined;
+        this.rebuildLegend();
+        this.app.onChange();
+      };
+      input.addEventListener('blur', commit);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') input.blur();
+        if (e.key === 'Escape') { input.value = s.name || ''; input.blur(); }
+      });
+      // Sans cela, le clic atteint la pastille et rouvre le menu
+      input.addEventListener('click', (e) => e.stopPropagation());
+      input.addEventListener('pointerdown', (e) => e.stopPropagation());
+    }
+
     // ---------- Légende ------------------------------------------------
     rebuildLegend() {
       closePopover();
@@ -795,13 +831,13 @@
           '<span class="chip-val">—</span>' +
           '<span class="chip-off hide" title="Courbe décalée verticalement">Δ</span>' +
           '<span class="chip-axis"></span>';
-        chip.querySelector('.chip-addr').textContent = s.addr;
+        chip.querySelector('.chip-addr').textContent = s.name || s.addr;
         chip.querySelector('.sw').style.background = colorOf(s);
-        chip.title = s.addr + ' — ' + s.meta.label +
+        chip.title = s.addr + ' — ' + (s.name ? s.name + ' (' + s.meta.label + ')' : s.meta.label) +
           (s.meta.unit ? ' (' + s.meta.unit + ')' : '') +
           ' · rafraîchissement ' + (s.periodMs || DW.CONFIG.defaultPeriodMs) + ' ms' +
           (s.offsetY ? ' · décalage ' + DW.fmtVal(s.offsetY, s.meta) : '') +
-          ' · appuyez pour la couleur, l’échelle dédiée, le décalage ou le retrait';
+          ' · appuyez pour le nom, la couleur, l’échelle dédiée, le décalage ou le retrait';
         chip.addEventListener('click', () => this.openSeriesMenu(s, chip));
         this.legendEl.appendChild(chip);
       }
@@ -811,6 +847,8 @@
     openSeriesMenu(s, chip) {
       openPopover(s, chip, (mk, add) => {
         add(this.buildColorPicker(s));
+        mk('Renommer la courbe…', () => this.renameSeries(s), null,
+          'Nom d’affichage dans la légende (vide = adresse ou libellé du catalogue)');
         mk(s.visible ? 'Masquer la courbe' : 'Afficher la courbe', () => {
           s.visible = !s.visible;
           this.rebuildLegend();
@@ -1253,6 +1291,7 @@
         colSpan: this.colSpan || undefined,
         series: this.series.map((s) => ({
           addr: s.addr,
+          name: s.name || undefined,
           axisMode: s.axisMode,
           visible: s.visible,
           periodMs: s.periodMs,
