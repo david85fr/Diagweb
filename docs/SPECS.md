@@ -283,6 +283,31 @@ configuration à la racine) est acceptée et convertie en un onglet.
 
 ## 7. Contrat DataSource (frontière front/back)
 
+```
+            web/js/source.js — choix de la source au démarrage
+            (?src=sim|ws · sinon sonde GET /api/health)
+                                    │
+                     ┌──────────────┴───────────────┐
+                     ▼                              ▼
+        ┌──────────────────────────┐   ┌──────────────────────────┐
+        │ sim.js                   │   │ source-ws.js             │
+        │ simulation locale        │   │ WebSocket /ws ───────────┼──► serveur de diagnostic
+        │ générateurs par adresse, │   │ sub/unsub, reconnexion,  │
+        │ horizon 330 s            │   │ recalage d'horloge       │
+        └────────────┬─────────────┘   └────────────┬─────────────┘
+                     └──────────────┬───────────────┘
+                                    ▼
+                     DW.source — contrat DataSource
+           subscribe(addr, {periodMs}) · unsubscribe · latest
+                    past · data · meta · now · count
+                                    │
+            ┌───────────────────────┴─────────────────────┐
+            ▼                       ▼                     ▼
+         app.js                 chart.js              store.js
+   onglets, recherche,       courbes canvas,      session, configs,
+    tableau, journal         multi-échelles        export JSON/CSV
+```
+
 `DW.source` expose : `name`, `defaultPeriodMs`, `now()`,
 `subscribe(addr, {periodMs})` (comptage de références ; une seconde
 souscription avec une période plus courte resserre le flux existant),

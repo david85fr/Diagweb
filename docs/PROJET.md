@@ -26,7 +26,40 @@ alimenter l'interface en données réelles.
 
 ## Architecture cible sur le contrôleur
 
-Deux processus distincts cohabitent sur le contrôleur :
+Deux processus distincts cohabitent sur le contrôleur ; le navigateur ne
+parle qu'au serveur de diagnostic, jamais au cœur.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ CONTRÔLEUR (Linux embarqué, systemd)                            │
+│                                                                 │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │ Processus CŒUR (C++)           — hors périmètre du dépôt  │  │
+│  │ boucle temps réel · modèles Simulink générés en C (C API) │  │
+│  │ bus de terrain, mapping PLC : I/Q/M/S · registres MB      │  │
+│  └───────────────────────────┬───────────────────────────────┘  │
+│                              │ IPC local                        │
+│                              │ contrat IVariableSource :        │
+│                              │ résolution d'adresse, abonnement │
+│                              │ (période), lecture d'échantillons│
+│  ┌───────────────────────────▼───────────────────────────────┐  │
+│  │ Processus SERVEUR DE DIAGNOSTIC (server/, C++20)          │  │
+│  │ sert les pages · /api/health · /api/layouts · /api/datalog│  │
+│  │ WebSocket /ws : abonnements et émission des échantillons  │  │
+│  └───────────────────────────┬───────────────────────────────┘  │
+└──────────────────────────────┼──────────────────────────────────┘
+                               │ réseau : HTTP (pages, REST)
+                               │ + WebSocket (échantillons horodatés)
+        ┌──────────────────────▼───────────────────────────┐
+        │ NAVIGATEUR — Diagweb (web/, HTML/CSS/JS vanilla) │
+        │ source-ws.js ─┐                                  │
+        │               ├─ contrat DataSource → DW.source  │
+        │ sim.js  ──────┘  (repli : simulation locale)     │
+        │ app.js (onglets, tableau) · chart.js (courbes)   │
+        └──────────────────────────────────────────────────┘
+```
+
+En détail :
 
 1. **Processus cœur** (C++) — le cœur du produit : exécution temps réel,
    modèles Simulink générés en C (exposés via la C API), gestion du bus de
