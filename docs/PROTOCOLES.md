@@ -31,17 +31,103 @@ casse donc aucune disposition enregistrée.
 
 ## Saisir la configuration
 
+Deux chemins mènent une variable à l'écran, et **ils se rejoignent** : une
+variable interne du contrôleur est déjà au catalogue et se saisit directement ;
+un point d'équipement tiers doit d'abord être *déclaré*, après quoi il se
+manipule exactement comme les autres.
+
+```
+          CHEMIN A                             CHEMIN B
+  variable interne du contrôleur        point d'un équipement tiers
+  déjà au catalogue :                   à déclarer d'abord :
+  I1.2.3.4 · MB414 · Regul.vitesse      @banc.pression
+             │                                   │
+             │                         ☰ → Liens réseau…
+             │                ┌──────────────────▼───────────────────┐
+             │                │ ① + Nouveau lien                     │
+             │                │   protocole ▾ puis SES paramètres :  │
+             │                │   hôte/port · port série · interface │
+             │                │   [Tester] ▸ ● ⚠ ○ ⋯ ~               │
+             │                ├──────────────────────────────────────┤
+             │                │ ② Points ▸ + Nouveau point           │
+             │                │   identifiant · libellé · unité      │
+             │                │   période · type (bit/mot/flottant)  │
+             │                │   ── puis l'adressage du protocole ──│
+             │                │   registre · IOA · PGN + champ de    │
+             │                │   bits · index/sous-index · référence│
+             │                │   ▸ donne l'adresse  @lien.point     │
+             │                ├──────────────────────────────────────┤
+             │                │ ③ [Ajouter au diagnostic]            │
+             │                └──────────────────┬───────────────────┘
+             │  une fois déclaré, le point       │
+             │  rejoint les suggestions ◀────────┤
+             ▼                                   ▼
+ ┌───────────────────────────────────────────────────────────────────┐
+ │ BARRE DU HAUT — commune aux deux chemins                          │
+ │  [ recherche + suggestions ]  [ cible ▾ ]  [ période ▾ ] [Ajouter]│
+ │  filtres : Toutes · PLC · Modbus · Simulink · Réseau              │
+ └────────────────────────────────┬──────────────────────────────────┘
+                                  ▼
+             tableau numérique · graphique · journal
+```
+
+### Chemin A — une variable interne
+
+Barre du haut : saisir l'adresse (`I1.2.3.4`, `MB414`,
+`Regulation.mesure.vitesse`), choisir la **cible** (tableau numérique,
+graphique existant, nouveau graphique) et éventuellement la **période**
+(10 ms par défaut), puis **Ajouter** ou `Entrée`. Les suggestions se filtrent
+à la frappe, sur l'adresse **et** sur le libellé.
+
+Deux suffixes de saisie, dans le même champ :
+
+- `Q0.3 = 1` **force** la variable côté serveur — réservé aux variables
+  internes (`I/Q/M/S`, `MB`, C API) ; un point réseau est refusé ;
+- un **nom d'affichage** se donne ensuite par le bouton ✎ d'une ligne du
+  tableau, ou « Renommer la courbe… » dans le menu d'une pastille de série
+  (vide = retour au libellé du catalogue). L'adresse, elle, ne change jamais.
+
+### Chemin B — un point d'équipement
+
 Menu **☰ → Liens réseau…** (fonction globale, indépendante des onglets) :
 
-1. **+ Nouveau lien** — choisir le protocole, puis remplir les champs qui lui
-   sont propres. Chaque champ porte une infobulle expliquant sa valeur.
-2. **Tester** — le serveur ouvre le lien et renvoie le résultat en clair
-   (« connexion établie », « hôte introuvable », « pas de réponse »…).
-3. **Points** — déclarer les variables à lire : identifiant, libellé, unité,
-   période, puis l'adressage propre au protocole. **Dupliquer** un point sert à
-   décliner rapidement un registre voisin.
-4. **Ajouter au diagnostic** — le point part vers la destination choisie dans
-   la barre du haut (tableau ou graphique), comme n'importe quelle variable.
+1. **+ Nouveau lien** — choisir le protocole ; le formulaire se reconstruit
+   avec les champs de ce protocole seulement (Modbus TCP demande hôte, port,
+   identifiant d'unité ; CANopen demande interface et nœud). Chaque champ
+   porte son infobulle. L'**identifiant** du lien est la première moitié des
+   adresses : `banc` ⇒ `@banc.…`.
+2. **Tester** — le serveur ouvre le lien et referme, puis renvoie le résultat
+   en clair (« connexion établie », « hôte introuvable », « pas de réponse
+   (délai dépassé) »…). À faire avant de saisir des points : cela sépare un
+   problème de câblage d'une erreur d'adressage.
+3. **Points ▸ + Nouveau point** — identifiant, libellé, unité, période de
+   lecture (10 ms à 60 s), type de présentation, puis l'adressage propre au
+   protocole. **Dupliquer** décline en un clic un registre voisin ou un autre
+   bit.
+4. **Ajouter au diagnostic** — le point part vers la cible choisie dans la
+   barre du haut, comme n'importe quelle variable. On peut aussi fermer la
+   fenêtre et taper `@banc.pression` dans la recherche : le point déclaré est
+   désormais dans les suggestions (filtre **Réseau**).
+
+Une différence à connaître : un point réseau **impose sa propre période**,
+celle de sa configuration. Le sélecteur de période de la barre du haut ne s'y
+applique pas.
+
+### Exemple complet — un capteur de pression Modbus TCP
+
+| Étape | Champ | Valeur |
+|---|---|---|
+| Lien | Identifiant / Nom | `banc` / « Banc d'essai » |
+| | Protocole | Modbus TCP |
+| | Hôte · Port · Unité | `10.0.0.5` · `502` · `1` |
+| Point | Identifiant · Libellé | `pression` · « Pression circuit A » |
+| | Unité · Période | `bar` · `200` ms |
+| | Fonction · Registre | Registres de maintien (03) · `40` |
+| | Type · Gain | `uint16` · `0.1` |
+
+Résultat : `@banc.pression`, en bar, lisible au tableau, traçable, journalisable
+et enregistrable dans une disposition. Changer plus tard le registre 40 en 42 ne
+casse aucune disposition — l'adresse Diagweb ne bouge pas.
 
 L'état de chaque lien est affiché en permanence : ● connecté · ⚠ en défaut
 (avec la cause) · ○ désactivé · ⋯ non branché · ~ simulé.

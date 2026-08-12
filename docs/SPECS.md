@@ -58,6 +58,9 @@ pour les familles PLC, normalisé en majuscules) :
   variable).
 - Un **point réseau** impose sa propre période (celle de sa configuration) :
   le sélecteur de période de la barre de recherche ne s'y applique pas.
+- Les deux chemins d'ajout — saisie directe d'une variable interne, ou
+  déclaration préalable d'un point réseau — se rejoignent sur cette même
+  barre : schéma dans `docs/PROTOCOLES.md` § « Saisir la configuration ».
 - Doublons refusés (même adresse dans le tableau, même courbe dans un même
   graphique) avec message.
 
@@ -427,6 +430,9 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
 - **Saisie** : ☰ → « Liens réseau… » — liste des liens avec leur état
   (● connecté · ⚠ en défaut avec la cause · ○ désactivé · ⋯ non branché ·
   ~ simulé), édition, test de connexion, points, export/import JSON.
+  Le parcours complet — déclarer un lien, ses points, puis les ajouter au
+  diagnostic — est décrit et schématisé dans `docs/PROTOCOLES.md`
+  § « Saisir la configuration », avec un exemple Modbus TCP de bout en bout.
 - **Description unique** : `web/js/protocols.js` décrit les champs de chaque
   protocole (libellés et aides en français) ; `tools/gen-protocols.mjs` en
   dérive `server/src/protocols.generated.hpp`. L'interface construit ses
