@@ -424,6 +424,14 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
   conservée, la lecture viendra avec leur pile respective (ISO/MMS d'un côté,
   UA-TCP + SecureConversation de l'autre). Un pilote déclaré ne publie
   **aucune** valeur.
+- **Bibliothèques tierces** : autorisées côté serveur si leur licence reste
+  **gratuite en produit commercial fermé** (MIT, BSD, Apache-2.0, MPL-2.0…) ;
+  refusées si GPL/AGPL ou en double licence dont l'usage commercial se paie.
+  L'interface web garde sa règle de **zéro dépendance**. Licences vérifiées et
+  décisions consignées dans `docs/PROTOCOLES.md` § « Bibliothèques externes et
+  licences ». Conséquence à retenir : OPC UA pourra s'appuyer sur open62541
+  (MPL-2.0), mais **IEC 61850 n'a aucune pile C permissive** — les stacks
+  matures sont GPLv3 ou payantes.
 - **Un dossier par protocole** : chaque pilote vit dans
   `server/src/drivers/<protocole>/`, le partagé dans `drivers/common/`.
   `tools/check-drivers.mjs` (rejoué par la CI) refuse un protocole sans

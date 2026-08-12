@@ -389,6 +389,73 @@ passent à l'état « simulé » et les points produisent des signaux plausibles
 Utile pour préparer une configuration ou faire une démonstration ; l'état du
 lien dit clairement que les valeurs ne viennent pas du terrain.
 
+## Bibliothèques externes et licences
+
+Le serveur de diagnostic peut s'appuyer sur une bibliothèque tierce pour un
+protocole, à une condition : **elle doit rester gratuite lorsqu'elle est
+intégrée à un produit commercial fermé**. L'interface web, elle, n'a toujours
+aucune dépendance — la page publiée est servie sous CSP stricte et le
+contrôleur doit pouvoir la servir hors ligne.
+
+| Licence | Verdict | Pourquoi |
+|---|---|---|
+| MIT, BSD, ISC, zlib, Apache-2.0 | acceptée | aucune obligation sur le produit |
+| MPL-2.0 | acceptée | copyleft **par fichier** : seules les modifications de la bibliothèque se publient |
+| LGPL | à éviter | l'édition de liens statique, usuelle en embarqué, impose de fournir de quoi relier |
+| GPL, AGPL | refusée | contamine le produit |
+| double licence « GPL ou commerciale » | refusée | l'usage commercial se paie : la gratuité annoncée ne s'applique pas ici |
+
+**Toujours lire le fichier `LICENSE` du dépôt, jamais le badge.** Celui de
+S2OPC annonce « Educational Community License v2.0 » alors que le fichier dit
+Apache-2.0 : les détecteurs automatiques confondent des textes voisins.
+
+### État des lieux par protocole
+
+Licences vérifiées dans les dépôts eux-mêmes.
+
+| Bibliothèque | Protocole | Langage | Licence | Décision |
+|---|---|---|---|---|
+| [open62541](https://github.com/open62541/open62541) | OPC UA | C99 | MPL-2.0 (quelques fichiers CC0) | **candidat retenu** |
+| [S2OPC](https://gitlab.com/systerel/S2OPC) | OPC UA | C | Apache-2.0 | acceptable — solution de repli, orientée sûreté |
+| [libiec61850](https://github.com/mz-automation/libiec61850) | IEC 61850 (MMS, GOOSE, SV) | C99 | GPLv3 **ou** licence commerciale payante | **écartée** |
+| [lib60870](https://github.com/mz-automation/lib60870) | IEC 60870-5-101/104 | C | GPLv3 **ou** licence commerciale payante | écartée, et sans objet |
+| IEC61850bean | IEC 61850 | Java | Apache-2.0 annoncée, non vérifiée | hors périmètre : demande une JVM |
+
+Trois conséquences, dont une désagréable.
+
+**OPC UA — la bibliothèque vaut le coup.** C'est le seul protocole du lot où
+l'écriture à la main est disproportionnée : il faut UA-TCP, SecureConversation
+avec renouvellement de jetons, l'encodage binaire de tous les types intégrés,
+puis les services de session, de lecture et d'abonnement. open62541 couvre
+l'ensemble sous MPL-2.0, qui autorise explicitement la combinaison avec du
+logiciel propriétaire — seules les modifications apportées à ses propres
+fichiers doivent être publiées, ce qui ne concerne pas le code de Diagweb.
+
+**IEC 61850 — la contrainte de licence ferme la porte.** Toutes les piles C
+matures sont en double licence GPLv3 / commerciale : gratuites tant que le
+produit est lui-même GPL, payantes sinon. Aucune pile permissive en C n'existe
+à ce jour. Il n'y a donc que trois issues, et ce n'est pas une décision
+technique : acheter une licence commerciale, écrire la pile ISO/MMS, ou
+laisser le pilote déclaré. En attendant, il reste déclaré.
+
+**Modbus, IEC 60870-5-104, CAN — on garde l'existant.** Ces pilotes
+fonctionnent, sont couverts de bout en bout par les tests et ne coûtent rien à
+la compilation. Remplacer du code testé par une dépendance serait une perte
+sèche : plus de compilation croisée à régler, plus de surface, et aucune
+fonction gagnée.
+
+### Avant d'introduire une dépendance
+
+1. Vérifier le fichier `LICENSE` et le consigner dans le tableau ci-dessus.
+2. S'assurer qu'elle se **compile en croisé** avec la chaîne d'outils du
+   contrôleur, et mesurer ce qu'elle ajoute en taille et en mémoire — la cible
+   est embarquée.
+3. Tenir les obligations d'attribution (fichier `NOTICE` pour Apache-2.0,
+   publication des fichiers modifiés pour MPL-2.0).
+4. Ajouter à la CI un contrôle de la liste blanche des licences, sur le modèle
+   de `tools/check-drivers.mjs` — une dépendance dont la licence change lors
+   d'une montée de version ne doit pas passer inaperçue.
+
 ## Ajouter un protocole
 
 1. Décrire le protocole dans `web/js/protocols.js` (`DW.PROTOCOLS`) : champs du

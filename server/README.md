@@ -120,6 +120,14 @@ abonnement avec période, lecture des échantillons — puis la passer à la pla
 de `SimSource` dans `main.cpp`. Le reste du serveur et la totalité du
 front-end restent inchangés.
 
+## Dépendances
+
+Le serveur n'en a aucune aujourd'hui : bibliothèque standard et POSIX
+uniquement. Une bibliothèque tierce reste possible pour un protocole, à
+condition que sa licence soit **gratuite en produit commercial fermé** — le
+détail, les licences vérifiées et les décisions par protocole sont dans
+`docs/PROTOCOLES.md` § « Bibliothèques externes et licences ».
+
 ## Organisation des pilotes
 
 Chaque protocole a son dossier ; rien ne traîne à la racine de `src/drivers/`.

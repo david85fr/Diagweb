@@ -19,10 +19,20 @@ fonctionnelles + état d'avancement) avant toute modification.
    messages de commit. Toujours dire « le contrôleur ». En cas de doute,
    rester générique. (Liste précise communiquée par le propriétaire en
    conversation ; elle ne doit pas être recopiée ici.)
-2. **Aucune dépendance externe** au runtime : pas de CDN, pas de webfont, pas
-   de framework téléchargé. Vanilla HTML/CSS/JS uniquement — la page publiée
-   (Artifact) est servie sous CSP stricte et le contrôleur embarqué doit
-   pouvoir servir les fichiers hors ligne.
+2. **Interface web : aucune dépendance externe.** Pas de CDN, pas de webfont,
+   pas de framework téléchargé. Vanilla HTML/CSS/JS uniquement — la page
+   publiée (Artifact) est servie sous CSP stricte et le contrôleur embarqué
+   doit pouvoir servir les fichiers hors ligne. Cette règle ne bouge pas.
+2 bis. **Serveur : bibliothèque autorisée si sa licence est gratuite en
+   produit commercial fermé.** Acceptées : MIT, BSD, Apache-2.0, MPL-2.0,
+   ISC, zlib. Refusées : GPL et AGPL, double licence dont l'arme gratuite est
+   GPL (le commercial se paie), et toute licence exigeant l'ouverture du
+   produit. LGPL : à éviter — l'édition de liens statique, usuelle en
+   embarqué, en fait une contrainte de relivraison. **Vérifier le fichier
+   `LICENSE` du dépôt**, jamais le badge : celui de S2OPC annonce
+   « Educational Community License » là où le fichier dit Apache-2.0. Toute
+   dépendance retenue est inscrite dans `docs/PROTOCOLES.md`
+   § « Bibliothèques externes et licences », avec sa licence vérifiée.
 3. **UI et documentation en français.**
 4. **Tout objet d'interface porte une infobulle** (`title`) expliquant ce
    qu'il fait — un test de couverture le vérifie. Le menu ☰ → Aide doit
