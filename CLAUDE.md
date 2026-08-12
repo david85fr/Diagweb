@@ -27,6 +27,30 @@ fonctionnelles + état d'avancement) avant toute modification.
 4. **Tout objet d'interface porte une infobulle** (`title`) expliquant ce
    qu'il fait — un test de couverture le vérifie. Le menu ☰ → Aide doit
    rester à jour, car les infobulles n'existent pas sur écran tactile.
+5. **Modèle et effort figés** : ne jamais changer de modèle ni de niveau
+   d'effort de sa propre initiative, et ne jamais lancer d'orchestration
+   multi-agents (workflows, sous-agents en éventail) sans demande explicite
+   du propriétaire. Les valeurs font foi dans `.claude/settings.json`
+   (ci-dessous) ; seul le propriétaire les modifie.
+
+## Réglages de session
+
+`.claude/settings.json` est **versionné** : il est donc rechargé à l'identique
+à chaque nouvelle session, y compris après un résumé de contexte (c'est là que
+le modèle repartait sinon sur celui par défaut de l'environnement).
+
+| Clé           | Valeur            | Effet |
+|---------------|-------------------|-------|
+| `model`       | `claude-opus-5`   | modèle épinglé, plus de retour au défaut de l'environnement |
+| `effortLevel` | `xhigh`           | effort de raisonnement constant (`low`/`medium`/`high`/`xhigh`) |
+| `ultracode`   | `false`           | désactive le mode qui force `xhigh` **et** impose l'orchestration multi-agents |
+
+Pour changer de modèle ou d'effort : éditer ce fichier (une ligne), c'est le
+seul endroit. Un `/model` en cours de session ne vaut que pour la session et
+sera perdu au prochain résumé de contexte.
+
+Reste hors de contrôle du dépôt : le repli automatique quand le modèle épinglé
+est indisponible (`fallbackModel`, non renseigné ici) et le mode rapide.
 
 ## Organisation du dépôt
 
