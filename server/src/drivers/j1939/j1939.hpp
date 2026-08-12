@@ -1,26 +1,29 @@
 // Diagweb — pilote J1939 (CAN 29 bits, lecture seule).
 //
-// L'identifiant étendu est découpé en priorité, page de données, PGN et
-// adresse source ; un point est un SPN extrait du PGN, décrit comme un champ
-// de bits (voir j1939_pgn() / j1939_sa() dans protocol.hpp).
+// Un point est un SPN : un champ de bits situé dans un PGN. L'identifiant
+// 29 bits est découpé en priorité, page de données, PGN et adresse source
+// (voir j1939_pgn() / j1939_sa() dans protocol.hpp).
 //
-// PROTOCOLE DE TRANSPORT (J1939-21) — les PGN de plus de 8 octets, comme DM1,
-// arrivent découpés. Le pilote les réassemble, et le mode se choisit dans la
-// configuration :
+// DEUX FAÇONS D'OBTENIR UN PGN, et c'est le PGN qui décide, pas le lien :
 //
-//   « off »     mono-trame seulement ;
-//   « bam »     écoute des diffusions BAM (défaut) — strictement passif : la
-//               source annonce son transfert (TP.CM_BAM) puis envoie ses
-//               paquets (TP.DT), sans que personne ait rien à demander ;
-//   « request » BAM + requêtes périodiques (PGN 59904). C'est le seul mode où
-//               le serveur émet sur le bus : il réclame le PGN, et complète le
-//               dialogue point à point (RTS reçu → CTS émis → paquets →
-//               accusé) quand la source répond en connexion plutôt qu'en
-//               diffusion. À n'activer qu'en connaissance de cause : une
-//               requête à un nœud absent fait réémettre le contrôleur CAN.
+//   diffusé périodiquement — le calculateur l'émet de lui-même (EEC1 toutes
+//     les 20 ms, par exemple). Rien à faire : on écoute.
+//   sur demande — le PGN n'est émis que si on le réclame. Le point porte
+//     alors l'option « demander ce PGN » et sa période de demande. C'est le
+//     seul cas où le serveur émet sur le bus.
 //
-// Le message réassemblé est décodé exactement comme une trame : un SPN placé
-// au-delà du 8ᵉ octet se déclare simplement avec un bit de départ plus grand.
+// TRANSPORT MULTI-TRAMES (BAM) — un PGN de plus de 8 octets est découpé par
+// le protocole de transport de J1939-21. La source annonce son transfert
+// (TP.CM_BAM), diffuse ses paquets (TP.DT), et le pilote les réassemble.
+// C'est purement passif, et toujours actif : le message réassemblé se décode
+// ensuite comme une trame ordinaire — un SPN au-delà du 8ᵉ octet se déclare
+// simplement avec un bit de départ plus grand.
+//
+// Le dialogue point à point (RTS/CTS) n'est traité que lorsqu'au moins un
+// point demande son PGN : une demande adressée à un calculateur précis peut
+// légitimement recevoir sa réponse en connexion plutôt qu'en diffusion, et
+// sans l'accusé attendu le transfert n'aboutirait jamais. Aucun CTS n'est
+// donc émis sur un lien qui se contente d'écouter.
 //
 // Transport et filtres : common/can_socket.hpp.
 #pragma once
@@ -39,35 +42,52 @@ class J1939Driver : public CanDriverBase {
  public:
   J1939Driver(const LinkConfig& link, IPointSink& sink) : CanDriverBase(link, sink) {
     link_sa_ = static_cast<int>(link_.num("sa", -1));
-    tp_ = link_.str("tp", "bam");
     own_sa_ = static_cast<int>(std::clamp<double>(link_.num("ownSa", 249), 0, 253));
-    request_period_ = std::max(0.5, link_.num("requestPeriodS", 5));
+
     for (const auto& p : link_.points) {
       Key k;
       k.pgn = static_cast<uint32_t>(p.num("pgn", 0));
       k.sa = static_cast<int>(p.num("sa", -1));
       keys_.push_back(k);
-      if (std::find(demandes_.begin(), demandes_.end(), k.pgn) == demandes_.end()) {
-        demandes_.push_back(k.pgn);
+      if (!p.flag("request", false)) continue;
+
+      // Plusieurs SPN vivent souvent dans le même PGN : une seule demande les
+      // sert tous, à la plus courte des périodes réclamées — même règle que
+      // pour les abonnements aux variables.
+      const int dest = k.sa >= 0 ? k.sa : (link_sa_ >= 0 ? link_sa_ : 255);
+      const double periode = std::clamp(p.num("requestPeriodS", 1), 0.1, 3600.0);
+      const auto it = std::find_if(demandes_.begin(), demandes_.end(), [&](const Demande& d) {
+        return d.pgn == k.pgn && d.dest == dest;
+      });
+      if (it == demandes_.end()) {
+        demandes_.push_back({k.pgn, dest, periode, 0});
+      } else {
+        it->period_s = std::min(it->period_s, periode);
       }
     }
   }
 
  protected:
-  // PGN du protocole de transport (tous deux en PDU1 : l'octet PS est une
-  // destination, il ne fait donc pas partie du PGN).
-  static constexpr uint32_t kTpCm  = 60416;   // 0xEC00 — annonces et contrôle
-  static constexpr uint32_t kTpDt  = 60160;   // 0xEB00 — paquets de données
-  static constexpr uint32_t kRequest = 59904; // 0xEA00 — demande d'un PGN
+  // PGN du protocole de transport et de la demande (tous en PDU1 : l'octet PS
+  // est une destination, il ne fait donc pas partie du PGN).
+  static constexpr uint32_t kTpCm    = 60416;   // 0xEC00 — annonces et contrôle
+  static constexpr uint32_t kTpDt    = 60160;   // 0xEB00 — paquets de données
+  static constexpr uint32_t kRequest = 59904;   // 0xEA00 — demande d'un PGN
+
+  /** Une demande planifiée : un PGN, un destinataire, une cadence. */
+  struct Demande {
+    uint32_t pgn = 0;
+    int dest = 255;        // 255 = diffusion à tout le réseau
+    double period_s = 1;
+    double due = 0;
+  };
 
   std::vector<CanFilter> filters() const override {
     std::vector<CanFilter> f;
     f.reserve(keys_.size() + 2);
     for (const Key& k : keys_) f.push_back(pgn_filter(k.pgn));
-    if (tp_ != "off") {
-      f.push_back(pgn_filter(kTpCm));
-      f.push_back(pgn_filter(kTpDt));
-    }
+    f.push_back(pgn_filter(kTpCm));               // BAM : toujours écouté
+    f.push_back(pgn_filter(kTpDt));
     return f;
   }
 
@@ -76,10 +96,8 @@ class J1939Driver : public CanDriverBase {
     const uint32_t pgn = j1939_pgn(id);
     const int sa = static_cast<int>(j1939_sa(id));
     if (link_sa_ >= 0 && sa != link_sa_) return;
-    if (tp_ != "off") {
-      if (pgn == kTpCm) { on_cm(sa, d, len); return; }
-      if (pgn == kTpDt) { on_dt(sa, d, len); return; }
-    }
+    if (pgn == kTpCm) { on_cm(sa, d, len); return; }
+    if (pgn == kTpDt) { on_dt(sa, d, len); return; }
     deliver(pgn, sa, d, len);
   }
 
@@ -100,13 +118,16 @@ class J1939Driver : public CanDriverBase {
       }
     }
 
-    if (tp_ == "request" && t >= next_request_) {
-      next_request_ = t + request_period_;
-      const int dest = link_sa_ >= 0 ? link_sa_ : 255;      // 255 = diffusion
-      for (uint32_t pgn : demandes_) send_request(pgn, dest);
+    for (Demande& d : demandes_) {
+      if (t < d.due) continue;
+      d.due = t + d.period_s;
+      send_request(d.pgn, d.dest);
     }
     return true;
   }
+
+  /** Demandes planifiées, telles que déduites des points (exposé aux tests). */
+  const std::vector<Demande>& requests() const { return demandes_; }
 
  private:
   struct Key {
@@ -172,8 +193,9 @@ class J1939Driver : public CanDriverBase {
         sessions_.erase(sa);
         return;
       }
-      // Répondre à un RTS impose d'émettre un CTS : réservé au mode requête.
-      if (ctrl == 0x10 && tp_ != "request") return;
+      // Répondre à un RTS impose d'émettre un CTS : réservé aux liens qui
+      // demandent déjà des PGN, donc qui parlent déjà sur le bus.
+      if (ctrl == 0x10 && demandes_.empty()) return;
 
       Session s;
       s.pgn = pgn;
@@ -241,13 +263,10 @@ class J1939Driver : public CanDriverBase {
   }
 
   std::vector<Key> keys_;
-  std::vector<uint32_t> demandes_;    // PGN distincts, pour les requêtes
+  std::vector<Demande> demandes_;     // PGN à réclamer, déduits des points
   std::map<int, Session> sessions_;   // un transfert en cours par adresse source
-  std::string tp_ = "bam";
   int link_sa_ = -1;                  // filtre d'adresse source valant pour tout le lien
   int own_sa_ = 249;                  // notre adresse quand nous émettons
-  double request_period_ = 5;
-  double next_request_ = 0;
 };
 
 }  // namespace diagweb

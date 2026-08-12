@@ -153,7 +153,7 @@ donc exactement les champs que le serveur sait lire.
 | Modbus RTU | liaison série | implémenté | `drivers/modbus/` |
 | IEC 60870-5-104 | TCP/IP | implémenté | `drivers/iec104/` |
 | CAN (trames brutes) | SocketCAN | implémenté | `drivers/can/` |
-| J1939 | SocketCAN | implémenté (mono-trame + transport BAM/RTS-CTS) | `drivers/j1939/` |
+| J1939 | SocketCAN | implémenté (SPN, demande de PGN, transport BAM) | `drivers/j1939/` |
 | CANopen | SocketCAN | implémenté (TPDO, SDO expédié) | `drivers/canopen/` |
 | SNMP v1 et v2c | UDP/161 | implémenté | `drivers/snmp/` |
 | SNMP v3 | UDP/161 | **déclaré** (USM à écrire) | `drivers/snmp/` |
@@ -287,30 +287,42 @@ en produit commercial sont autorisées : écrire USM — faisable, mais c'est du
 code cryptographique — ou s'appuyer sur une pile existante. À décider avant de
 commencer.
 
-### J1939 — messages multi-trames
+### J1939 — SPN, PGN, et comment les obtenir
 
-Un PGN de plus de 8 octets — DM1 en est l'exemple type — n'arrive pas dans une
-trame : il est découpé par le protocole de transport de J1939-21. Le pilote le
-réassemble, et **le mode se choisit dans la configuration du lien**, parce que
-les deux options n'ont pas du tout les mêmes conséquences sur le bus.
+Un point J1939 est un **SPN** : un champ de bits situé dans un **PGN**. Reste
+la question de savoir comment ce PGN arrive, et la réponse dépend du PGN, pas
+du lien — c'est pourquoi l'option est **sur le point**.
 
-| Mode | Ce qui se passe | Émission |
+| Le calculateur… | À configurer | Le serveur émet ? |
 |---|---|---|
-| Mono-trame seulement | les transferts sont ignorés | aucune |
-| **Écoute des BAM** (défaut) | la source annonce (`TP.CM_BAM`) puis diffuse ses paquets (`TP.DT`) ; on se contente de réassembler | **aucune** |
-| Requêtes périodiques | le serveur réclame les PGN (`PGN 59904`) et complète le dialogue point à point : `RTS` reçu → `CTS` émis → paquets → accusé de fin | **oui** |
+| **émet le PGN de lui-même** (EEC1 toutes les 20 ms…) | rien : on écoute | **non** |
+| **n'émet ce PGN que sur demande** | cocher « Demander ce PGN » + sa période | oui |
 
-Le mode par défaut est **strictement passif**, comme le reste des pilotes CAN.
-Le mode requête est le seul où le serveur parle sur le bus ; il demande deux
-réglages qui ne pardonnent pas l'à-peu-près :
+C'est le cas courant qui est gratuit : par défaut, un lien J1939 est
+**strictement en écoute** et ne pose rien sur le bus.
 
-- **Notre adresse source** (249 par défaut, réservée à un outil de diagnostic
-  externe) : elle ne doit surtout pas être déjà portée par un calculateur du
-  réseau, sous peine de conflit d'adresse.
-- **La période des requêtes** : trop courte, elle charge le bus et le
-  calculateur interrogé pour rien.
+Deux détails qui comptent quand on coche la demande :
 
-Le message réassemblé se décode exactement comme une trame : un SPN placé
+- **Plusieurs SPN du même PGN ne déclenchent qu'une seule demande**, à la plus
+  courte des périodes réclamées — même règle que pour les abonnements aux
+  variables. Déclarer dix SPN d'un même PGN ne décuple pas le trafic.
+- **La demande est adressée** au calculateur du point (son adresse source), ou
+  diffusée à tout le réseau si aucune adresse n'est précisée.
+
+Le lien porte alors **notre adresse source** (249 par défaut, réservée aux
+outils de diagnostic externes). Elle ne doit être portée par aucun calculateur
+du réseau, sous peine de conflit d'adresse. Sans point demandé, ce réglage ne
+sert pas.
+
+#### Messages multi-trames (BAM)
+
+Un PGN de plus de 8 octets — DM1 en est l'exemple type — est découpé par le
+protocole de transport de J1939-21. La source annonce son transfert
+(`TP.CM_BAM`), diffuse ses paquets (`TP.DT`), et le pilote les réassemble.
+C'est **purement passif et toujours actif** : rien à configurer, rien à
+émettre.
+
+Le message réassemblé se décode ensuite exactement comme une trame : un SPN
 au-delà du 8ᵉ octet se déclare simplement avec un bit de départ plus grand
 (l'octet 9 commence au bit 72).
 
@@ -323,6 +335,12 @@ Deux garde-fous, parce que ces annonces viennent du bus :
 - une session sans paquet depuis 750 ms (délai T1 de la norme) est abandonnée
   avec un motif visible. Sans cette purge, une source coupée en cours de
   transfert immobiliserait sa session et le message suivant serait perdu.
+
+Le dialogue **point à point** (`RTS`/`CTS`) n'est traité que sur un lien qui
+demande déjà des PGN : une demande adressée à un calculateur précis peut
+recevoir sa réponse en connexion plutôt qu'en diffusion, et sans l'accusé
+attendu le transfert n'aboutirait jamais. Un lien qui se contente d'écouter
+n'émet donc aucun `CTS`.
 
 ### IEC 61850 — pilote déclaré
 

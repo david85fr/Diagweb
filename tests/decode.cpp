@@ -128,6 +128,7 @@ int main() {
       using J1939Driver::J1939Driver;
       using J1939Driver::filters;
       using J1939Driver::on_frame;
+      using J1939Driver::requests;
     };
     struct Open : CanOpenDriver {
       using CanOpenDriver::CanOpenDriver;
@@ -191,7 +192,7 @@ int main() {
       // Protocole de transport J1939 : un PGN de 12 octets arrive en deux
       // paquets après une annonce BAM. Le SPN visé est au-delà du 8ᵉ octet —
       // c'est précisément ce que le mono-trame ne pouvait pas atteindre.
-      J1939 d(lien("j1939", {{"tp", JValue::string("bam")}},
+      J1939 d(lien("j1939", {},
                    {pt("long", {{"pgn", JValue::number(65226)},   // DM1
                                 {"startBit", JValue::number(72)}, // octet 9
                                 {"bitLen", JValue::number(16)}})}), sink);
@@ -239,30 +240,57 @@ int main() {
     }
 
     {
-      // Mode « mono-trame » : les transferts sont ignorés, et le filtre
-      // noyau ne réclame pas les PGN de transport.
-      J1939 d(lien("j1939", {{"tp", JValue::string("off")}},
-                   {pt("long", {{"pgn", JValue::number(65226)},
-                                {"startBit", JValue::number(72)},
-                                {"bitLen", JValue::number(16)}})}), sink);
-      check("J1939 : mode mono-trame, pas de filtre de transport",
-            d.filters().size() == 1, std::to_string(d.filters().size()) + " filtre(s)");
-      const uint8_t cm[8] = {0x20, 12, 0, 2, 0xFF, 0xCA, 0xFE, 0x00};
-      d.on_frame(0x1CECFF21u, true, cm, 8);
-      check("J1939 : mode mono-trame, annonce BAM ignorée", sink.vus.empty());
-      sink.vus.clear();
-    }
-
-    {
-      // En mode BAM, deux filtres s'ajoutent : TP.CM et TP.DT, tous deux en
-      // PDU1 (l'octet de destination ne doit pas entrer dans le masque).
-      J1939 d(lien("j1939", {{"tp", JValue::string("bam")}},
-                   {pt("long", {{"pgn", JValue::number(65226)}})}), sink);
+      // Les filtres de transport sont toujours posés : TP.CM et TP.DT, tous
+      // deux en PDU1 (l'octet de destination ne doit pas entrer dans le masque).
+      J1939 d(lien("j1939", {}, {pt("long", {{"pgn", JValue::number(65226)}})}), sink);
       const auto f = d.filters();
-      check("J1939 TP : filtres TP.CM et TP.DT ajoutés",
+      check("J1939 TP : filtres TP.CM et TP.DT toujours posés",
             f.size() == 3 && f[1].id == (60416u << 8) && f[2].id == (60160u << 8) &&
             f[1].mask == 0x03FF0000u && f[2].mask == 0x03FF0000u,
             std::to_string(f.size()) + " filtre(s)");
+    }
+
+    {
+      // Demandes : un PGN diffusé spontanément n'en déclenche aucune ; un PGN
+      // à réclamer en produit une seule, même partagée par plusieurs SPN, et
+      // à la plus courte des périodes demandées.
+      J1939 d(lien("j1939", {}, {
+        pt("spontane", {{"pgn", JValue::number(61444)}}),
+        pt("spn_a", {{"pgn", JValue::number(65262)}, {"request", JValue::boolean(true)},
+                     {"requestPeriodS", JValue::number(5)}}),
+        pt("spn_b", {{"pgn", JValue::number(65262)}, {"request", JValue::boolean(true)},
+                     {"requestPeriodS", JValue::number(2)}}),
+        pt("cible", {{"pgn", JValue::number(65226)}, {"request", JValue::boolean(true)},
+                     {"sa", JValue::number(0x0B)}, {"requestPeriodS", JValue::number(1)}}),
+      }), sink);
+      const auto& r = d.requests();
+      check("J1939 : un PGN spontané ne déclenche aucune demande",
+            r.size() == 2, std::to_string(r.size()) + " demande(s)");
+      check("J1939 : SPN du même PGN regroupés à la période la plus courte",
+            r.size() == 2 && r[0].pgn == 65262 && r[0].period_s == 2 && r[0].dest == 255,
+            r.empty() ? "?" : std::to_string(r[0].period_s) + " s vers " + std::to_string(r[0].dest));
+      check("J1939 : demande adressée au calculateur du point",
+            r.size() == 2 && r[1].pgn == 65226 && r[1].dest == 0x0B,
+            r.size() < 2 ? "?" : std::to_string(r[1].dest));
+    }
+
+    {
+      // Un lien qui ne demande rien reste muet : un RTS reçu n'ouvre aucune
+      // session, donc aucun CTS n'est émis.
+      J1939 d(lien("j1939", {}, {pt("long", {{"pgn", JValue::number(65226)},
+                                             {"startBit", JValue::number(0)},
+                                             {"bitLen", JValue::number(8)}})}), sink);
+      check("J1939 : lien en écoute seule, aucune demande planifiée",
+            d.requests().empty());
+      const uint8_t rts[8] = {0x10, 12, 0, 2, 2, 0xCA, 0xFE, 0x00};
+      d.on_frame(0x1CEC0B21u, true, rts, 8);
+      const uint8_t dt1[8] = {1, 1, 2, 3, 4, 5, 6, 7};
+      const uint8_t dt2[8] = {2, 8, 9, 10, 11, 12, 0xFF, 0xFF};
+      d.on_frame(0x1CEB0B21u, true, dt1, 8);
+      d.on_frame(0x1CEB0B21u, true, dt2, 8);
+      check("J1939 : RTS ignoré en écoute seule (aucun CTS à émettre)",
+            sink.vus.empty());
+      sink.vus.clear();
     }
 
     {

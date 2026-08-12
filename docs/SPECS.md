@@ -446,8 +446,9 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
   Diagweb (pas de commande Modbus ni de télécommande 104, pas d'émission
   CAN). Seule exception : la requête de lecture SDO CANopen, **désactivée par
   défaut** (« Écoute seule »), car interroger un nœud absent peut mener le
-  contrôleur CAN au bus-off — et, même logique, le mode « requêtes
-  périodiques » du transport J1939, l'écoute des BAM restant passive.
+  contrôleur CAN au bus-off — et, même logique, la **demande de PGN J1939**,
+  option portée par le point et décochée par défaut. Le réassemblage BAM des
+  PGN multi-trames reste, lui, entièrement passif.
 - **Saisie** : ☰ → « Liens réseau… » — liste des liens avec leur état
   (● connecté · ⚠ en défaut avec la cause · ○ désactivé · ⋯ non branché ·
   ~ simulé), édition, test de connexion, points, export/import JSON.
