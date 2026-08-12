@@ -879,7 +879,7 @@ body.cfg-hidden .tabActions { display: none; }
     </div>
 
     <div class="topIcons">
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">ab22548 · #60</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">aeb585e · #62</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
@@ -1366,28 +1366,19 @@ body.cfg-hidden .tabActions { display: none; }
       transport: 'SocketCAN (Linux)',
       state: 'live',
       help: 'Décodage J1939 au-dessus de CAN : l’identifiant 29 bits est découpé en ' +
-            'priorité, PGN et adresse source ; un point est un SPN extrait du PGN. ' +
+            'priorité, PGN et adresse source ; un point est un SPN extrait d’un PGN. ' +
             'Les PGN de plus de 8 octets (DM1, par exemple) sont réassemblés par le ' +
-            'protocole de transport — voir « Messages multi-trames ».',
+            'protocole de transport BAM, en écoute passive. Un PGN que le calculateur ' +
+            'n’émet pas de lui-même se réclame point par point, avec sa période.',
       linkFields: [
         F('iface', 'Interface', 'text', 'can0', true, 'Nom de l’interface CAN du système.'),
         F('sa', 'Adresse source filtrée', 'int', -1, false,
           'N’accepter que les trames émises par cette adresse source (0 à 253) ; −1 pour toutes.'),
-        F('tp', 'Messages multi-trames', 'enum', 'bam', false,
-          'Comment obtenir les PGN de plus de 8 octets. Écoute des BAM : strictement ' +
-          'passif — la source annonce puis diffuse son transfert, on se contente de le ' +
-          'réassembler. Requêtes périodiques : le serveur RÉCLAME les PGN sur le bus et ' +
-          'complète le dialogue point à point ; c’est le seul mode où il émet, à ' +
-          'n’activer qu’en connaissance de cause. Mono-trame : ignorer les transferts.',
-          { choices: [['off', 'Mono-trame seulement'], ['bam', 'Écoute des BAM (passif)'],
-                      ['request', 'Requêtes périodiques (émet sur le bus)']] }),
-        F('requestPeriodS', 'Période des requêtes (s)', 'int', 5, false,
-          'Intervalle entre deux salves de demandes. Trop court, on charge le bus et le ' +
-          'calculateur interrogé pour rien.', { when: { tp: ['request'] } }),
         F('ownSa', 'Notre adresse source', 'int', 249, false,
-          'Adresse J1939 sous laquelle le serveur émet ses requêtes. 249 est réservée à ' +
-          'un outil de diagnostic externe ; elle ne doit surtout pas être déjà portée par ' +
-          'un calculateur du réseau.', { when: { tp: ['request'] } }),
+          'Adresse J1939 sous laquelle le serveur émet, lorsqu’au moins un point demande ' +
+          'son PGN. 249 est réservée à un outil de diagnostic externe ; elle ne doit ' +
+          'surtout pas être déjà portée par un calculateur du réseau. Sans point demandé, ' +
+          'le lien reste strictement en écoute et ce réglage ne sert pas.'),
       ],
       pointFields: [
         F('pgn', 'PGN', 'int', 61444, true,
@@ -1395,7 +1386,18 @@ body.cfg-hidden .tabActions { display: none; }
           '65226 = DM1, multi-trames). Les PGN de plus de 8 octets sont réassemblés si le ' +
           'lien l’autorise ; le bit de départ se compte alors sur le message entier.'),
         F('sa', 'Adresse source', 'int', -1, false,
-          'Adresse source attendue pour ce point ; −1 pour accepter n’importe laquelle.'),
+          'Adresse source attendue pour ce point ; −1 pour accepter n’importe laquelle. ' +
+          'Elle désigne aussi le destinataire de la demande, le cas échéant.'),
+        F('request', 'Demander ce PGN', 'bool', false, false,
+          'À cocher si le calculateur n’émet PAS ce PGN de lui-même : le serveur le ' +
+          'réclame alors périodiquement (PGN 59904). Laisser décoché pour un PGN diffusé ' +
+          'spontanément, comme EEC1 — c’est le cas courant, et le lien reste alors ' +
+          'strictement en écoute, sans rien émettre sur le bus.'),
+        F('requestPeriodS', 'Période de demande (s)', 'float', 1, false,
+          'Intervalle entre deux demandes de ce PGN (0,1 s à 1 h). Plusieurs SPN du même ' +
+          'PGN ne déclenchent qu’une seule demande, à la plus courte des périodes ' +
+          'réclamées. Trop court, on charge le bus et le calculateur pour rien.',
+          { when: { request: ['true'] } }),
       ].concat(BITFIELD).concat(SCALE),
     },
     {
