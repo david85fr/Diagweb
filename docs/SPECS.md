@@ -466,6 +466,10 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
 - [x] Infobulles sur tous les objets + fenêtre d'aide (gestes et commandes)
 - [x] Liens réseau : Modbus TCP/RTU, IEC 60870-5-104, CAN, J1939, CANopen
       (pilotes implémentés et testés) ; IEC 61850 déclaré, pile ISO/MMS à venir
+- [x] Intégration continue sur `main` : compilation `-Werror`, tests de
+      décodage, liens réseau de bout en bout, interface, déplacement de
+      widgets, en-têtes générés et livrables à jour (`.github/workflows/ci.yml`,
+      rejouables en local par `bash tools/check.sh`)
 - [x] Configurations : session, navigateur, export JSON + CSV, import JSON,
       ★ auto, stub contrôleur
 - [x] Journalisation par onglet (navigateur ; contrôleur en stub)

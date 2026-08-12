@@ -53,6 +53,8 @@ server/         serveur de diagnostic C++20 (HTTP + WebSocket, sans dépendance)
   src/jvalue.hpp     analyseur JSON complet (configuration imbriquée)
   src/main.cpp       HTTP/WS, REST, boucle d'émission
 tools/build.py  assemble dist/ à partir de web/
+tools/check.sh  toutes les vérifications de la CI, en local (serveur|interface)
+tools/check-dist.py  dist/ à jour + page autonome (aucune ressource externe)
 tools/gen-catalog.mjs  régénère server/src/catalog.generated.hpp depuis config.js
 tools/gen-protocols.mjs régénère server/src/protocols.generated.hpp depuis protocols.js
 tools/serve.py  serveur d'aperçu (port 8080, en-têtes anti-cache)
@@ -63,6 +65,7 @@ tests/decode.cpp     décodage des protocoles (cible CMake diagweb-decode-test)
 dist/           livrables générés (commités) : index.html autonome + artifact.html
 docs/           PROJET.md, SPECS.md, PROTOCOLES.md
 .devcontainer/  configuration GitHub Codespaces (Python + Node + aperçu 8080)
+.github/workflows/ci.yml  intégration continue (push sur main, PR, claude/**)
 ```
 
 Espace de noms JS global : `window.DW`. Scripts en IIFE, pas de modules ES
@@ -89,6 +92,14 @@ Espace de noms JS global : `window.DW`. Scripts en IIFE, pas de modules ES
    branche `gh-pages` (avec `.nojekyll`) et pousser — la page publique est
    https://david85fr.github.io/Diagweb/.
 7. Push sur la branche de travail indiquée par la session.
+
+**Avant de pousser** : `bash tools/check.sh` rejoue exactement les
+vérifications de l'intégration continue (`.github/workflows/ci.yml`), qui
+s'exécute sur `main`, sur les pull requests et sur les branches `claude/**` :
+compilation C++ avec `-Werror`, tests de décodage, liens réseau de bout en
+bout, syntaxe JS, en-têtes générés à jour, `dist/` à jour et sans ressource
+externe, tests d'interface et de déplacement de widgets. Toute vérification
+ajoutée ici doit l'être aux deux endroits.
 
 ## Points d'architecture à respecter
 

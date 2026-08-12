@@ -1,5 +1,7 @@
 # Diagweb
 
+[![Intégration continue](https://github.com/david85fr/Diagweb/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/david85fr/Diagweb/actions/workflows/ci.yml)
+
 Diagnostic web des variables et signaux internes d'un contrôleur industriel
 embarqué (Linux embarqué) : valeurs numériques en direct et courbes
 multi-échelles, depuis un smartphone comme sur un écran 24–32″.
@@ -77,6 +79,12 @@ sources et démarre l'aperçu sur le **port 8080**.
   `gh codespace ports visibility 8080:public -c $CODESPACE_NAME`.
   Le serveur envoie des en-têtes anti-cache : chaque rechargement affiche
   la dernière version.
+- **Tout vérifier d'un coup** : `bash tools/check.sh` — les mêmes contrôles
+  que l'intégration continue (compilation du serveur avec les avertissements
+  en erreurs, tests de décodage, liens réseau de bout en bout, syntaxe JS,
+  en-têtes générés, livrables à jour et autonomes, interface, déplacement de
+  widgets). `bash tools/check.sh serveur` ou `interface` pour n'en faire
+  qu'une partie.
 - Tests : `bash tools/setup-tests.sh` (une fois) puis `node tests/ui.mjs`,
   ou `node tests/ui.mjs http://localhost:8080/web/index.html` pour tester
   les sources sans build.

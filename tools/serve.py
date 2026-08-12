@@ -47,7 +47,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_response(204)
             self.end_headers()
             return
+        # Sondes de l'application (/api/health, /api/protocols…) : cet aperçu
+        # n'est pas le serveur de diagnostic. Un 204 les fait retomber
+        # proprement sur la simulation locale, alors qu'un 404 serait
+        # journalisé comme une erreur par le navigateur.
+        if self.path.startswith("/api/"):
+            self.send_response(204)
+            self.end_headers()
+            return
         super().do_GET()
+
+    def do_POST(self):
+        self.do_GET()
+
+    def do_PUT(self):
+        self.do_GET()
 
     def log_message(self, fmt, *args):
         # Journal compact : méthode + chemin + code
