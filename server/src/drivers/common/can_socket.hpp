@@ -154,17 +154,21 @@ class CanDriverBase : public IProtocolDriver {
   /** Travail périodique du protocole (seul CANopen en a : la requête SDO). */
   virtual bool tick(std::string& err) { (void)err; return true; }
 
-  /** Émission d'une trame de 8 octets — le seul cas est la requête SDO. */
-  bool send_frame(uint32_t id, const uint8_t* data, size_t len) {
+  /**
+   * Émission d'une trame (au plus 8 octets). Les seuls émetteurs sont la
+   * requête SDO CANopen et le protocole de transport J1939, tous deux
+   * désactivés par défaut. `ext` pose l'indicateur d'identifiant 29 bits.
+   */
+  bool send_frame(uint32_t id, const uint8_t* data, size_t len, bool ext = false) {
 #if DIAGWEB_HAS_SOCKETCAN
     if (fd_ < 0 || len > 8) return false;
     can_frame f{};
-    f.can_id = static_cast<canid_t>(id);
+    f.can_id = static_cast<canid_t>(id) | (ext ? CAN_EFF_FLAG : 0u);
     f.can_dlc = static_cast<uint8_t>(len);
     std::memcpy(f.data, data, len);
     return ::write(fd_, &f, sizeof f) == static_cast<ssize_t>(sizeof f);
 #else
-    (void)id; (void)data; (void)len;
+    (void)id; (void)data; (void)len; (void)ext;
     return false;
 #endif
   }

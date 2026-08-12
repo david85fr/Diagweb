@@ -137,7 +137,7 @@ Chaque protocole a son dossier ; rien ne traîne à la racine de `src/drivers/`.
 | `modbus/` | Modbus TCP et RTU | implémenté |
 | `iec104/` | IEC 60870-5-104 (client) | implémenté |
 | `can/` | CAN, trames brutes | implémenté |
-| `j1939/` | J1939 (PGN mono-trame) | implémenté |
+| `j1939/` | J1939 + transport multi-trames (BAM, RTS/CTS) | implémenté |
 | `canopen/` | CANopen (TPDO, SDO expédié) | implémenté |
 | `snmp/` | SNMP v1 et v2c (`ber.hpp` + pilote) | implémenté ; v3 déclaré |
 | `iec61850/` | IEC 61850 (MMS) | déclaré |

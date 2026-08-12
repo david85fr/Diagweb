@@ -153,7 +153,7 @@ donc exactement les champs que le serveur sait lire.
 | Modbus RTU | liaison série | implémenté | `drivers/modbus/` |
 | IEC 60870-5-104 | TCP/IP | implémenté | `drivers/iec104/` |
 | CAN (trames brutes) | SocketCAN | implémenté | `drivers/can/` |
-| J1939 | SocketCAN | implémenté (PGN mono-trame) | `drivers/j1939/` |
+| J1939 | SocketCAN | implémenté (mono-trame + transport BAM/RTS-CTS) | `drivers/j1939/` |
 | CANopen | SocketCAN | implémenté (TPDO, SDO expédié) | `drivers/canopen/` |
 | SNMP v1 et v2c | UDP/161 | implémenté | `drivers/snmp/` |
 | SNMP v3 | UDP/161 | **déclaré** (USM à écrire) | `drivers/snmp/` |
@@ -287,6 +287,43 @@ en produit commercial sont autorisées : écrire USM — faisable, mais c'est du
 code cryptographique — ou s'appuyer sur une pile existante. À décider avant de
 commencer.
 
+### J1939 — messages multi-trames
+
+Un PGN de plus de 8 octets — DM1 en est l'exemple type — n'arrive pas dans une
+trame : il est découpé par le protocole de transport de J1939-21. Le pilote le
+réassemble, et **le mode se choisit dans la configuration du lien**, parce que
+les deux options n'ont pas du tout les mêmes conséquences sur le bus.
+
+| Mode | Ce qui se passe | Émission |
+|---|---|---|
+| Mono-trame seulement | les transferts sont ignorés | aucune |
+| **Écoute des BAM** (défaut) | la source annonce (`TP.CM_BAM`) puis diffuse ses paquets (`TP.DT`) ; on se contente de réassembler | **aucune** |
+| Requêtes périodiques | le serveur réclame les PGN (`PGN 59904`) et complète le dialogue point à point : `RTS` reçu → `CTS` émis → paquets → accusé de fin | **oui** |
+
+Le mode par défaut est **strictement passif**, comme le reste des pilotes CAN.
+Le mode requête est le seul où le serveur parle sur le bus ; il demande deux
+réglages qui ne pardonnent pas l'à-peu-près :
+
+- **Notre adresse source** (249 par défaut, réservée à un outil de diagnostic
+  externe) : elle ne doit surtout pas être déjà portée par un calculateur du
+  réseau, sous peine de conflit d'adresse.
+- **La période des requêtes** : trop courte, elle charge le bus et le
+  calculateur interrogé pour rien.
+
+Le message réassemblé se décode exactement comme une trame : un SPN placé
+au-delà du 8ᵉ octet se déclare simplement avec un bit de départ plus grand
+(l'octet 9 commence au bit 72).
+
+Deux garde-fous, parce que ces annonces viennent du bus :
+
+- une annonce dont la taille sort des bornes de la norme (9 à 1785 octets) ou
+  dont le compte de paquets ne correspond pas à la taille est **rejetée avant
+  toute allocation** — un compte de paquets fantaisiste ne dicte pas la taille
+  d'un tampon ;
+- une session sans paquet depuis 750 ms (délai T1 de la norme) est abandonnée
+  avec un motif visible. Sans cette purge, une source coupée en cours de
+  transfert immobiliserait sa session et le message suivant serait perdu.
+
 ### IEC 61850 — pilote déclaré
 
 La configuration (hôte, port 102, nom d'IED, mode, références d'objet et
@@ -336,9 +373,9 @@ cyclique** (service Read), pour les serveurs qui refusent les abonnements.
   sur une installation en service ne doit pas pouvoir agir sur un organe réel.
   La seule émission existante est la requête de lecture SDO, désactivée par
   défaut.
-- **Transports multi-trames** : ISO-TP, transport J1939 (BAM et RTS/CTS), SDO
-  segmenté et par blocs. Un signal ne peut donc pas dépasser la charge utile
-  d'une trame.
+- **Transports multi-trames restants** : ISO-TP, et le SDO CANopen segmenté ou
+  par blocs. Le transport J1939 (BAM, et RTS/CTS en mode requête) est en
+  revanche implémenté.
 - **Configuration des interfaces** (débit CAN, mise en service) : cela relève
   de l'administration du contrôleur. Diagweb constate et signale.
 - **Revendication d'adresse J1939** (PGN 60928) et **état NMT CANopen** : non

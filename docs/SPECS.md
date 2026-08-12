@@ -419,7 +419,8 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
 - **Modèle** : un *lien* (protocole + paramètres de connexion) porte des
   *points* (variables lues). Adresse Diagweb : **`@lien.point`** (famille NET).
 - **Protocoles** : Modbus TCP, Modbus RTU (série), IEC 60870-5-104, CAN brut,
-  J1939, CANopen, **SNMP v1 et v2c** — pilotes implémentés ; **SNMP v3 (USM)**,
+  J1939 (transport multi-trames compris), CANopen, **SNMP v1 et v2c** —
+  pilotes implémentés ; **SNMP v3 (USM)**,
   **IEC 61850 (MMS)** et **OPC UA (IEC 62541)** sont *déclarés* : la configuration est acceptée et
   conservée, la lecture viendra avec leur pile respective (ISO/MMS d'un côté,
   UA-TCP + SecureConversation de l'autre ; USM pour SNMPv3). Un pilote déclaré
@@ -445,7 +446,8 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
   Diagweb (pas de commande Modbus ni de télécommande 104, pas d'émission
   CAN). Seule exception : la requête de lecture SDO CANopen, **désactivée par
   défaut** (« Écoute seule »), car interroger un nœud absent peut mener le
-  contrôleur CAN au bus-off.
+  contrôleur CAN au bus-off — et, même logique, le mode « requêtes
+  périodiques » du transport J1939, l'écoute des BAM restant passive.
 - **Saisie** : ☰ → « Liens réseau… » — liste des liens avec leur état
   (● connecté · ⚠ en défaut avec la cause · ○ désactivé · ⋯ non branché ·
   ~ simulé), édition, test de connexion, points, export/import JSON.

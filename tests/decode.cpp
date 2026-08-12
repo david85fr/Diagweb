@@ -150,11 +150,14 @@ int main() {
       // masque. PDU1 (PGN 61184) : c'est une destination, il en sort.
       J1939 d(lien("j1939", {}, {pt("pdu2", {{"pgn", JValue::number(61444)}}),
                                  pt("pdu1", {{"pgn", JValue::number(61184)}})}), sink);
+      // Deux filtres de points, suivis des deux filtres de transport (le mode
+      // « écoute des BAM » étant celui par défaut).
       const auto f = d.filters();
       check("J1939 : masque PDU2 inclut l'octet PS",
-            f.size() == 2 && f[0].id == (61444u << 8) && f[0].mask == 0x03FFFF00u && f[0].ext);
+            f.size() == 4 && f[0].id == (61444u << 8) && f[0].mask == 0x03FFFF00u && f[0].ext,
+            std::to_string(f.size()) + " filtre(s)");
       check("J1939 : masque PDU1 exclut l'octet PS",
-            f.size() == 2 && f[1].mask == 0x03FF0000u && f[1].ext);
+            f.size() == 4 && f[1].mask == 0x03FF0000u && f[1].ext);
     }
 
     {
@@ -182,6 +185,84 @@ int main() {
       sink.vus.clear();
       d.on_frame(0x181u, false, eec1, 8);
       check("J1939 : trame 11 bits ignorée", sink.vus.empty());
+    }
+
+    {
+      // Protocole de transport J1939 : un PGN de 12 octets arrive en deux
+      // paquets après une annonce BAM. Le SPN visé est au-delà du 8ᵉ octet —
+      // c'est précisément ce que le mono-trame ne pouvait pas atteindre.
+      J1939 d(lien("j1939", {{"tp", JValue::string("bam")}},
+                   {pt("long", {{"pgn", JValue::number(65226)},   // DM1
+                                {"startBit", JValue::number(72)}, // octet 9
+                                {"bitLen", JValue::number(16)}})}), sink);
+      // TP.CM_BAM : 12 octets en 2 paquets, PGN 65226 (0x00FECA).
+      const uint8_t cm[8] = {0x20, 12, 0, 2, 0xFF, 0xCA, 0xFE, 0x00};
+      d.on_frame(0x1CECFF21u, true, cm, 8);
+      check("J1939 TP : aucun point publié avant réassemblage complet", sink.vus.empty());
+
+      const uint8_t dt1[8] = {1, 0, 1, 2, 3, 4, 5, 6};
+      const uint8_t dt2[8] = {2, 7, 8, 0x34, 0x12, 0xFF, 0xFF, 0xFF};
+      d.on_frame(0x1CEBFF21u, true, dt1, 8);
+      check("J1939 TP : toujours rien après le premier paquet", sink.vus.empty());
+      d.on_frame(0x1CEBFF21u, true, dt2, 8);
+      check("J1939 TP : message multi-trames réassemblé et publié",
+            sink.vus.size() == 1, std::to_string(sink.vus.size()) + " publication(s)");
+      // Octets 9 et 10 du message = 0x34 0x12, en Intel → 0x1234.
+      near("J1939 TP : champ au-delà du 8ᵉ octet",
+           sink.vus.empty() ? 0 : sink.vus[0].second, 0x1234);
+      sink.vus.clear();
+    }
+
+    {
+      // Une annonce dont le compte de paquets ne correspond pas à la taille
+      // est rejetée avant toute allocation : le contenu vient du bus.
+      J1939 d(lien("j1939", {}, {pt("long", {{"pgn", JValue::number(65226)},
+                                             {"startBit", JValue::number(0)},
+                                             {"bitLen", JValue::number(8)}})}), sink);
+      const uint8_t faux[8] = {0x20, 12, 0, 9, 0xFF, 0xCA, 0xFE, 0x00};   // 12 o ≠ 9 paquets
+      d.on_frame(0x1CECFF21u, true, faux, 8);
+      const uint8_t dt[8] = {1, 1, 2, 3, 4, 5, 6, 7};
+      d.on_frame(0x1CEBFF21u, true, dt, 8);
+      check("J1939 TP : annonce incohérente rejetée", sink.vus.empty());
+
+      // Taille hors bornes de la norme (9 à 1785 octets).
+      const uint8_t trop[8] = {0x20, 0xFF, 0xFF, 0xFF, 0xFF, 0xCA, 0xFE, 0x00};
+      d.on_frame(0x1CECFF21u, true, trop, 8);
+      d.on_frame(0x1CEBFF21u, true, dt, 8);
+      check("J1939 TP : taille hors bornes rejetée", sink.vus.empty());
+
+      // Un paquet sans annonce préalable ne doit rien produire.
+      const uint8_t orphelin[8] = {3, 1, 2, 3, 4, 5, 6, 7};
+      d.on_frame(0x1CEBFF21u, true, orphelin, 8);
+      check("J1939 TP : paquet orphelin ignoré", sink.vus.empty());
+      sink.vus.clear();
+    }
+
+    {
+      // Mode « mono-trame » : les transferts sont ignorés, et le filtre
+      // noyau ne réclame pas les PGN de transport.
+      J1939 d(lien("j1939", {{"tp", JValue::string("off")}},
+                   {pt("long", {{"pgn", JValue::number(65226)},
+                                {"startBit", JValue::number(72)},
+                                {"bitLen", JValue::number(16)}})}), sink);
+      check("J1939 : mode mono-trame, pas de filtre de transport",
+            d.filters().size() == 1, std::to_string(d.filters().size()) + " filtre(s)");
+      const uint8_t cm[8] = {0x20, 12, 0, 2, 0xFF, 0xCA, 0xFE, 0x00};
+      d.on_frame(0x1CECFF21u, true, cm, 8);
+      check("J1939 : mode mono-trame, annonce BAM ignorée", sink.vus.empty());
+      sink.vus.clear();
+    }
+
+    {
+      // En mode BAM, deux filtres s'ajoutent : TP.CM et TP.DT, tous deux en
+      // PDU1 (l'octet de destination ne doit pas entrer dans le masque).
+      J1939 d(lien("j1939", {{"tp", JValue::string("bam")}},
+                   {pt("long", {{"pgn", JValue::number(65226)}})}), sink);
+      const auto f = d.filters();
+      check("J1939 TP : filtres TP.CM et TP.DT ajoutés",
+            f.size() == 3 && f[1].id == (60416u << 8) && f[2].id == (60160u << 8) &&
+            f[1].mask == 0x03FF0000u && f[2].mask == 0x03FF0000u,
+            std::to_string(f.size()) + " filtre(s)");
     }
 
     {

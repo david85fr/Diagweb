@@ -122,13 +122,16 @@ inline const std::vector<ProtocolDesc>& protocols_desc() {
     { "offset", "Décalage", "float", "0", false, "Constante ajoutée après le gain (unité physique).", "" },
     } },
   { "j1939", "J1939 (CAN, PGN mono-trame)", "SocketCAN (Linux)",
-    "live", "Décodage J1939 au-dessus de CAN : l’identifiant 29 bits est découpé en priorité, PGN et adresse source ; un point est un SPN extrait du PGN. Limite importante : seuls les PGN tenant dans une trame (8 octets) sont lus — le transport multi-trames (BAM, RTS/CTS) n’est pas implémenté, donc un PGN long comme DM1 ne remontera jamais de valeur.",
+    "live", "Décodage J1939 au-dessus de CAN : l’identifiant 29 bits est découpé en priorité, PGN et adresse source ; un point est un SPN extrait du PGN. Les PGN de plus de 8 octets (DM1, par exemple) sont réassemblés par le protocole de transport — voir « Messages multi-trames ».",
     {
     { "iface", "Interface", "text", "can0", true, "Nom de l’interface CAN du système.", "" },
     { "sa", "Adresse source filtrée", "int", "-1", false, "N’accepter que les trames émises par cette adresse source (0 à 253) ; −1 pour toutes.", "" },
+    { "tp", "Messages multi-trames", "enum", "bam", false, "Comment obtenir les PGN de plus de 8 octets. Écoute des BAM : strictement passif — la source annonce puis diffuse son transfert, on se contente de le réassembler. Requêtes périodiques : le serveur RÉCLAME les PGN sur le bus et complète le dialogue point à point ; c’est le seul mode où il émet, à n’activer qu’en connaissance de cause. Mono-trame : ignorer les transferts.", "off|bam|request" },
+    { "requestPeriodS", "Période des requêtes (s)", "int", "5", false, "Intervalle entre deux salves de demandes. Trop court, on charge le bus et le calculateur interrogé pour rien.", "" },
+    { "ownSa", "Notre adresse source", "int", "249", false, "Adresse J1939 sous laquelle le serveur émet ses requêtes. 249 est réservée à un outil de diagnostic externe ; elle ne doit surtout pas être déjà portée par un calculateur du réseau.", "" },
     },
     {
-    { "pgn", "PGN", "int", "61444", true, "Numéro de groupe de paramètres, en décimal (ex. 61444 = régime moteur, EEC1). Doit tenir dans une seule trame : les PGN multi-trames ne sont pas décodés.", "" },
+    { "pgn", "PGN", "int", "61444", true, "Numéro de groupe de paramètres, en décimal (ex. 61444 = régime moteur, EEC1 ; 65226 = DM1, multi-trames). Les PGN de plus de 8 octets sont réassemblés si le lien l’autorise ; le bit de départ se compte alors sur le message entier.", "" },
     { "sa", "Adresse source", "int", "-1", false, "Adresse source attendue pour ce point ; −1 pour accepter n’importe laquelle.", "" },
     { "startBit", "Bit de départ", "int", "0", true, "Position du premier bit du signal dans la trame (0 = bit de poids faible du premier octet).", "" },
     { "bitLen", "Longueur (bits)", "int", "16", true, "Nombre de bits occupés par le signal (1 à 64).", "" },
