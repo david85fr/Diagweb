@@ -45,6 +45,12 @@ syntaxe_js() {
   for f in web/js/*.js; do node --check "$f" || return 1; done
 }
 
+syntaxe_outillage() {
+  local f
+  python3 -m py_compile tools/*.py || return 1
+  for f in tools/*.sh; do bash -n "$f" || return 1; done
+}
+
 entetes_generes() {
   node tools/gen-catalog.mjs > /dev/null &&
   node tools/gen-protocols.mjs > /dev/null &&
@@ -80,6 +86,7 @@ fi
 if [ "$CIBLE" = tout ] || [ "$CIBLE" = interface ]; then
   titre "Interface web"
   etape "syntaxe des sources JavaScript" syntaxe_js
+  etape "syntaxe de l'outillage (Python et shell)" syntaxe_outillage
   etape "en-têtes générés à jour" entetes_generes
   etape "livrables à jour et page autonome" python3 tools/check-dist.py
   etape "tests d'interface" node tests/ui.mjs

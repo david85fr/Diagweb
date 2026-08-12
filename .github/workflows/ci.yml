@@ -75,6 +75,11 @@ jobs:
         run: |
           for f in web/js/*.js; do node --check "$f" || exit 1; done
 
+      - name: Syntaxe de l'outillage (Python et shell)
+        run: |
+          python3 -m py_compile tools/*.py
+          for f in tools/*.sh; do bash -n "$f" || exit 1; done
+
       - name: En-têtes générés à jour (catalogue et protocoles)
         run: |
           node tools/gen-catalog.mjs
