@@ -10,12 +10,17 @@
     S:    { label: 'Variable système',      kind: 'bit' },
     MB:   { label: 'Mot de bus (registre)', kind: 'word' },
     CAPI: { label: 'Signal modèle (C API)', kind: 'float' },
+    NET:  { label: 'Point réseau (lien)',   kind: 'float' },
   };
   DW.FAMILIES = FAMILIES;
 
+  // Identifiant d'un lien ou d'un point réseau (voir web/js/protocols.js)
+  const NET_ID = '[A-Za-z][A-Za-z0-9_-]{0,23}';
+
   const HELP = "Formats acceptés : I1.2.3.4, Q14.15, M1.14, S0.4 (bits), " +
                "MB414 (mot de bus), Modele.sous_systeme.signal (C API Simulink, " +
-               "premier champ = nom du modèle).";
+               "premier champ = nom du modèle), @lien.point (point lu sur un " +
+               "lien réseau).";
 
   /**
    * Analyse une saisie utilisateur.
@@ -26,6 +31,20 @@
   DW.parseAddr = function (raw) {
     const input = String(raw == null ? '' : raw).trim().replace(/\//g, '.');
     if (!input) return { ok: false, error: 'Saisissez une adresse de variable. ' + HELP };
+
+    // Point réseau : @lien.point — le « @ » lève toute ambiguïté avec les
+    // autres familles, dont les chemins C API séparés par des points.
+    if (input[0] === '@') {
+      const m = new RegExp('^@(' + NET_ID + ')\\.(' + NET_ID + ')$').exec(input);
+      if (m) {
+        const addr = '@' + m[1] + '.' + m[2];
+        const meta = DW.protocols ? DW.protocols.meta(addr) : null;
+        return { ok: true, addr, family: 'NET', kind: meta ? meta.kind : 'float' };
+      }
+      return { ok: false, error: 'Point réseau attendu sous la forme @lien.point ' +
+        '(identifiants : une lettre puis lettres, chiffres, « - » ou « _ »). ' +
+        'Les liens se déclarent dans ☰ → Liens réseau.' };
+    }
 
     // Mot de bus : MB<registre>
     let m = /^mb\s*(\d{1,5})$/i.exec(input);
@@ -59,6 +78,15 @@
   DW.resolveMeta = function (addr, parsed) {
     const p = parsed || DW.parseAddr(addr);
     if (!p.ok) return null;
+    // Points réseau : le catalogue est la configuration des liens.
+    if (p.family === 'NET') {
+      const meta = DW.protocols ? DW.protocols.meta(p.addr) : null;
+      if (meta) return meta;
+      return {
+        addr: p.addr, family: 'NET', kind: 'float', unit: '',
+        label: 'Point réseau non configuré', known: false, sim: null,
+      };
+    }
     const known = DW.CATALOG_INDEX.get(p.addr.toUpperCase());
     if (known) return Object.assign({ family: p.family, known: true }, known);
     return {

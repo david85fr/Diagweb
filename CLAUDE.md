@@ -9,6 +9,10 @@ fonctionnelles + état d'avancement) avant toute modification.
 
 ## Contraintes absolues
 
+0. **Terminologie** : « le contrôleur » = l'équipement embarqué ; « le
+   `controller` » = son processus cœur (temps réel, modèles, bus) ; « le
+   serveur de diagnostic » = le processus qui sert les pages et relaie les
+   variables.
 1. **Confidentialité des noms** : ne jamais écrire de marque, nom commercial,
    nom de produit ou référence interne du fabricant du contrôleur ou de son
    groupe — ni dans le code, ni dans l'UI, ni dans les docs, ni dans les
@@ -30,7 +34,9 @@ fonctionnelles + état d'avancement) avant toute modification.
 web/            sources de l'application (page de dev : web/index.html)
   css/app.css   styles (tokens de thème clair/sombre en tête de fichier)
   js/config.js  constantes + catalogue des variables simulées + palette courbes
-  js/parser.js  grammaire des adresses (I/Q/M/S, MB, chemins C API)
+  js/parser.js  grammaire des adresses (I/Q/M/S, MB, chemins C API, @lien.point)
+  js/protocols.js  **source de vérité** des protocoles réseau (champs, aides)
+  js/protocols-ui.js fenêtre « Liens réseau » (☰) : liens, points, test
   js/sim.js     source de données simulée — implémente le contrat DataSource
   js/chart.js   moteur de graphiques canvas (multi-échelles, gestes, échelles)
   js/source-ws.js source WebSocket (même contrat que sim.js)
@@ -39,16 +45,23 @@ web/            sources de l'application (page de dev : web/index.html)
   js/store.js   configurations : localStorage, export/import JSON+CSV, stub
   js/app.js     onglets, recherche, tableau, journal, boucle de rendu
 server/         serveur de diagnostic C++20 (HTTP + WebSocket, sans dépendance)
-  src/source.hpp     contrat IVariableSource — à implémenter pour le cœur
+  src/source.hpp     contrat IVariableSource — à implémenter pour le controller
   src/sim_source.hpp source simulée (bouchon) + générateurs
+  src/protocol.hpp   modèle des liens réseau + contrat IProtocolDriver
+  src/protocol_source.hpp  liens réseau (@lien.point) + aiguillage composite
+  src/drivers/       pilotes : modbus, iec104, can (brut/J1939/CANopen), net
+  src/jvalue.hpp     analyseur JSON complet (configuration imbriquée)
   src/main.cpp       HTTP/WS, REST, boucle d'émission
 tools/build.py  assemble dist/ à partir de web/
 tools/gen-catalog.mjs  régénère server/src/catalog.generated.hpp depuis config.js
+tools/gen-protocols.mjs régénère server/src/protocols.generated.hpp depuis protocols.js
 tools/serve.py  serveur d'aperçu (port 8080, en-têtes anti-cache)
-tests/ui.mjs    tests d'interface Playwright (18 vérifications)
+tests/ui.mjs    tests d'interface Playwright (20 vérifications)
 tests/dnd.mjs   tests de déplacement de widgets (7 vérifications, http requis)
+tests/protocols.mjs  liens réseau bout en bout (équipements simulés, serveur requis)
+tests/decode.cpp     décodage des protocoles (cible CMake diagweb-decode-test)
 dist/           livrables générés (commités) : index.html autonome + artifact.html
-docs/           PROJET.md, SPECS.md
+docs/           PROJET.md, SPECS.md, PROTOCOLES.md
 .devcontainer/  configuration GitHub Codespaces (Python + Node + aperçu 8080)
 ```
 
@@ -60,7 +73,9 @@ Espace de noms JS global : `window.DW`. Scripts en IIFE, pas de modules ES
 1. Modifier les sources sous `web/`.
 2. `node --check web/js/*.js` puis `python3 tools/build.py`, et tester
    `node tests/ui.mjs` (mobile 390×844 + desktop 1600×900, captures dans
-   `.test-shots/`). Environnement de développement possible : GitHub
+   `.test-shots/`). Après modification du serveur ou des protocoles :
+   `cmake --build server/build -j`, `./server/build/diagweb-decode-test`, puis
+   `node tests/protocols.mjs` (serveur lancé). Environnement de développement possible : GitHub
    Codespaces (`.devcontainer/`), aperçu sur le port 8080 via
    `tools/serve.py` — port à passer en « Public » pour tester au téléphone.
 3. **Commit des sources** (sans `dist/`), puis relancer
@@ -83,6 +98,16 @@ Espace de noms JS global : `window.DW`. Scripts en IIFE, pas de modules ES
   côtés **et** dans `server/src/source.hpp`.
 - Le catalogue C++ est **généré** : après modification de `DW.CATALOG` dans
   `web/js/config.js`, relancer `node tools/gen-catalog.mjs`.
+- La description des protocoles réseau est **générée** de la même façon :
+  après modification de `DW.PROTOCOLS` dans `web/js/protocols.js`, relancer
+  `node tools/gen-protocols.mjs`. Ne jamais éditer les fichiers `*.generated.hpp`.
+- **Liens réseau** (voir `docs/PROTOCOLES.md`) : un *lien* porte des *points*,
+  adressés `@lien.point` (famille NET). Un nouveau protocole s'ajoute par une
+  description dans `protocols.js` + un pilote `IProtocolDriver` ; l'interface
+  construit ses formulaires toute seule. **Lecture seule de bout en bout** :
+  aucune écriture vers un équipement, hors requête SDO CANopen désactivée par
+  défaut. Un pilote non implémenté ne publie **aucune** valeur (jamais de
+  valeur inventée) et le lien affiche « non branché ».
 - `DW.source` est le **contrat DataSource** (`subscribe(addr, {periodMs})`,
   unsubscribe/latest/past/data/meta/now — période par variable, défaut
   10 ms). Le futur back-end (WebSocket via le processus serveur de diag du

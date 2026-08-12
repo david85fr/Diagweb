@@ -27,6 +27,7 @@
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
         <button id="helpBtn" type="button" title="Récapitulatif des commandes et des gestes (utile sur écran tactile, où les infobulles n’apparaissent pas)">Aide — commandes et gestes…</button>
+        <button id="netBtn" type="button" title="Liens réseau : déclarer des équipements Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939 ou CANopen et choisir les variables à lire">Liens réseau…</button>
         <button id="aboutBtn" type="button" title="Version affichée, mode de fonctionnement et source de données">À propos de Diagweb…</button>
         <button type="button" disabled title="Fonction globale prévue : capture des interfaces réseau du contrôleur">Capture d’interfaces réseau (à venir)</button>
         <button type="button" disabled title="Fonction globale prévue : historique des versions de l’application">Notes de version (à venir)</button>
@@ -37,9 +38,9 @@
       <div class="searchbox">
         <input id="searchInput" type="text" inputmode="text" autocomplete="off" autocapitalize="off"
                autocorrect="off" spellcheck="false"
-               placeholder="Variable : I1.2.3.4, MB414, Regulation.mesure.vitesse…"
+               placeholder="Variable : I1.2.3.4, MB414, Regulation.mesure.vitesse, @lien.point…"
                aria-label="Adresse de la variable à ajouter"
-               title="Adresse à diagnostiquer — bits I/Q/M/S (I1.2.3.4), mot de bus (MB414) ou signal de modèle (Regulation.mesure.vitesse). Les suggestions se filtrent à la frappe.">
+               title="Adresse à diagnostiquer — bits I/Q/M/S (I1.2.3.4), mot de bus (MB414), signal de modèle (Regulation.mesure.vitesse) ou point d’un lien réseau (@lien.point). Les suggestions se filtrent à la frappe.">
       </div>
       <select id="targetSel" aria-label="Destination de la variable"
               title="Où ajouter la variable : tableau numérique, graphique existant, ou nouveau graphique"></select>
@@ -81,12 +82,14 @@
 
 <script src="js/config.js"></script>
 <script src="js/parser.js"></script>
+<script src="js/protocols.js"></script>
 <script src="js/sim.js"></script>
 <script src="js/source-ws.js"></script>
 <script src="js/source.js"></script>
 <script src="js/chart.js"></script>
 <script src="js/store.js"></script>
 <script src="js/dnd.js"></script>
+<script src="js/protocols-ui.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

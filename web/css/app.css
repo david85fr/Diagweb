@@ -256,6 +256,7 @@ button { font-family: var(--sans); }
 .badge.fam-S    { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
 .badge.fam-MB   { color: #c98500; border-color: color-mix(in srgb, #c98500 45%, var(--line)); }
 .badge.fam-CAPI { color: #199e70; border-color: color-mix(in srgb, #199e70 45%, var(--line)); }
+.badge.fam-NET  { color: #d55181; border-color: color-mix(in srgb, #d55181 45%, var(--line)); }
 
 /* ---------- Cartes ---------- */
 .card {
@@ -700,6 +701,47 @@ body.dnd-over-pane #panes {
 .lay-actions { display: flex; gap: 5px; flex: none; }
 .star { color: var(--faint); }
 .star.on { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
+
+/* ---------- Fenêtre « Liens réseau » ---------- */
+.modal.wide { max-width: 760px; }
+.px-list { display: grid; gap: 8px; margin-top: 12px; }
+.px-row {
+  border: 1px solid var(--line); border-radius: 11px;
+  padding: 9px 10px;
+  background: color-mix(in srgb, var(--panel-2) 55%, transparent);
+}
+.px-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.px-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+.px-name.mono { font-family: var(--mono); font-size: 12.5px; }
+.px-unit { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.px-state { margin-left: auto; flex: none; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.px-state.st-up   { color: var(--good); }
+.px-state.st-down { color: var(--crit); }
+.px-state.st-sim  { color: var(--warn); }
+.px-sub { font-size: 11.5px; color: var(--faint); margin-top: 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.px-acts { margin-top: 8px; }
+.px-acts .btn { font-size: 12px; padding: 5px 9px; }
+.btn.danger { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 45%, var(--line)); }
+
+.pf-form { display: grid; gap: 2px; margin: 8px 0 4px; }
+.pf-row {
+  display: grid; grid-template-columns: 1fr; gap: 4px;
+  padding: 6px 0;
+}
+.pf-label { font-size: 12px; color: var(--muted); }
+.pf-input {
+  width: 100%;
+  font: 15px var(--sans); color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 9px;
+  padding: 8px 10px;
+}
+.pf-input.pf-check { width: 22px; height: 22px; padding: 0; }
+@media (min-width: 700px) {
+  .pf-row { grid-template-columns: minmax(160px, 240px) minmax(0, 1fr); align-items: center; gap: 10px; }
+  .pf-label { text-align: right; }
+}
 
 /* ---------- Toasts ---------- */
 #toasts {

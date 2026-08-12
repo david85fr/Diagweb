@@ -30,6 +30,8 @@
     PLC: 'Variables PLC : entrées I, sorties Q, bits mémoire M, variables système S',
     MB: 'Registres de bus (MB) — mots de 16 bits',
     CAPI: 'Signaux des modèles, via la C API (Modele.sous_systeme.signal)',
+    NET: 'Points lus sur les liens réseau du serveur de diagnostic (@lien.point) — ' +
+         'Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen',
   };
 
   // ---------- Notifications -------------------------------------------
@@ -374,11 +376,14 @@
   }
 
   // ---------- Ajout d'une variable ------------------------------------
-  function addVariable(rawAddr) {
+  function addVariable(rawAddr, forcePeriodMs) {
     const p = DW.parseAddr(rawAddr != null ? rawAddr : $('searchInput').value);
     if (!p.ok) { toast(p.error, 'err'); return false; }
     const target = $('targetSel').value;
-    const periodMs = parseInt($('periodSel').value, 10) || CFG.defaultPeriodMs;
+    // Un point réseau porte sa propre période de lecture (configuration du lien).
+    const netPeriod = p.family === 'NET' && DW.protocols ? DW.protocols.periodOf(p.addr) : null;
+    const periodMs = forcePeriodMs || netPeriod ||
+      parseInt($('periodSel').value, 10) || CFG.defaultPeriodMs;
     let destLabel = '';
     if (target === 'table') {
       const r = addToTable(p.addr, periodMs);
@@ -411,12 +416,13 @@
 
   // ---------- Autocomplétion ------------------------------------------
   let sugIndex = -1;
-  let famFilter = 'all';   // 'all' | 'PLC' (I/Q/M/S) | 'MB' | 'CAPI'
+  let famFilter = 'all';   // 'all' | 'PLC' (I/Q/M/S) | 'MB' | 'CAPI' | 'NET'
   const FAM_FILTERS = [
     ['all', 'Toutes'],
     ['PLC', 'PLC'],
     ['MB', 'Modbus'],
     ['CAPI', 'Simulink'],
+    ['NET', 'Réseau'],
   ];
   function matchFilter(family) {
     if (famFilter === 'all') return true;
@@ -455,6 +461,12 @@
   }
   const CATALOG_F = catalogWithFamily();
 
+  /** Catalogue proposé : variables du contrôleur + points des liens réseau. */
+  function suggestPool() {
+    const net = DW.protocols ? DW.protocols.catalog() : [];
+    return CATALOG_F.concat(net);
+  }
+
   function updateSuggest() {
     const box = $('suggestBox');
     const q = $('searchInput').value.trim().toLowerCase();
@@ -479,13 +491,13 @@
     }
     box.appendChild(bar);
 
-    const pool = CATALOG_F.filter((e) => matchFilter(e.family));
+    const pool = suggestPool().filter((e) => matchFilter(e.family));
     let list;
     if (!q) {
       const help = document.createElement('div');
       help.className = 'sug-help';
       help.innerHTML = 'Formats : <code>I1.2.3.4</code> <code>Q14.15</code> <code>M1.14</code> ' +
-        '<code>S0.4</code> <code>MB414</code> <code>Modele.signal</code>';
+        '<code>S0.4</code> <code>MB414</code> <code>Modele.signal</code> <code>@lien.point</code>';
       box.appendChild(help);
       list = pool.slice(0, 8);
     } else {
@@ -1238,6 +1250,12 @@
             ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
           ]) +
+          S('Liens réseau (☰ → Liens réseau)') +
+          L([
+            ['Lien', 'Une connexion vers un équipement ou un réseau : Modbus TCP/RTU, IEC 60870-5-104, IEC 61850, CAN, J1939, CANopen. Le serveur de diagnostic ouvre le lien et lit les points.'],
+            ['Point', 'Une variable lue sur un lien (registre, IOA, SPN, objet…), avec son unité et sa période. Elle s’adresse ensuite <b>@lien.point</b> comme n’importe quelle variable.'],
+            ['Sans serveur', 'La configuration reste dans le navigateur et les valeurs des points sont simulées — l’interface est démontrable sans matériel.'],
+          ]) +
           S('Courbes') +
           L([
             ['Pastille de légende', 'Couleur (palette ou teinte libre), masquer, échelle dédiée, décalage vertical, retrait.'],
@@ -1248,6 +1266,8 @@
       back.addEventListener('pointerdown', (e) => { if (e.target === back) root.innerHTML = ''; });
       root.appendChild(back);
     });
+
+    $('netBtn').addEventListener('click', () => DW.protocolsUI.open());
 
     $('aboutBtn').addEventListener('click', () => {
       const root = $('modalRoot');
@@ -1319,6 +1339,13 @@
   }
 
   // ---------- Démarrage ------------------------------------------------
+  // API minimale offerte aux modules d'interface (fenêtre des liens réseau).
+  DW.app = {
+    addVariable: (addr, periodMs) => addVariable(addr, periodMs),
+    toast,
+    refreshTargets,
+  };
+
   function boot() {
     bindUi();
 
@@ -1363,8 +1390,13 @@
   // La source (simulation ou serveur de diagnostic) doit être choisie avant
   // de construire l'espace de travail : les premiers abonnements en dépendent.
   function start() {
-    const ready = DW.sourceReady || Promise.resolve();
-    ready.catch(() => {}).then(boot);
+    // La source (simulation ou serveur) et la configuration des liens réseau
+    // doivent être connues avant les premiers abonnements.
+    const ready = Promise.all([
+      (DW.sourceReady || Promise.resolve()).catch(() => {}),
+      (DW.protocolsReady || Promise.resolve()).catch(() => {}),
+    ]);
+    ready.then(boot);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();

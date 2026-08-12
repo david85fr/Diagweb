@@ -1,0 +1,283 @@
+# Liens réseau — protocoles industriels
+
+Le serveur de diagnostic ne lit pas seulement les variables internes du
+`controller` : il ouvre aussi **ses propres liens** vers des équipements tiers
+et publie leurs valeurs comme des variables ordinaires de Diagweb (tableau
+numérique, courbes, journal, dispositions).
+
+```
+                     ┌──────────── CONTRÔLEUR ────────────┐
+  équipements        │                                    │
+  tiers du réseau ──▶│  serveur de diagnostic ◀── IPC ──▶ │ controller
+  (Modbus, 104,      │        │                           │ (I/Q/M/S, MB,
+   CAN, …)           │        └── WebSocket ──▶ navigateur│  modèles C API)
+                     └────────────────────────────────────┘
+```
+
+Deux notions, et deux seulement :
+
+| Notion | Ce que c'est | Exemple |
+|---|---|---|
+| **Lien** | une connexion : un protocole et ses paramètres | `banc` = Modbus TCP vers 10.0.0.5:502 |
+| **Point** | une variable lue sur ce lien | `pression` = registre 40, `uint16`, gain 0,1 |
+
+Un point est adressé dans Diagweb **`@lien.point`** — par exemple
+`@banc.pression`. Le « @ » lève toute ambiguïté avec les familles existantes
+(`I/Q/M/S`, `MB…`, chemins de modèle à points) et l'adresse reste courte,
+lisible dans une légende de courbe, et **stable** : toute la complexité
+protocolaire (registre, IOA, PGN/SPN, index/sous-index, référence d'objet)
+vit dans la configuration du point, pas dans l'adresse. Changer un registre ne
+casse donc aucune disposition enregistrée.
+
+## Saisir la configuration
+
+Menu **☰ → Liens réseau…** (fonction globale, indépendante des onglets) :
+
+1. **+ Nouveau lien** — choisir le protocole, puis remplir les champs qui lui
+   sont propres. Chaque champ porte une infobulle expliquant sa valeur.
+2. **Tester** — le serveur ouvre le lien et renvoie le résultat en clair
+   (« connexion établie », « hôte introuvable », « pas de réponse »…).
+3. **Points** — déclarer les variables à lire : identifiant, libellé, unité,
+   période, puis l'adressage propre au protocole. **Dupliquer** un point sert à
+   décliner rapidement un registre voisin.
+4. **Ajouter au diagnostic** — le point part vers la destination choisie dans
+   la barre du haut (tableau ou graphique), comme n'importe quelle variable.
+
+L'état de chaque lien est affiché en permanence : ● connecté · ⚠ en défaut
+(avec la cause) · ○ désactivé · ⋯ non branché · ~ simulé.
+
+**Où vit la configuration ?** Sur le contrôleur (`<data-dir>/protocols.json`)
+dès que la page est servie par le serveur de diagnostic : elle est donc
+partagée par tous les postes qui s'y connectent, et rechargée au redémarrage.
+Une page ouverte hors serveur (Artifact, fichier local) garde sa configuration
+dans le navigateur et **simule** les valeurs, ce qui permet de préparer et de
+démontrer une configuration sans matériel. Le fichier s'exporte et s'importe en
+JSON depuis la même fenêtre.
+
+## Protocoles
+
+`web/js/protocols.js` est la **source de vérité** : champs, libellés et aides y
+sont décrits une seule fois, et `tools/gen-protocols.mjs` en dérive
+`server/src/protocols.generated.hpp`. Une page servie par le contrôleur propose
+donc exactement les champs que le serveur sait lire.
+
+| Protocole | Transport | État | Pilote |
+|---|---|---|---|
+| Modbus TCP | TCP/IP | implémenté | `drivers/modbus.hpp` |
+| Modbus RTU | liaison série | implémenté | `drivers/modbus.hpp` |
+| IEC 60870-5-104 | TCP/IP | implémenté | `drivers/iec104.hpp` |
+| CAN (trames brutes) | SocketCAN | implémenté | `drivers/can.hpp` |
+| J1939 | SocketCAN | implémenté (PGN mono-trame) | `drivers/can.hpp` |
+| CANopen | SocketCAN | implémenté (TPDO, SDO expédié) | `drivers/can.hpp` |
+| IEC 61850 (MMS) | ISO sur TCP | **déclaré** | pile ISO/MMS à venir |
+
+### Modbus TCP et RTU
+
+Maître (client) en **lecture seule** : fonctions 01 bobines, 02 entrées TOR,
+03 registres de maintien, 04 registres d'entrée. Aucune écriture n'est possible
+depuis Diagweb, par construction.
+
+- Types : `bool`, `int16`, `uint16`, `int32`, `uint32`, `float32`, `float64`,
+  avec **ordre des mots** réglable pour les types sur plusieurs registres
+  (poids fort d'abord par défaut), extraction d'un **bit** d'un registre, puis
+  `valeur = brut × gain + décalage`.
+- Les points sont **regroupés** : les adresses contiguës d'une même fonction
+  partent en une seule requête (paramètre « Regroupement », 125 registres au
+  plus par requête protocole). Moins d'aller-retour, un équipement qui respire.
+- L'adresse est celle du **protocole**, à partir de 0 : le « 40001 » d'une
+  documentation correspond en général à l'adresse 0 de la fonction 03.
+- RTU : trame avec CRC-16 (polynôme réfléchi 0xA001), 8 bits de données,
+  parité paire par défaut ; sans parité, 2 bits d'arrêt (règle de la
+  spécification série).
+
+### IEC 60870-5-104
+
+Client (maître) de télécontrôle, en lecture seule : **aucune commande n'est
+jamais émise vers le procédé**.
+
+Séquence : connexion → `STARTDT act` → confirmation → **interrogation
+générale** (C_IC_NA_1, QOI 20) pour partir d'un état connu → régime spontané.
+Le pilote répond aux `TESTFR`, acquitte par trame S toutes les *w* trames
+reçues **et au plus tard au bout de t2**, émet un test de liaison après t3
+d'inactivité, coupe si la station ne répond plus dans t1, et relance une
+interrogation générale quand la station annonce son redémarrage (M_EI_NA_1).
+
+Types décodés : simple et double (M_SP, M_DP), position de régleur (M_ST),
+mesures normalisée, échelonnée et flottante (M_ME_N*/T*), compteurs (M_IT),
+train de bits (M_BO) — avec ou sans horodatage CP56Time2a. Le bit de qualité
+**IV** (invalide) écarte la valeur : rien n'est publié plutôt qu'une valeur
+fausse. Le bit SQ (objets à adresses consécutives) est traité.
+
+Ce protocole est un **flux** : la période d'un point n'y commande aucune
+trame, elle borne la cadence conservée dans l'historique (voir « Période »
+plus bas).
+
+### CAN, J1939, CANopen
+
+Sur **SocketCAN** : l'interface (`can0`…) doit être configurée et active — le
+débit du bus relève de l'administration du contrôleur, pas de Diagweb.
+
+- **CAN brut** : écoute strictement passive. Un point est un champ de bits
+  décrit comme dans une base de signaux : identifiant, bit de départ, longueur,
+  ordre **Intel** (petit-boutiste) ou **Motorola** (gros-boutiste), signe,
+  gain, décalage. CAN FD accepté en option.
+- **J1939** : l'identifiant 29 bits est décomposé en priorité, PGN et adresse
+  source — en PDU1 (PF < 240) l'octet PS est une destination et ne fait pas
+  partie du PGN. Un point est un SPN : PGN attendu, adresse source (ou
+  « toutes »), puis le champ de bits. **Mono-trame uniquement** : le transport
+  multi-trames (BAM, RTS/CTS) n'est pas implémenté, donc un PGN long (DM1,
+  configuration moteur) ne remontera **jamais** de valeur — c'est dit dans
+  l'interface, à côté du champ PGN. Le filtrage noyau porte sur le PGN et
+  jamais sur l'adresse source, qui change à chaque re-revendication.
+- **CANopen** : deux modes. **Écoute d'un TPDO** (rien n'est émis, c'est le
+  mode par défaut) ou **lecture SDO** (upload expédié, `0x600+node-id` →
+  `0x580+node-id`). Le mode SDO est le seul cas où le serveur émet sur le bus ;
+  la case **Écoute seule**, cochée par défaut, l'interdit — interroger un nœud
+  absent fait réémettre le contrôleur CAN jusqu'au **bus-off**, ce qui dégrade
+  l'interface elle-même. Le pilote surveille les trames d'erreur du noyau et
+  ferme le lien sur bus-off avec un message explicite plutôt que d'insister.
+  À savoir : un nœud qui n'est pas en état **opérationnel** n'émet aucun TPDO —
+  le lien paraît alors établi sans qu'aucune valeur ne remonte.
+
+### IEC 61850 — pilote déclaré
+
+La configuration (hôte, port 102, nom d'IED, mode, références d'objet et
+contraintes fonctionnelles) se saisit et se conserve dès maintenant, mais
+**aucune valeur n'est lue** : le lien s'affiche « non branché » et ne publie
+rien — jamais de valeur inventée. La lecture demande la pile complète
+ISO-on-TCP (RFC 1006) → COTP → session → présentation → ACSE → MMS en ASN.1
+BER, soit un volume de code comparable à celui de tout le reste du serveur, et
+elle ne peut pas être validée sans IED réel. C'est une phase ultérieure, pas un
+oubli.
+
+## Ce qui est volontairement hors périmètre
+
+- **Toute écriture** : commandes Modbus, commandes de télécontrôle 104,
+  émission de trames CAN/J1939, SDO download. Un outil de diagnostic branché
+  sur une installation en service ne doit pas pouvoir agir sur un organe réel.
+  La seule émission existante est la requête de lecture SDO, désactivée par
+  défaut.
+- **Transports multi-trames** : ISO-TP, transport J1939 (BAM et RTS/CTS), SDO
+  segmenté et par blocs. Un signal ne peut donc pas dépasser la charge utile
+  d'une trame.
+- **Configuration des interfaces** (débit CAN, mise en service) : cela relève
+  de l'administration du contrôleur. Diagweb constate et signale.
+- **Revendication d'adresse J1939** (PGN 60928) et **état NMT CANopen** : non
+  suivis. Un filtre sur adresse source fixe peut donc devenir muet après une
+  re-revendication.
+- **GOOSE** (IEC 61850-8-1 couche 2) et **rôle de maître CANopen**.
+
+## Période, horodatage, qualité
+
+- **Protocoles à interrogation** (Modbus, SDO) : la période du point est la
+  cadence d'interrogation. Une période courte sur une liaison lente sature
+  l'équipement — à 9600 bauds, une centaine de registres prennent déjà environ
+  250 ms.
+- **Protocoles à flux** (IEC-104, CAN, TPDO) : la période est une
+  **décimation**. Elle borne la cadence conservée dans l'historique, mais
+  **tout changement de valeur passe** : une transition n'est jamais masquée.
+- **Horodatage** : les échantillons portent l'horloge du **serveur de
+  diagnostic**, commune aux variables du `controller` — c'est la condition
+  pour que les courbes soient comparables entre elles. Les horodatages
+  d'origine (CP56Time2a des types 104 à date) sont **volontairement ignorés** :
+  une station dont l'horloge dérive placerait ses points dans le futur ou le
+  passé et fausserait toute comparaison. Les exploiter demanderait un recalage
+  explicite par lien — évolution possible, pas un oubli.
+- **Qualité** : une valeur marquée invalide (bit IV en 104), une exception
+  Modbus, un abandon SDO ou un lien coupé ne produisent **aucun échantillon**.
+  La courbe montre un trou, et l'état du lien en donne la raison.
+
+## Robustesse
+
+Quelques garde-fous qui expliquent le comportement observé :
+
+- **Modbus** : la réponse est appariée à la requête (identifiant de
+  transaction, identifiant de protocole, unité, fonction, taille annoncée).
+  Une passerelle qui duplique une réponse décalerait sinon le flux
+  durablement — et **toutes** les valeurs suivantes seraient fausses sans
+  qu'aucune erreur ne le signale. Une **exception** Modbus (adresse hors plage)
+  n'abat pas le lien : seule la requête fautive est mise de côté 10 s, les
+  autres points continuent, et la cause s'affiche dans l'état du lien.
+- **IEC-104** : les temporisations **t1/t2/t3** de la norme sont appliquées —
+  acquittement à t2 même sans avoir reçu *w* trames (sans quoi une station
+  calme coupe la liaison à t1), test de liaison à t3, coupure si la station
+  ne répond plus. Une faute de trame ou un numéro de séquence inattendu ferme
+  la liaison plutôt que de tenter une resynchronisation à l'aveugle.
+- **CAN** : les identifiants attendus sont posés en **filtres noyau** et
+  analysés une seule fois au démarrage — sans cela, chaque trame du bus
+  réveillerait le processus qui partage le processeur avec le temps réel.
+
+## Points d'entrée REST
+
+| Méthode | Chemin | Rôle |
+|---|---|---|
+| GET | `/api/protocols` | configuration, état des liens, description des protocoles |
+| PUT | `/api/protocols` | enregistre et applique la configuration |
+| GET | `/api/protocols/status` | état courant des liens |
+| POST | `/api/protocols/test` | teste un lien (`{"id":"banc"}`) |
+
+Format de la configuration (`<data-dir>/protocols.json`) :
+
+```json
+{
+  "version": 1,
+  "links": [
+    {
+      "id": "banc", "label": "Banc d'essai", "protocol": "modbus-tcp",
+      "enabled": true,
+      "params": { "host": "10.0.0.5", "port": 502, "unitId": 1 },
+      "points": [
+        { "id": "pression", "label": "Pression refoulement", "unit": "bar",
+          "kind": "float", "periodMs": 200,
+          "params": { "fn": 3, "reg": 40, "type": "uint16", "gain": 0.1 } }
+      ]
+    }
+  ]
+}
+```
+
+Identifiants de lien et de point : une lettre, puis lettres, chiffres, `-` ou
+`_`, 24 caractères au plus. Un identifiant invalide, un doublon ou un protocole
+inconnu est ignoré à la lecture, sans faire échouer le reste de la
+configuration.
+
+## Démonstration sans matériel
+
+```bash
+./server/build/diagweb-server --port 8080 --root . --sim-protocols
+```
+
+`--sim-protocols` remplace tous les pilotes par un générateur : les liens
+passent à l'état « simulé » et les points produisent des signaux plausibles.
+Utile pour préparer une configuration ou faire une démonstration ; l'état du
+lien dit clairement que les valeurs ne viennent pas du terrain.
+
+## Ajouter un protocole
+
+1. Décrire le protocole dans `web/js/protocols.js` (`DW.PROTOCOLS`) : champs du
+   lien, champs d'un point, libellés et aides en français.
+2. `node tools/gen-protocols.mjs` pour régénérer l'en-tête C++.
+3. Écrire le pilote dans `server/src/drivers/` en implémentant
+   `IProtocolDriver` (`open` / `service` / `close`), puis l'enregistrer dans
+   `make_driver()` de `server/src/protocol_source.hpp`.
+4. Compléter `docs/PROTOCOLES.md` et les tests (`tests/protocols.mjs` pour un
+   échange complet contre un équipement simulé, `tests/decode.cpp` pour le
+   décodage).
+
+L'interface web n'a **pas** à être modifiée : elle construit ses formulaires à
+partir de la description.
+
+## Tests
+
+```bash
+cmake --build server/build --target diagweb-decode-test && ./server/build/diagweb-decode-test
+node tests/protocols.mjs        # serveur de diagnostic en fonctionnement
+```
+
+`tests/decode.cpp` couvre le décodage (champs de bits Intel/Motorola, PGN
+J1939, grammaire `@lien.point`, lecture de la configuration).
+`tests/protocols.mjs` monte un **esclave Modbus TCP** et une **station
+IEC 60870-5-104** en Node, configure les liens par REST et vérifie que les
+valeurs arrivent jusqu'au flux WebSocket. Les pilotes CAN ne sont pas
+couverts de bout en bout faute d'interface CAN dans l'environnement de test :
+seul leur décodage l'est.

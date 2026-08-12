@@ -2,14 +2,19 @@
 //
 // Rôle, conforme à docs/PROJET.md « Architecture cible » : servir les pages
 // web ET relayer le flux temps réel des variables vers le navigateur. Le
-// cœur du produit (C++, modèles générés) vit dans un processus séparé ; ici
-// il est remplacé par SimSource tant que le binding n'existe pas.
+// controller — le cœur du produit (C++, modèles générés) — vit dans un
+// processus séparé ; ici il est remplacé par SimSource tant que le binding
+// n'existe pas.
 //
 //   diagweb-server [--port 8080] [--root .] [--data-dir .diag-data]
 //
 // Points d'entrée :
 //   GET  /ws                    flux temps réel (WebSocket, voir PROTOCOLE)
 //   GET  /api/health            état du serveur
+//   GET  /api/protocols         configuration des liens réseau + état + protocoles
+//   PUT  /api/protocols         enregistre et applique la configuration des liens
+//   GET  /api/protocols/status  état courant des liens
+//   POST /api/protocols/test    test de connexion d'un lien
 //   GET  /api/layouts           liste des configurations enregistrées
 //   GET  /api/layouts/<nom>     une configuration
 //   PUT  /api/layouts/<nom>     enregistre une configuration
@@ -38,6 +43,9 @@
 
 #include "catalog.generated.hpp"
 #include "json.hpp"
+#include "jvalue.hpp"
+#include "protocol_source.hpp"
+#include "protocols.generated.hpp"
 #include "source.hpp"
 #include "ws.hpp"
 
@@ -55,7 +63,53 @@ struct Options {
   double history_s = 60;      // historique envoyé à l'abonnement
   size_t max_points = 1500;   // points max par variable et par envoi
   int flush_ms = 60;          // cadence d'émission des lots
+  bool sim_protocols = false; // liens réseau simulés (démonstration sans matériel)
 };
+
+/** Liens réseau : instance unique, partagée par les requêtes HTTP. */
+ProtocolSource* g_net = nullptr;
+
+fs::path protocols_file(const Options& opt) {
+  return fs::path(opt.data_dir) / "protocols.json";
+}
+
+void save_protocols(const Options& opt, const ProtocolConfig& cfg) {
+  std::error_code ec;
+  fs::create_directories(opt.data_dir, ec);
+  std::ofstream f(protocols_file(opt), std::ios::binary | std::ios::trunc);
+  if (f) f << cfg.to_json().dump();
+}
+
+ProtocolConfig load_protocols(const Options& opt) {
+  std::ifstream f(protocols_file(opt), std::ios::binary);
+  if (!f) return {};
+  std::ostringstream body;
+  body << f.rdbuf();
+  bool ok = false;
+  const JValue j = jparse(body.str(), &ok);
+  if (!ok) {
+    std::cerr << "  configuration des liens reseau illisible, ignoree" << std::endl;
+    return {};
+  }
+  return ProtocolConfig::from_json(j);
+}
+
+/** État des liens, au format attendu par l'interface. */
+std::string statuses_json() {
+  std::ostringstream o;
+  o << '[';
+  if (g_net) {
+    bool first = true;
+    for (const auto& st : g_net->statuses()) {
+      if (!first) o << ',';
+      first = false;
+      o << "{\"id\":\"" << jesc(st.id) << "\",\"state\":\"" << jesc(st.state)
+        << "\",\"detail\":\"" << jesc(st.detail) << "\",\"samples\":" << st.samples << '}';
+    }
+  }
+  o << ']';
+  return o.str();
+}
 
 // ------------------------------------------------------------------ réseau
 bool send_all(int fd, const std::string& data) {
@@ -184,6 +238,46 @@ bool handle_api(int fd, const Request& req, IVariableSource& src, const Options&
       << ",\"now\":" << jnum(src.now(), 3)
       << ",\"defaultPeriodMs\":" << kDefaultPeriodMs
       << ",\"horizonS\":" << jnum(kHorizonS, 0) << "}";
+    respond_json(fd, o.str());
+    return true;
+  }
+
+  // ---- liens réseau -------------------------------------------------
+  if (t == "/api/protocols" && req.method == "GET") {
+    std::ostringstream o;
+    o << "{\"config\":" << (g_net ? g_net->config().to_json().dump() : "{\"version\":1,\"links\":[]}")
+      << ",\"status\":" << statuses_json()
+      << ",\"protocols\":" << protocols_descriptors_json()
+      << ",\"simulated\":" << (opt.sim_protocols ? "true" : "false") << '}';
+    respond_json(fd, o.str());
+    return true;
+  }
+
+  if (t == "/api/protocols" && (req.method == "PUT" || req.method == "POST")) {
+    bool ok = false;
+    const JValue j = jparse(req.body, &ok);
+    if (!ok) { respond_json(fd, "{\"error\":\"JSON invalide\"}", 400); return true; }
+    const ProtocolConfig cfg = ProtocolConfig::from_json(j);
+    if (g_net) g_net->apply(cfg);
+    save_protocols(opt, cfg);
+    std::cout << "  liens reseau : " << cfg.links.size() << " lien(s) applique(s)" << std::endl;
+    std::ostringstream o;
+    o << "{\"ok\":true,\"status\":" << statuses_json() << '}';
+    respond_json(fd, o.str());
+    return true;
+  }
+
+  if (t == "/api/protocols/status" && req.method == "GET") {
+    respond_json(fd, statuses_json());
+    return true;
+  }
+
+  if (t == "/api/protocols/test" && (req.method == "POST" || req.method == "PUT")) {
+    const std::string id = jstr(req.body, "id");
+    bool ok = false;
+    const std::string detail = g_net ? g_net->test(id, ok) : "liens reseau indisponibles";
+    std::ostringstream o;
+    o << "{\"ok\":" << (ok ? "true" : "false") << ",\"detail\":\"" << jesc(detail) << "\"}";
     respond_json(fd, o.str());
     return true;
   }
@@ -415,8 +509,11 @@ int main(int argc, char** argv) {
     if (a == "--port") opt.port = std::atoi(next());
     else if (a == "--root") opt.root = next();
     else if (a == "--data-dir") opt.data_dir = next();
+    else if (a == "--sim-protocols") opt.sim_protocols = true;
     else if (a == "--help") {
-      std::cout << "diagweb-server [--port 8080] [--root .] [--data-dir .diag-data]\n";
+      std::cout << "diagweb-server [--port 8080] [--root .] [--data-dir .diag-data]"
+                   " [--sim-protocols]\n"
+                   "  --sim-protocols : liens reseau simules (demonstration sans materiel)\n";
       return 0;
     }
   }
@@ -425,12 +522,19 @@ int main(int argc, char** argv) {
   ::signal(SIGINT, [](int) { g_stop = true; });
   ::signal(SIGTERM, [](int) { g_stop = true; });
 
-  SimSource source(catalog(), kHorizonS, kDefaultPeriodMs);
+  SimSource controller(catalog(), kHorizonS, kDefaultPeriodMs);
 
-  // Thread d'acquisition : rôle du lien avec le processus cœur du contrôleur
-  std::thread sampler([&source] {
+  // Liens réseau : même horloge que le controller, sinon les courbes des
+  // points réseau ne seraient pas comparables aux variables internes.
+  ProtocolSource net(controller, kHorizonS, kDefaultPeriodMs, opt.sim_protocols);
+  g_net = &net;
+  net.apply(load_protocols(opt));
+  CompositeSource source(controller, net);
+
+  // Thread d'acquisition : rôle du lien avec le controller
+  std::thread sampler([&controller] {
     while (!g_stop) {
-      source.tick();
+      controller.tick();
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
   });
@@ -452,6 +556,8 @@ int main(int argc, char** argv) {
 
   std::cout << "Diagweb — serveur de diagnostic\n"
             << "  source  : " << source.name() << '\n'
+            << "  liens   : " << net.config().links.size() << " configure(s)"
+            << (opt.sim_protocols ? " (simules)" : "") << '\n'
             << "  racine  : " << fs::weakly_canonical(opt.root).string() << '\n'
             << "  donnees : " << opt.data_dir << '\n'
             << "  ecoute  : http://localhost:" << opt.port << "/web/index.html\n"

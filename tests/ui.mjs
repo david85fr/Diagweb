@@ -276,6 +276,50 @@ check('poignée de redimensionnement (hauteur + largeur), mémorisée et annulab
   Math.abs(g3.h - g0.h) < 4 && Math.abs(g3.w - g0.w) < 4,
   `${g0.w}×${g0.h} → ${g1.w}×${g1.h} → recharge ${g2.w}×${g2.h} → auto ${g3.w}×${g3.h}`);
 
+// Liens réseau : déclarer un lien, un point, puis l'ajouter au diagnostic
+await p2.click('#menuBtn');
+await p2.waitForTimeout(150);
+await p2.click('#netBtn');
+await p2.waitForSelector('.modal[aria-label="Liens réseau"]', { timeout: 5000 });
+await p2.locator('.m-actions .btn', { hasText: '+ Nouveau lien' }).click();
+await p2.waitForTimeout(200);
+const protos = await p2.locator('#pxProto option').count();
+await p2.fill('#px_Identifiant', 'banc');
+await p2.fill('#px_Nom', 'Banc d’essai');
+await p2.fill('#pf_host', '10.0.0.5');
+await p2.locator('.m-actions .btn', { hasText: 'Points…' }).click();
+await p2.waitForTimeout(250);
+await p2.locator('.m-actions .btn', { hasText: '+ Nouveau point' }).click();
+await p2.waitForTimeout(250);
+await p2.fill('#px_Identifiant', 'pression');
+await p2.fill('#px_Libell', 'Pression refoulement');
+await p2.fill('#px_Unit', 'bar');
+await p2.fill('#pf_reg', '40');
+await p2.locator('.m-actions .btn', { hasText: 'Enregistrer' }).click();
+await p2.waitForTimeout(300);
+const pointRow = await p2.locator('.px-row .px-name').first().textContent();
+await p2.locator('.px-acts .btn', { hasText: 'Ajouter au diagnostic' }).first().click();
+await p2.waitForTimeout(700);
+const netRow = await p2.locator(PANE + '.vrow').filter({ hasText: '@banc.pression' }).count();
+const netVal = await p2.locator(PANE + '.vrow').filter({ hasText: '@banc.pression' })
+  .locator('.v-val').first().textContent().catch(() => '');
+check('liens réseau : lien et point déclarés, ajoutés au diagnostic',
+  protos >= 7 && pointRow === '@banc.pression' && netRow === 1,
+  protos + ' protocoles · ' + pointRow + ' · valeur ' + (netVal || '—').trim());
+
+// Suggestions : le point réseau est proposé et filtrable
+await p2.fill('#searchInput', '@banc');
+await p2.waitForTimeout(300);
+const sugNet = await p2.locator('#suggestBox .sug').filter({ hasText: '@banc.pression' }).count();
+await p2.locator('#suggestBox .fbtn', { hasText: 'Réseau' }).click();
+await p2.waitForTimeout(200);
+const netOnly = await p2.locator('#suggestBox .sug .badge').allTextContents();
+await p2.keyboard.press('Escape');
+await p2.fill('#searchInput', '');
+check('le point réseau apparaît dans les suggestions (filtre « Réseau »)',
+  sugNet === 1 && netOnly.length > 0 && netOnly.every((t) => t === 'NET'),
+  netOnly.join(', ') || 'aucune suggestion');
+
 // Couverture des infobulles : chaque objet interactif doit être documenté
 const AUDIT = () => {
   const sel = 'button, select, input, .tab, .chip, .drag-handle, .vrow, .badge,' +
@@ -312,6 +356,13 @@ await p2.click('.m-close');
 await sweep(async () => { await p2.click('#logBtn'); await p2.waitForTimeout(300); });
 await p2.click('.m-close');
 await sweep(async () => { await p2.click('#menuBtn'); await p2.waitForTimeout(180); });
+await sweep(async () => { await p2.click('#netBtn'); await p2.waitForTimeout(300); });
+await sweep(async () => {
+  await p2.locator('.px-acts .btn', { hasText: 'Modifier' }).first().click();
+  await p2.waitForTimeout(250);
+});
+await p2.click('.m-close');
+await p2.click('#menuBtn'); await p2.waitForTimeout(150);
 await sweep(async () => { await p2.click('#helpBtn'); await p2.waitForTimeout(250); });
 const helpSections = await p2.locator('.help-h').count();
 check('infobulle sur chaque objet de l\'interface',

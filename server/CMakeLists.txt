@@ -14,6 +14,12 @@ target_compile_options(diagweb-server PRIVATE -Wall -Wextra)
 find_package(Threads REQUIRED)
 target_link_libraries(diagweb-server PRIVATE Threads::Threads)
 
+# Tests unitaires du décodage des protocoles réseau :
+#   cmake --build build --target diagweb-decode-test && ./build/diagweb-decode-test
+add_executable(diagweb-decode-test EXCLUDE_FROM_ALL ../tests/decode.cpp)
+target_include_directories(diagweb-decode-test PRIVATE src)
+target_compile_options(diagweb-decode-test PRIVATE -Wall -Wextra)
+
 # Compilation croisée : passer la chaîne d'outils du contrôleur, p. ex.
 #   cmake -B build -DCMAKE_TOOLCHAIN_FILE=<sdk>/toolchain.cmake
 # Aucune dépendance externe : uniquement la bibliothèque standard et POSIX.

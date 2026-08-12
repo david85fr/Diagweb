@@ -1,8 +1,8 @@
-// Diagweb — source de variables simulée (bouchon du cœur du contrôleur).
+// Diagweb — source de variables simulée (bouchon du controller).
 //
 // Reproduit les générateurs de web/js/sim.js (mêmes graines, mêmes lois) pour
 // que le serveur de diagnostic présente exactement les mêmes signaux que la
-// simulation navigateur. À remplacer par le binding du processus cœur.
+// simulation navigateur. À remplacer par le binding du controller.
 #pragma once
 
 #include <algorithm>

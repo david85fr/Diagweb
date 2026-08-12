@@ -1,8 +1,9 @@
 // Diagweb — contrat de source de variables, côté serveur de diagnostic.
 //
-// C'est la frontière avec le cœur du contrôleur : le prototype fournit une
+// C'est la frontière avec le controller (processus cœur du contrôleur) : le
+// prototype fournit une
 // implémentation simulée (SimSource) ; la version embarquée fournira une
-// implémentation qui interroge le processus cœur (mapping PLC, registres de
+// implémentation qui interroge le controller (mapping PLC, registres de
 // bus, signaux des modèles via la C API). Le reste du serveur ne connaît
 // que cette interface.
 #pragma once
@@ -51,6 +52,7 @@ struct ParsedAddr {
  *   I/Q/M/S suivis de 1 à 4 niveaux numériques  → bit
  *   MB<registre>                                → mot de bus 16 bits
  *   Modele.sous_systeme.signal                  → signal de modèle (C API)
+ *   @lien.point                                 → point lu sur un lien réseau
  * Le séparateur hiérarchique est le point ; « / » est toléré et normalisé.
  */
 inline ParsedAddr parse_addr(const std::string& raw) {
@@ -61,6 +63,25 @@ inline ParsedAddr parse_addr(const std::string& raw) {
     else if (!std::isspace(static_cast<unsigned char>(c))) in += c;
   }
   if (in.empty()) { r.error = "adresse vide"; return r; }
+
+  // Point réseau : @lien.point (le « @ » lève toute ambiguïté)
+  if (in[0] == '@') {
+    const size_t dot = in.find('.', 1);
+    auto ident = [](const std::string& s) {
+      if (s.empty() || s.size() > 24) return false;
+      if (!std::isalpha(static_cast<unsigned char>(s[0]))) return false;
+      for (char c : s) {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-') return false;
+      }
+      return true;
+    };
+    if (dot != std::string::npos && ident(in.substr(1, dot - 1)) && ident(in.substr(dot + 1))) {
+      r.ok = true; r.addr = in; r.family = "NET"; r.kind = Kind::Float;
+      return r;
+    }
+    r.error = "point reseau attendu sous la forme @lien.point";
+    return r;
+  }
 
   // Mot de bus : MB<registre>
   if ((in[0] == 'M' || in[0] == 'm') && in.size() > 2 && (in[1] == 'B' || in[1] == 'b')) {

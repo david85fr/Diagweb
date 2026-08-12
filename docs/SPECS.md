@@ -16,9 +16,15 @@ pour les familles PLC, normalisé en majuscules) :
 | `S` | idem — variables système | `S0.4` | bit |
 | `MB` | `MB` + numéro de registre 0–65535 | `MB414` | mot 16 bits |
 | C API | `Modele.sous_systeme.signal` — **séparateur hiérarchique : le point**, le **premier champ est le nom du modèle** Simulink ; ≥ 2 segments, identifiants `[A-Za-z_][A-Za-z0-9_]*` | `Regulation.mesure.vitesse` | flottant |
+| NET | `@lien.point` — point lu par le serveur de diagnostic sur un **lien réseau** (voir `docs/PROTOCOLES.md`) ; identifiants `[A-Za-z][A-Za-z0-9_-]{0,23}` | `@banc.pression` | selon le point |
 
 - Une adresse bien formée mais absente du catalogue est acceptée (« hors
   catalogue ») : le simulateur lui invente un signal plausible du bon type.
+- Le préfixe **« @ »** est réservé aux points réseau : il est reconnu avant
+  toute autre famille, donc sans ambiguïté possible. L'adressage propre au
+  protocole (registre, IOA, PGN/SPN, index, référence d'objet) vit dans la
+  configuration du point, jamais dans l'adresse — un registre peut être
+  corrigé sans casser les dispositions enregistrées.
 - Les familles PLC sont **prioritaires** sur les chemins C API (un modèle ne
   peut donc pas s'appeler `I`, `Q`, `M`, `S` ou `MB` suivi de chiffres avec
   un 2ᵉ segment numérique). L'ancien séparateur « / » est toléré à la saisie
@@ -35,8 +41,12 @@ pour les familles PLC, normalisé en majuscules) :
   immédiatement.
 - **Filtres par type** en tête des suggestions : « Toutes », « PLC »
   (familles I/Q/M/S), « Modbus » (registres MB), « Simulink » (signaux
-  C API). Sélection exclusive, conservée pendant la saisie ; le filtre
-  s'applique aussi à la ligne « hors catalogue ».
+  C API), « Réseau » (points des liens, famille NET). Sélection exclusive,
+  conservée pendant la saisie ; le filtre s'applique aussi à la ligne « hors
+  catalogue ».
+- Le vivier de suggestions est le catalogue du contrôleur **plus** les points
+  déclarés dans les liens réseau : un point configuré est proposé à la frappe
+  comme n'importe quelle variable.
 - Sélecteur de **cible** : « Tableau numérique », chacun des graphiques
   existants, « Nouveau graphique ». Après création d'un graphique via
   « Nouveau graphique » ou « + Graphique », il devient la cible courante.
@@ -46,6 +56,8 @@ pour les familles PLC, normalisé en majuscules) :
   conservée dans les dispositions. Si la même adresse est demandée avec
   deux périodes différentes, la plus courte l'emporte (un seul flux par
   variable).
+- Un **point réseau** impose sa propre période (celle de sa configuration) :
+  le sélecteur de période de la barre de recherche ne s'y applique pas.
 - Doublons refusés (même adresse dans le tableau, même courbe dans un même
   graphique) avec message.
 
@@ -329,9 +341,10 @@ réabonne et en informe l'utilisateur.
 
 Côté contrôleur (voir `docs/PROJET.md`, « Architecture cible ») : le
 navigateur ne dialogue qu'avec le **processus serveur de diagnostic**, qui
-sert les pages et relaie le flux temps réel depuis le **processus cœur**
-(C++). La période de rafraîchissement de chaque abonnement (défaut 10 ms)
-est transmise au serveur de diag, qui échantillonne le cœur en conséquence.
+sert les pages et relaie le flux temps réel depuis le **`controller`** (le
+processus cœur, C++). La période de rafraîchissement de chaque abonnement
+(défaut 10 ms) est transmise au serveur de diag, qui échantillonne le
+`controller` en conséquence.
 
 ### Protocole du flux (WebSocket `/ws`, trames texte JSON)
 
@@ -351,7 +364,47 @@ Points d'entrée REST du même serveur : `/api/health`, `/api/layouts`
 
 L'implémentation de référence est `server/` (C++20, sans dépendance) : voir
 `server/README.md`, et `server/src/source.hpp` pour le contrat côté serveur
-(`IVariableSource`) — seul point à réimplémenter pour brancher le cœur.
+(`IVariableSource`) — seul point à réimplémenter pour brancher le
+`controller`.
+
+## 7 bis. Liens réseau (protocoles industriels)
+
+Le serveur de diagnostic lit aussi des variables sur des **équipements tiers**.
+Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
+
+- **Modèle** : un *lien* (protocole + paramètres de connexion) porte des
+  *points* (variables lues). Adresse Diagweb : **`@lien.point`** (famille NET).
+- **Protocoles** : Modbus TCP, Modbus RTU (série), IEC 60870-5-104, CAN brut,
+  J1939, CANopen — pilotes implémentés ; **IEC 61850 (MMS)** est *déclaré* :
+  la configuration est acceptée et conservée, la lecture viendra avec la pile
+  ISO/MMS. Un pilote déclaré ne publie **aucune** valeur.
+- **Lecture seule de bout en bout** : aucune écriture n'est possible depuis
+  Diagweb (pas de commande Modbus ni de télécommande 104, pas d'émission
+  CAN). Seule exception : la requête de lecture SDO CANopen, **désactivée par
+  défaut** (« Écoute seule »), car interroger un nœud absent peut mener le
+  contrôleur CAN au bus-off.
+- **Saisie** : ☰ → « Liens réseau… » — liste des liens avec leur état
+  (● connecté · ⚠ en défaut avec la cause · ○ désactivé · ⋯ non branché ·
+  ~ simulé), édition, test de connexion, points, export/import JSON.
+- **Description unique** : `web/js/protocols.js` décrit les champs de chaque
+  protocole (libellés et aides en français) ; `tools/gen-protocols.mjs` en
+  dérive `server/src/protocols.generated.hpp`. L'interface construit ses
+  formulaires à partir de cette description : **ajouter un protocole ne
+  demande aucune modification de l'interface**.
+- **Persistance** : `<data-dir>/protocols.json` côté contrôleur (partagée
+  entre postes, rechargée au démarrage). Page ouverte hors serveur : la
+  configuration reste dans le navigateur et les valeurs sont **simulées**, ce
+  qui permet de préparer une configuration sans matériel.
+- **Période** : cadence d'interrogation pour Modbus et SDO ; **décimation**
+  pour les protocoles à flux (104, CAN) — un changement de valeur passe
+  toujours, une variable bavarde ne sature pas l'historique.
+- **Qualité** : valeur invalide (bit IV), exception Modbus, abandon SDO ou
+  lien coupé ⇒ **aucun échantillon publié** (trou dans la courbe), la cause
+  étant lisible dans l'état du lien.
+- **Horodatage commun** : les points réseau sont datés sur l'horloge du
+  serveur, comme les variables du `controller` — courbes comparables.
+- REST : `GET/PUT /api/protocols`, `GET /api/protocols/status`,
+  `POST /api/protocols/test`.
 
 ## 8. Interface générale
 
@@ -361,7 +414,8 @@ L'implémentation de référence est `server/` (C++20, sans dépendance) : voir
   onglets (＋ inclus), et à droite le tag de version, le bouton de **repli
   de la zone de configuration** (⌃/⌄) et le **menu burger ☰**.
 - **Menu burger ☰ = fonctions globales** (indépendantes des onglets) :
-  aujourd'hui Basculer le thème, Aide (commandes et gestes) et À propos
+  aujourd'hui Basculer le thème, Aide (commandes et gestes), **Liens réseau**
+  (configuration des protocoles industriels, §7 bis) et À propos
   (version, mode) ; réservé aux
   futures fonctions globales (capture d'interfaces réseau, notes de
   version…, affichées « à venir »). Fermé par sélection ou appui à
@@ -410,6 +464,8 @@ L'implémentation de référence est `server/` (C++20, sans dépendance) : voir
 - [x] Dimensionnement libre à la poignée (hauteur + largeur en colonnes),
       neutralisé sur mobile
 - [x] Infobulles sur tous les objets + fenêtre d'aide (gestes et commandes)
+- [x] Liens réseau : Modbus TCP/RTU, IEC 60870-5-104, CAN, J1939, CANopen
+      (pilotes implémentés et testés) ; IEC 61850 déclaré, pile ISO/MMS à venir
 - [x] Configurations : session, navigateur, export JSON + CSV, import JSON,
       ★ auto, stub contrôleur
 - [x] Journalisation par onglet (navigateur ; contrôleur en stub)
@@ -419,5 +475,5 @@ L'implémentation de référence est `server/` (C++20, sans dépendance) : voir
 - [x] Serveur de diagnostic C++ (squelette) : WebSocket, /api/layouts,
       /api/datalog, service des pages ; source encore simulée
 - [x] Source WebSocket côté navigateur + bascule automatique
-- [ ] Binding du processus cœur derrière `IVariableSource` — phase 2
+- [ ] Binding du `controller` derrière `IVariableSource` — phase 2
 - [ ] Enregistrement/relecture, export CSV, seuils/alarmes — phase 3
