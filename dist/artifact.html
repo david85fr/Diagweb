@@ -320,9 +320,28 @@ button { font-family: var(--sans); }
 .v-del:hover { color: var(--crit); background: var(--panel-2); }
 
 /* ---------- Grille de graphiques ---------- */
-.charts-grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
+/* --col-min : largeur minimale d'une colonne, lue par chart.js pour connaître
+   le nombre de colonnes « naturelles » (0 = une seule colonne, mobile). */
+.charts-grid { display: grid; gap: 12px; grid-template-columns: 1fr; --col-min: 0px; }
 
-.chart-card { display: flex; flex-direction: column; min-width: 0; }
+.chart-card { position: relative; display: flex; flex-direction: column; min-width: 0; }
+
+/* Poignée de redimensionnement (coin bas-droit, souris ou stylet) */
+.resize-grip {
+  display: none;                      /* activée ≥ 700 px — cf. media query */
+  position: absolute; right: 2px; bottom: 2px;
+  width: 18px; height: 18px;
+  cursor: nwse-resize; touch-action: none;
+  border-bottom-right-radius: 12px;
+  opacity: .45;
+  background:
+    linear-gradient(135deg, transparent 46%, var(--faint) 46%, var(--faint) 58%, transparent 58%),
+    linear-gradient(135deg, transparent 68%, var(--faint) 68%, var(--faint) 80%, transparent 80%);
+}
+.resize-grip:hover { opacity: 1; }
+.chart-card.resizing { outline: 1px solid color-mix(in srgb, var(--accent) 60%, transparent); }
+.chart-card.resizing .resize-grip { opacity: 1; }
+.chart-card.fs .resize-grip { display: none; }
 .chart-head {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 10px 6px;
@@ -722,10 +741,16 @@ body.dnd-over-pane #panes {
 @media (min-width: 700px) {
   body { font-size: 14.5px; }
   .wrap { padding: 12px 20px 64px; }
-  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); --col-min: 380px; }
   .modal-back { place-items: center; padding: 20px; }
   .modal { border-radius: 16px; }
   .chip-addr { max-width: 240px; }
+
+  /* Dimensionnement libre à la poignée — réservé aux écrans multi-colonnes ;
+     sur mobile la grille reste en une colonne avec les hauteurs M/L/XL. */
+  .resize-grip { display: block; }
+  .chart-card.has-custom-h .chart-body { height: var(--custom-h); }
+  .chart-card.has-span { grid-column: span var(--col-span); }
 }
 
 /* Barre supérieure sur une seule ligne : uniquement quand tout tient */
@@ -741,10 +766,10 @@ body.dnd-over-pane #panes {
 body.cfg-hidden .searchrow { display: none; }
 body.cfg-hidden .tabActions { display: none; }
 @media (min-width: 1700px) {
-  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); }
+  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); --col-min: 500px; }
 }
 @media (min-width: 2300px) {
-  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(620px, 1fr)); }
+  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(620px, 1fr)); --col-min: 620px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -779,7 +804,7 @@ body.cfg-hidden .tabActions { display: none; }
     </div>
 
     <div class="topIcons">
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">a4c37c3 · #39</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">a06e66e · #41</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
@@ -1538,6 +1563,22 @@ body.cfg-hidden .tabActions { display: none; }
   const SHRINK_DELAY_S = 2;      // hystérésis de rétraction des échelles
   const SHRINK_OCCUPANCY = 0.55; // rétraction si les données occupent < 55 %
   const HEIGHT_MODES = ['M', 'L', 'XL'];
+  // Dimensionnement libre à la poignée (bureau uniquement — voir app.css :
+  // sous le point de rupture mobile la grille reste en une colonne).
+  const MIN_CUSTOM_H = 150;
+  const MAX_CUSTOM_H = 2000;
+  const MAX_COL_SPAN = 6;
+
+  function sanitizeH(h) {
+    h = parseInt(h, 10);
+    if (!isFinite(h) || h <= 0) return null;
+    return clamp(h, MIN_CUSTOM_H, MAX_CUSTOM_H);
+  }
+  function sanitizeSpan(n) {
+    n = parseInt(n, 10);
+    if (!isFinite(n) || n <= 1) return null;
+    return clamp(n, 2, MAX_COL_SPAN);
+  }
 
   // ---------- Formatage ------------------------------------------------
   DW.fmtVal = function (v, meta) {
@@ -1719,6 +1760,8 @@ body.cfg-hidden .tabActions { display: none; }
       this.cursor = null;          // curseur transitoire {x} (survol souris)
       this.series = [];            // {addr, meta, colorIdx, axisMode, visible, periodMs, offsetY}
       this.heightMode = HEIGHT_MODES.includes(opts.heightMode) ? opts.heightMode : 'M';
+      this.customH = sanitizeH(opts.customH);      // hauteur libre (px), null = préréglage
+      this.colSpan = sanitizeSpan(opts.colSpan);   // largeur en colonnes de grille, null = auto
       this.fullscreen = false;
       this.moveSeries = null;      // adresse en cours de décalage (mode explicite)
       this.axisState = new Map();  // clé de groupe -> état d'échelle
@@ -1761,7 +1804,10 @@ body.cfg-hidden .tabActions { display: none; }
           '<div class="chart-hint">Ajoutez une variable via la barre de recherche, cible « ' +
             '<b class="hint-name"></b> ».</div>' +
         '</div>' +
-        '<div class="chart-legend" role="list"></div>';
+        '<div class="chart-legend" role="list"></div>' +
+        '<span class="resize-grip" role="separator" aria-label="Redimensionner le graphique" ' +
+          'title="Glisser pour redimensionner ce graphique : ↕ hauteur libre, ↔ largeur en nombre ' +
+          'de colonnes de la grille — double-clic pour revenir à la taille automatique"></span>';
 
       this.titleEl = this.root.querySelector('.chart-title');
       this.titleEl.value = opts.title || 'Graphique';
@@ -1814,8 +1860,12 @@ body.cfg-hidden .tabActions { display: none; }
 
       this._escHandler = (e) => { if (e.key === 'Escape' && this.fullscreen) this.setFullscreen(false); };
       document.addEventListener('keydown', this._escHandler);
+      // La largeur voulue est mémorisée ; l'appliquée suit la place disponible.
+      this._resizeHandler = () => { if (this.colSpan != null) this.applyHeightMode(); };
+      window.addEventListener('resize', this._resizeHandler);
 
       this.bindCanvasGestures();
+      this.bindResizeGrip();
     }
 
     get title() { return this.titleEl.value.trim() || 'Graphique'; }
@@ -1857,12 +1907,96 @@ body.cfg-hidden .tabActions { display: none; }
     applyHeightMode() {
       this.root.classList.toggle('size-L', this.heightMode === 'L');
       this.root.classList.toggle('size-XL', this.heightMode === 'XL');
+      // Taille libre : appliquée par variables CSS, neutralisées sous le
+      // point de rupture mobile (la grille y reste en une colonne).
+      this.root.classList.toggle('has-custom-h', this.customH != null);
+      this.root.classList.toggle('has-span', this.colSpan != null);
+      if (this.customH != null) this.root.style.setProperty('--custom-h', this.customH + 'px');
+      else this.root.style.removeProperty('--custom-h');
+      if (this.colSpan != null) {
+        // Jamais plus large que la grille : une fenêtre rétrécie ne doit pas
+        // forcer des colonnes supplémentaires (la largeur voulue est conservée).
+        const m = this.gridMetrics();
+        this.root.style.setProperty('--col-span',
+          String(m ? Math.min(this.colSpan, m.count) : this.colSpan));
+      } else {
+        this.root.style.removeProperty('--col-span');
+      }
     }
     cycleHeight() {
       const i = HEIGHT_MODES.indexOf(this.heightMode);
       this.heightMode = HEIGHT_MODES[(i + 1) % HEIGHT_MODES.length];
+      this.customH = null;   // le préréglage reprend la main sur la taille libre
       this.applyHeightMode();
       this.app.onChange();
+    }
+    /** Retour à la taille automatique (préréglage M/L/XL). */
+    resetSize() {
+      if (this.customH == null && this.colSpan == null) return;
+      this.customH = null;
+      this.colSpan = null;
+      this.applyHeightMode();
+      this.app.onChange();
+      this.app.toast('Taille automatique rétablie.');
+    }
+
+    /**
+     * Géométrie de la grille : nombre de colonnes « naturelles », largeur de
+     * colonne et gouttière. Le compte est recalculé depuis `--col-min` (et non
+     * depuis le template résolu) pour rester indépendant des largeurs déjà
+     * imposées par les graphiques élargis.
+     */
+    gridMetrics() {
+      const grid = this.root.parentElement;
+      if (!grid || !grid.classList.contains('charts-grid')) return null;
+      const cs = getComputedStyle(grid);
+      const gap = parseFloat(cs.columnGap) || 0;
+      const min = parseFloat(cs.getPropertyValue('--col-min')) || 0;
+      const w = grid.clientWidth;
+      if (!(w > 0)) return null;
+      const count = min > 0 ? Math.max(1, Math.floor((w + gap) / (min + gap))) : 1;
+      return { count, colW: (w - gap * (count - 1)) / count, gap };
+    }
+
+    /** Poignée bas-droite : redimensionnement libre à la souris (ou au doigt). */
+    bindResizeGrip() {
+      const grip = this.root.querySelector('.resize-grip');
+      let g = null;
+      grip.addEventListener('pointerdown', (e) => {
+        if (this.fullscreen || e.button > 0) return;
+        const m = this.gridMetrics();
+        g = {
+          id: e.pointerId,
+          x: e.clientX, y: e.clientY,
+          h: this.root.querySelector('.chart-body').clientHeight,
+          span: this.colSpan || 1,
+          w: this.root.getBoundingClientRect().width,
+          m,
+        };
+        try { grip.setPointerCapture(e.pointerId); } catch (err) { /* capture facultative */ }
+        this.root.classList.add('resizing');
+        e.preventDefault();
+      });
+      grip.addEventListener('pointermove', (e) => {
+        if (!g || e.pointerId !== g.id) return;
+        this.customH = sanitizeH(Math.round(g.h + (e.clientY - g.y)));
+        if (g.m && g.m.count > 1) {
+          const unit = g.m.colW + g.m.gap;
+          const span = Math.round((g.w + (e.clientX - g.x) + g.m.gap) / unit);
+          this.colSpan = sanitizeSpan(clamp(span, 1, Math.min(g.m.count, MAX_COL_SPAN)));
+        }
+        this.applyHeightMode();
+        e.preventDefault();
+      });
+      const end = (e) => {
+        if (!g || (e && e.pointerId !== g.id)) return;
+        g = null;
+        this.root.classList.remove('resizing');
+        this.app.onChange();
+      };
+      grip.addEventListener('pointerup', end);
+      grip.addEventListener('pointercancel', end);
+      grip.addEventListener('dblclick', (e) => { e.preventDefault(); this.resetSize(); });
     }
     setFullscreen(on) {
       this.fullscreen = on;
@@ -1880,6 +2014,10 @@ body.cfg-hidden .tabActions { display: none; }
         mk('Taille : ' + this.heightMode + ' → ' + next +
            (next === 'XL' ? ' (pleine largeur)' : ''), () => this.cycleHeight(), null,
           'Hauteur du graphique : M (normale), L (grande), XL (grande et pleine largeur de la grille)');
+        if (this.customH != null || this.colSpan != null) {
+          mk('Taille automatique', () => this.resetSize(), null,
+            'Annuler le dimensionnement fait à la poignée (coin bas-droit) et revenir au préréglage M/L/XL');
+        }
         mk(this.fullscreen ? 'Quitter le plein écran' : 'Plein écran', () =>
           this.setFullscreen(!this.fullscreen), null,
           'Afficher ce graphique seul sur tout l’écran (sortie par Échap)');
@@ -2646,6 +2784,8 @@ body.cfg-hidden .tabActions { display: none; }
         title: this.title,
         windowS: Math.round(this.windowS * 10) / 10,
         heightMode: this.heightMode !== 'M' ? this.heightMode : undefined,
+        customH: this.customH || undefined,
+        colSpan: this.colSpan || undefined,
         series: this.series.map((s) => ({
           addr: s.addr,
           axisMode: s.axisMode,
@@ -2661,6 +2801,7 @@ body.cfg-hidden .tabActions { display: none; }
     destroy() {
       if (this.fullscreen) this.setFullscreen(false);
       document.removeEventListener('keydown', this._escHandler);
+      window.removeEventListener('resize', this._resizeHandler);
       for (const s of this.series) this.app.release(s.addr);
       this.series = [];
       closePopover();
@@ -3549,9 +3690,12 @@ body.cfg-hidden .tabActions { display: none; }
       title: opts.title || 'Graphique ' + tab.chartSeq,
       windowS: opts.windowS,
       heightMode: opts.heightMode,
+      customH: opts.customH,
+      colSpan: opts.colSpan,
     });
     tab.charts.push(chart);
     tab.chartsGridEl.appendChild(chart.root);
+    chart.applyHeightMode();   // la largeur en colonnes dépend de la grille d'accueil
     if (tab === state.active) refreshTargets();
     onChange();
     return chart;
@@ -3751,7 +3895,10 @@ body.cfg-hidden .tabActions { display: none; }
     }
     // On ne bascule pas d'onglet : en multi-écran, l'utilisateur range des
     // widgets sans quitter ce qu'il regarde (un message indique la cible).
-    const chart = createChart({ title: cfg.title, windowS: cfg.windowS, heightMode: cfg.heightMode }, target);
+    const chart = createChart({
+      title: cfg.title, windowS: cfg.windowS, heightMode: cfg.heightMode,
+      customH: cfg.customH, colSpan: cfg.colSpan,
+    }, target);
     if (chart) {
       for (const s of cfg.series || []) {
         const p = DW.parseAddr(s.addr);
@@ -3872,7 +4019,10 @@ body.cfg-hidden .tabActions { display: none; }
       if (p.ok) addToTable(p.addr, periodMs);
     }
     for (const c of data.charts || []) {
-      const chart = createChart({ title: c.title, windowS: c.windowS, heightMode: c.heightMode });
+      const chart = createChart({
+        title: c.title, windowS: c.windowS, heightMode: c.heightMode,
+        customH: c.customH, colSpan: c.colSpan,
+      });
       if (!chart) break;
       for (const s of c.series || []) {
         const p = DW.parseAddr(s.addr);
@@ -4428,7 +4578,8 @@ body.cfg-hidden .tabActions { display: none; }
           L([
             ['Poignée ⠿', 'Glisser un graphique ou le tableau vers un onglet, une autre fenêtre, ou sur un autre graphique pour le ranger.'],
             ['Ligne du tableau', 'Se glisse seule vers un autre onglet ou une autre fenêtre.'],
-            ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
+            ['Poignée ◢ (coin bas-droit)', 'Redimensionner un graphique à la souris : ↕ hauteur libre, ↔ largeur en nombre de colonnes. Double-clic pour revenir à la taille automatique. Sur mobile la disposition reste en une colonne, avec les hauteurs M/L/XL.'],
+            ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
           ]) +
           S('Courbes') +
