@@ -59,13 +59,16 @@ def main() -> int:
     problems = []
 
     # 1. Reconstruction dans un dossier temporaire, puis comparaison.
+    #    Rien n'est écrit dans dist/ : une vérification ne doit pas modifier
+    #    le dépôt (sans quoi elle laisse un dist/ mal daté derrière elle).
     with tempfile.TemporaryDirectory() as tmp:
+        idx = pathlib.Path(tmp) / "index.html"
         art = pathlib.Path(tmp) / "artifact.html"
         subprocess.run([sys.executable, str(ROOT / "tools" / "build.py"),
-                        "--artifact-out", str(art)],
+                        "--index-out", str(idx), "--artifact-out", str(art)],
                        cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
         rebuilt = {
-            "dist/index.html": (DIST / "index.html").read_text(encoding="utf-8"),
+            "dist/index.html": idx.read_text(encoding="utf-8"),
             "dist/artifact.html": art.read_text(encoding="utf-8"),
         }
 

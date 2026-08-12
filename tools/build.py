@@ -7,7 +7,10 @@ Produit :
   dist/artifact.html même contenu sans <!DOCTYPE>/<html>/<head>/<body>, pour
                      publication comme Artifact (le conteneur ajoute le squelette).
 
-Usage : python3 tools/build.py [--artifact-out CHEMIN]
+Usage : python3 tools/build.py [--index-out CHEMIN] [--artifact-out CHEMIN]
+
+Les deux options servent aux vérifications (tools/check-dist.py) : elles
+permettent de reconstruire ailleurs que dans dist/, sans toucher au dépôt.
 """
 import argparse
 import pathlib
@@ -65,18 +68,20 @@ def body_only(html: str) -> str:
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--index-out", default=str(DIST / "index.html"))
     ap.add_argument("--artifact-out", default=str(DIST / "artifact.html"))
     args = ap.parse_args()
 
     src = (WEB / "index.html").read_text(encoding="utf-8")
     full = stamp_version(inline_assets(src))
 
-    DIST.mkdir(exist_ok=True)
-    (DIST / "index.html").write_text(full, encoding="utf-8")
+    index = pathlib.Path(args.index_out)
+    index.parent.mkdir(parents=True, exist_ok=True)
+    index.write_text(full, encoding="utf-8")
     out = pathlib.Path(args.artifact_out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(body_only(full), encoding="utf-8")
-    print(f"build: dist/index.html ({len(full)} o) et {out} générés")
+    print(f"build: {index} ({len(full)} o) et {out} générés")
 
 
 if __name__ == "__main__":
