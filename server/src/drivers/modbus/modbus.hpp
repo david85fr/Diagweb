@@ -15,8 +15,8 @@
 #include <string>
 #include <vector>
 
-#include "../protocol.hpp"
-#include "net.hpp"
+#include "../../protocol.hpp"
+#include "../common/net.hpp"
 
 namespace diagweb {
 

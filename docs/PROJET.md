@@ -59,6 +59,7 @@ qu'au serveur de diagnostic, jamais au `controller`.
 └───────────┼────────────────────────────────────┼────────────────┘
             │ Modbus TCP/RTU · IEC 60870-5-104   │ réseau : HTTP
             │ CAN · J1939 · CANopen · IEC 61850  │ + WebSocket
+            │ OPC UA                             │
             ▼                                    ▼
  ┌────────────────────┐         ┌──────────────────────────────────┐
  │ ÉQUIPEMENTS TIERS  │         │ NAVIGATEUR — Diagweb (web/)      │

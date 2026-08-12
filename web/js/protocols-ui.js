@@ -1,5 +1,6 @@
 /* Diagweb — fenêtre « Liens réseau » : saisie de la configuration des
- * protocoles (Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen) et des
+ * protocoles (Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen, OPC UA)
+ * et des
  * points à lire, puis ajout de ces points au diagnostic.
  *
  * Fonction globale (indépendante des onglets) : elle vit dans le menu ☰.
@@ -153,7 +154,7 @@
     const bar = document.createElement('div');
     bar.className = 'm-actions';
     bar.appendChild(btn('+ Nouveau lien', 'primary',
-      'Déclarer une connexion vers un équipement ou un réseau (Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen)',
+      'Déclarer une connexion vers un équipement ou un réseau (Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen, OPC UA)',
       () => { editing = newLink(); view = 'link'; render(); }));
     bar.appendChild(btn('Exporter', '',
       'Télécharger toute la configuration des liens réseau au format JSON',

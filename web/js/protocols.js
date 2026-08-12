@@ -1,10 +1,12 @@
 /* Diagweb — liens réseau : description des protocoles, configuration, points.
  *
  * Le serveur de diagnostic sait lire des variables sur des équipements tiers
- * (Modbus, IEC 61850, IEC 60870-5-104, CAN brut, J1939, CANopen). Ce fichier
- * est la SOURCE DE VÉRITÉ de la description de ces protocoles : les champs de
- * configuration, leurs libellés et leurs aides. `tools/gen-protocols.mjs` en
- * dérive `server/src/protocols.generated.hpp` — ne jamais éditer le .hpp.
+ * (Modbus, IEC 61850, IEC 60870-5-104, CAN brut, J1939, CANopen, OPC UA). Ce
+ * fichier est la SOURCE DE VÉRITÉ de la description de ces protocoles : les
+ * champs de configuration, leurs libellés et leurs aides. Chaque protocole a
+ * son pilote dans son propre dossier, sous `server/src/drivers/<protocole>/`,
+ * et `tools/gen-protocols.mjs` dérive `server/src/protocols.generated.hpp` —
+ * ne jamais éditer le .hpp.
  *
  * Vocabulaire (voir docs/PROTOCOLES.md) :
  *   lien  = une connexion vers un équipement ou un réseau (id, protocole,
@@ -257,6 +259,75 @@
                       ['f32', 'Flottant 32 bits']],
             when: { mode: ['sdo'] } }),
       ].concat(BITFIELD.map((f) => Object.assign({}, f, { when: { mode: ['tpdo'] } }))).concat(SCALE),
+    },
+    {
+      id: 'opcua',
+      label: 'OPC UA (IEC 62541)',
+      transport: 'UA-TCP binaire (opc.tcp, port 4840)',
+      state: 'declared',
+      help: 'Client OPC UA d’un serveur de supervision ou d’un équipement : lecture ' +
+            'de nœuds désignés par leur NodeId, par interrogation cyclique (Read) ou ' +
+            'par abonnement (MonitoredItems). La configuration et les points se ' +
+            'saisissent dès maintenant ; la lecture effective demande la pile UA ' +
+            '(UA-TCP, SecureConversation, encodage binaire), prévue en phase ' +
+            'ultérieure (voir docs/PROTOCOLES.md). Lecture seule définitive : ni ' +
+            'Write ni Call ne seront implémentés.',
+      linkFields: [
+        F('endpoint', 'Point de terminaison', 'text', 'opc.tcp://192.168.0.10:4840', true,
+          'URL du serveur OPC UA, forme opc.tcp://hôte:port/chemin. Le chemin est facultatif ' +
+          'et dépend du serveur.'),
+        F('securityPolicy', 'Politique de sécurité', 'enum', 'None', false,
+          'Politique annoncée par le serveur pour le canal sécurisé. « Aucune » ne convient ' +
+          'qu’à un réseau de confiance ; les autres exigent un certificat client.',
+          { choices: [['None', 'Aucune'], ['Basic256Sha256', 'Basic256Sha256'],
+                      ['Aes128Sha256RsaOaep', 'Aes128-Sha256-RsaOaep'],
+                      ['Aes256Sha256RsaPss', 'Aes256-Sha256-RsaPss']] }),
+        F('securityMode', 'Mode de sécurité', 'enum', 'None', false,
+          'Aucun (en clair), signature seule, ou signature et chiffrement du canal.',
+          { choices: [['None', 'Aucun'], ['Sign', 'Signature'],
+                      ['SignAndEncrypt', 'Signature et chiffrement']] }),
+        F('auth', 'Authentification', 'enum', 'anonymous', false,
+          'Jeton d’identité présenté à l’ouverture de session.',
+          { choices: [['anonymous', 'Anonyme'], ['username', 'Nom d’utilisateur'],
+                      ['certificate', 'Certificat client']] }),
+        F('username', 'Nom d’utilisateur', 'text', '', false,
+          'Identifiant de session. Le mot de passe n’est JAMAIS enregistré ici : la ' +
+          'configuration des liens est lisible par tout poste connecté et s’exporte en ' +
+          'clair. Le secret est repris du magasin de secrets du contrôleur.',
+          { when: { auth: ['username'] } }),
+        F('secretRef', 'Référence du secret', 'text', '', false,
+          'Nom sous lequel le mot de passe ou la clé privée du certificat est rangé dans le ' +
+          'magasin de secrets du contrôleur — une désignation, jamais le secret lui-même.',
+          { when: { auth: ['username', 'certificate'] } }),
+        F('mode', 'Mode de lecture', 'enum', 'subscribe', false,
+          'Abonnement = le serveur OPC UA notifie les changements (économe, recommandé). ' +
+          'Interrogation cyclique = service Read répété, utile face à un serveur qui ' +
+          'refuse les abonnements.',
+          { choices: [['subscribe', 'Abonnement (MonitoredItems)'],
+                      ['poll', 'Interrogation cyclique (Read)']] }),
+        F('publishMs', 'Intervalle de publication (ms)', 'int', 500, false,
+          'Cadence à laquelle le serveur OPC UA regroupe et renvoie les changements.',
+          { when: { mode: ['subscribe'] } }),
+        F('sessionTimeoutS', 'Expiration de session (s)', 'int', 60, false,
+          'Durée au-delà de laquelle le serveur ferme une session restée sans échange.'),
+      ],
+      pointFields: [
+        F('nodeId', 'NodeId', 'text', 'ns=2;s=', true,
+          'Identifiant du nœud à lire, forme ns=<espace>;<type>=<valeur> — par exemple ' +
+          'ns=2;s=Machine/Pression pour une chaîne, ns=2;i=1234 pour un entier.'),
+        F('attr', 'Attribut', 'enum', 'Value', false,
+          'Attribut du nœud à lire. « Valeur » convient à toutes les variables ; les autres ' +
+          'servent au diagnostic du serveur lui-même.',
+          { choices: [['Value', 'Valeur'], ['StatusCode', 'Code d’état'],
+                      ['SourceTimestamp', 'Horodatage source']] }),
+        F('samplingMs', 'Échantillonnage (ms)', 'int', 200, false,
+          'Cadence à laquelle le serveur OPC UA échantillonne le nœud, quand le lien est en ' +
+          'mode abonnement ; 0 laisse le serveur choisir. Ne peut pas être plus rapide que ' +
+          'la source de la donnée.'),
+        F('deadband', 'Bande morte (%)', 'float', 0, false,
+          'Variation minimale, en pourcentage de l’étendue, avant notification d’un ' +
+          'changement (mode abonnement) ; 0 pour tout notifier.'),
+      ].concat(SCALE),
     },
   ];
 

@@ -1,5 +1,8 @@
 // Diagweb — briques réseau communes aux pilotes de protocoles (sans dépendance).
 //
+// Partagé par les pilotes sur IP et sur liaison série (modbus/, iec104/…) ;
+// les pilotes CAN passent par common/can_socket.hpp.
+//
 // Connexion TCP avec délai maîtrisé (une résolution de nom ou un équipement
 // absent ne doit jamais figer le fil d'un lien), lecture/écriture bornées dans
 // le temps, et ouverture d'une liaison série en mode « brut ».

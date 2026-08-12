@@ -89,6 +89,7 @@ if [ "$CIBLE" = tout ] || [ "$CIBLE" = interface ]; then
   etape "syntaxe des sources JavaScript" syntaxe_js
   etape "syntaxe de l'outillage (Python et shell)" syntaxe_outillage
   etape "en-têtes générés à jour" entetes_generes
+  etape "un dossier de pilote par protocole" node tools/check-drivers.mjs
   etape "livrables à jour et page autonome" python3 tools/check-dist.py
   etape "tests d'interface" node tests/ui.mjs
 

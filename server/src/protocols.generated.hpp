@@ -157,6 +157,27 @@ inline const std::vector<ProtocolDesc>& protocols_desc() {
     { "gain", "Gain", "float", "1", false, "Facteur appliqué à la valeur brute : valeur = brut × gain + décalage.", "" },
     { "offset", "Décalage", "float", "0", false, "Constante ajoutée après le gain (unité physique).", "" },
     } },
+  { "opcua", "OPC UA (IEC 62541)", "UA-TCP binaire (opc.tcp, port 4840)",
+    "declared", "Client OPC UA d’un serveur de supervision ou d’un équipement : lecture de nœuds désignés par leur NodeId, par interrogation cyclique (Read) ou par abonnement (MonitoredItems). La configuration et les points se saisissent dès maintenant ; la lecture effective demande la pile UA (UA-TCP, SecureConversation, encodage binaire), prévue en phase ultérieure (voir docs/PROTOCOLES.md). Lecture seule définitive : ni Write ni Call ne seront implémentés.",
+    {
+    { "endpoint", "Point de terminaison", "text", "opc.tcp://192.168.0.10:4840", true, "URL du serveur OPC UA, forme opc.tcp://hôte:port/chemin. Le chemin est facultatif et dépend du serveur.", "" },
+    { "securityPolicy", "Politique de sécurité", "enum", "None", false, "Politique annoncée par le serveur pour le canal sécurisé. « Aucune » ne convient qu’à un réseau de confiance ; les autres exigent un certificat client.", "None|Basic256Sha256|Aes128Sha256RsaOaep|Aes256Sha256RsaPss" },
+    { "securityMode", "Mode de sécurité", "enum", "None", false, "Aucun (en clair), signature seule, ou signature et chiffrement du canal.", "None|Sign|SignAndEncrypt" },
+    { "auth", "Authentification", "enum", "anonymous", false, "Jeton d’identité présenté à l’ouverture de session.", "anonymous|username|certificate" },
+    { "username", "Nom d’utilisateur", "text", "", false, "Identifiant de session. Le mot de passe n’est JAMAIS enregistré ici : la configuration des liens est lisible par tout poste connecté et s’exporte en clair. Le secret est repris du magasin de secrets du contrôleur.", "" },
+    { "secretRef", "Référence du secret", "text", "", false, "Nom sous lequel le mot de passe ou la clé privée du certificat est rangé dans le magasin de secrets du contrôleur — une désignation, jamais le secret lui-même.", "" },
+    { "mode", "Mode de lecture", "enum", "subscribe", false, "Abonnement = le serveur OPC UA notifie les changements (économe, recommandé). Interrogation cyclique = service Read répété, utile face à un serveur qui refuse les abonnements.", "subscribe|poll" },
+    { "publishMs", "Intervalle de publication (ms)", "int", "500", false, "Cadence à laquelle le serveur OPC UA regroupe et renvoie les changements.", "" },
+    { "sessionTimeoutS", "Expiration de session (s)", "int", "60", false, "Durée au-delà de laquelle le serveur ferme une session restée sans échange.", "" },
+    },
+    {
+    { "nodeId", "NodeId", "text", "ns=2;s=", true, "Identifiant du nœud à lire, forme ns=<espace>;<type>=<valeur> — par exemple ns=2;s=Machine/Pression pour une chaîne, ns=2;i=1234 pour un entier.", "" },
+    { "attr", "Attribut", "enum", "Value", false, "Attribut du nœud à lire. « Valeur » convient à toutes les variables ; les autres servent au diagnostic du serveur lui-même.", "Value|StatusCode|SourceTimestamp" },
+    { "samplingMs", "Échantillonnage (ms)", "int", "200", false, "Cadence à laquelle le serveur OPC UA échantillonne le nœud, quand le lien est en mode abonnement ; 0 laisse le serveur choisir. Ne peut pas être plus rapide que la source de la donnée.", "" },
+    { "deadband", "Bande morte (%)", "float", "0", false, "Variation minimale, en pourcentage de l’étendue, avant notification d’un changement (mode abonnement) ; 0 pour tout notifier.", "" },
+    { "gain", "Gain", "float", "1", false, "Facteur appliqué à la valeur brute : valeur = brut × gain + décalage.", "" },
+    { "offset", "Décalage", "float", "0", false, "Constante ajoutée après le gain (unité physique).", "" },
+    } },
   };
   return all;
 }

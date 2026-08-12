@@ -2,13 +2,19 @@
 //
 // Vérifie ce qui ne peut pas l'être par le test bout en bout (tests/protocols.mjs) :
 // extraction de champs de bits CAN, décomposition d'un identifiant J1939,
-// grammaire des adresses « @lien.point », lecture de la configuration JSON.
+// filtres noyau et appariement des trois pilotes CAN, grammaire des adresses
+// « @lien.point », lecture de la configuration JSON.
 //
 //   g++ -std=c++20 -I server/src -o /tmp/decode tests/decode.cpp && /tmp/decode
 #include <cmath>
 #include <cstdio>
 #include <string>
+#include <utility>
+#include <vector>
 
+#include "drivers/can/can_raw.hpp"
+#include "drivers/canopen/canopen.hpp"
+#include "drivers/j1939/j1939.hpp"
 #include "protocol.hpp"
 
 using namespace diagweb;
@@ -81,6 +87,114 @@ int main() {
     check("J1939 : page de données prise en compte",
           j1939_pgn(0x1DF00400u) == ((1u << 16) | (0xF0u << 8) | 0x04u),
           std::to_string(j1939_pgn(0x1DF00400u)));
+  }
+
+  // ---- filtres noyau et appariement des pilotes CAN --------------------
+  // Ces deux mécanismes ne sont pas couverts par le test bout en bout (il
+  // faudrait une interface vcan) et un filtre trop large ou trop étroit se
+  // traduirait par une variable silencieusement muette.
+  {
+    auto pt = [](const std::string& id, std::initializer_list<std::pair<const char*, JValue>> kv) {
+      PointConfig p;
+      p.id = id;
+      p.params = JValue::object();
+      for (const auto& [k, v] : kv) p.params.set(k, v);
+      return p;
+    };
+    auto lien = [](const char* proto, std::initializer_list<std::pair<const char*, JValue>> kv,
+                   std::vector<PointConfig> pts) {
+      LinkConfig l;
+      l.id = "essai";
+      l.protocol = proto;
+      l.params = JValue::object();
+      for (const auto& [k, v] : kv) l.params.set(k, v);
+      l.points = std::move(pts);
+      return l;
+    };
+
+    struct Capteur : IPointSink {
+      std::vector<std::pair<size_t, double>> vus;
+      void publish(size_t i, double v) override { vus.push_back({i, v}); }
+      double now() const override { return 0; }
+    } sink;
+
+    // `filters()` et `on_frame()` sont protégés : on les expose pour le test.
+    struct Brut : CanRawDriver {
+      using CanRawDriver::CanRawDriver;
+      using CanRawDriver::filters;
+    };
+    struct J1939 : J1939Driver {
+      using J1939Driver::J1939Driver;
+      using J1939Driver::filters;
+      using J1939Driver::on_frame;
+    };
+    struct Open : CanOpenDriver {
+      using CanOpenDriver::CanOpenDriver;
+      using CanOpenDriver::filters;
+    };
+
+    {
+      Brut d(lien("can-raw", {}, {pt("std", {{"canId", JValue::string("0x181")}}),
+                                  pt("ext", {{"canId", JValue::string("0x18FEF100")},
+                                             {"ext", JValue::boolean(true)}})}), sink);
+      const auto f = d.filters();
+      check("CAN brut : filtre 11 bits",
+            f.size() == 2 && f[0].id == 0x181 && f[0].mask == 0x7FF && !f[0].ext);
+      check("CAN brut : filtre 29 bits",
+            f.size() == 2 && f[1].id == 0x18FEF100 && f[1].mask == 0x1FFFFFFF && f[1].ext);
+    }
+
+    {
+      // PDU2 (PGN 61444) : l'octet PS appartient au PGN, il entre dans le
+      // masque. PDU1 (PGN 61184) : c'est une destination, il en sort.
+      J1939 d(lien("j1939", {}, {pt("pdu2", {{"pgn", JValue::number(61444)}}),
+                                 pt("pdu1", {{"pgn", JValue::number(61184)}})}), sink);
+      const auto f = d.filters();
+      check("J1939 : masque PDU2 inclut l'octet PS",
+            f.size() == 2 && f[0].id == (61444u << 8) && f[0].mask == 0x03FFFF00u && f[0].ext);
+      check("J1939 : masque PDU1 exclut l'octet PS",
+            f.size() == 2 && f[1].mask == 0x03FF0000u && f[1].ext);
+    }
+
+    {
+      // Un point sans contrainte d'adresse source, un autre lié à 0x21.
+      J1939 d(lien("j1939", {}, {pt("tous", {{"pgn", JValue::number(61444)},
+                                             {"startBit", JValue::number(24)},
+                                             {"bitLen", JValue::number(16)},
+                                             {"gain", JValue::number(0.125)}}),
+                                 pt("sa21", {{"pgn", JValue::number(61444)},
+                                             {"sa", JValue::number(0x21)},
+                                             {"startBit", JValue::number(24)},
+                                             {"bitLen", JValue::number(16)},
+                                             {"gain", JValue::number(0.125)}})}), sink);
+      const uint8_t eec1[8] = {0xFF, 0xFF, 0xFF, 0x40, 0x1F, 0xFF, 0xFF, 0xFF};
+      d.on_frame(0x0CF00421u, true, eec1, 8);
+      check("J1939 : trame de la bonne source publiée sur les deux points",
+            sink.vus.size() == 2, std::to_string(sink.vus.size()) + " publication(s)");
+      near("J1939 : régime décodé par le pilote",
+           sink.vus.empty() ? 0 : sink.vus[0].second, 1000.0);
+      sink.vus.clear();
+      d.on_frame(0x0CF00400u, true, eec1, 8);
+      check("J1939 : source non concordante écartée pour le point filtré",
+            sink.vus.size() == 1 && sink.vus[0].first == 0,
+            std::to_string(sink.vus.size()) + " publication(s)");
+      sink.vus.clear();
+      d.on_frame(0x181u, false, eec1, 8);
+      check("J1939 : trame 11 bits ignorée", sink.vus.empty());
+    }
+
+    {
+      Open d(lien("canopen", {{"nodeId", JValue::number(3)}},
+                  {pt("tpdo", {{"mode", JValue::string("tpdo")},
+                               {"cobId", JValue::string("0x183")}}),
+                   pt("sdo", {{"mode", JValue::string("sdo")},
+                              {"index", JValue::string("0x6041")}})}), sink);
+      const auto f = d.filters();
+      check("CANopen : filtre du TPDO écouté",
+            f.size() == 2 && f[0].id == 0x183 && f[0].mask == 0x7FF && !f[0].ext);
+      check("CANopen : filtre de la réponse SDO (0x580 + node-id)",
+            f.size() == 2 && f[1].id == 0x583, f.size() == 2 ? std::to_string(f[1].id) : "?");
+    }
   }
 
   // ---- adresses « @lien.point » ----------------------------------------

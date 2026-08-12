@@ -419,9 +419,19 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
 - **Modèle** : un *lien* (protocole + paramètres de connexion) porte des
   *points* (variables lues). Adresse Diagweb : **`@lien.point`** (famille NET).
 - **Protocoles** : Modbus TCP, Modbus RTU (série), IEC 60870-5-104, CAN brut,
-  J1939, CANopen — pilotes implémentés ; **IEC 61850 (MMS)** est *déclaré* :
-  la configuration est acceptée et conservée, la lecture viendra avec la pile
-  ISO/MMS. Un pilote déclaré ne publie **aucune** valeur.
+  J1939, CANopen — pilotes implémentés ; **IEC 61850 (MMS)** et
+  **OPC UA (IEC 62541)** sont *déclarés* : la configuration est acceptée et
+  conservée, la lecture viendra avec leur pile respective (ISO/MMS d'un côté,
+  UA-TCP + SecureConversation de l'autre). Un pilote déclaré ne publie
+  **aucune** valeur.
+- **Un dossier par protocole** : chaque pilote vit dans
+  `server/src/drivers/<protocole>/`, le partagé dans `drivers/common/`.
+  `tools/check-drivers.mjs` (rejoué par la CI) refuse un protocole sans
+  dossier, un dossier sans protocole, ou un en-tête resté à la racine.
+- **Aucun secret dans la configuration des liens** : `protocols.json` est
+  lisible par tout poste connecté et s'exporte en clair. Un nom d'utilisateur
+  peut y figurer, jamais un mot de passe ni une clé privée — la configuration
+  ne porte qu'une *référence* vers le magasin de secrets du contrôleur.
 - **Lecture seule de bout en bout** : aucune écriture n'est possible depuis
   Diagweb (pas de commande Modbus ni de télécommande 104, pas d'émission
   CAN). Seule exception : la requête de lecture SDO CANopen, **désactivée par

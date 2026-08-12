@@ -31,7 +31,7 @@
     MB: 'Registres de bus (MB) — mots de 16 bits',
     CAPI: 'Signaux des modèles, via la C API (Modele.sous_systeme.signal)',
     NET: 'Points lus sur les liens réseau du serveur de diagnostic (@lien.point) — ' +
-         'Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen',
+         'Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen, OPC UA',
   };
 
   // ---------- Notifications -------------------------------------------
@@ -1514,7 +1514,7 @@
           ]) +
           S('Liens réseau (☰ → Liens réseau)') +
           L([
-            ['Lien', 'Une connexion vers un équipement ou un réseau : Modbus TCP/RTU, IEC 60870-5-104, IEC 61850, CAN, J1939, CANopen. Le serveur de diagnostic ouvre le lien et lit les points.'],
+            ['Lien', 'Une connexion vers un équipement ou un réseau : Modbus TCP/RTU, IEC 60870-5-104, IEC 61850, CAN, J1939, CANopen, OPC UA. Le serveur de diagnostic ouvre le lien et lit les points.'],
             ['Point', 'Une variable lue sur un lien (registre, IOA, SPN, objet…), avec son unité et sa période. Elle s’adresse ensuite <b>@lien.point</b> comme n’importe quelle variable.'],
             ['Sans serveur', 'La configuration reste dans le navigateur et les valeurs des points sont simulées — l’interface est démontrable sans matériel.'],
           ]) +

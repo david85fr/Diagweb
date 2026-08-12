@@ -106,10 +106,8 @@ Serveur → client :
 | `src/recorder.hpp` | journalisation autonome sur disque (indépendante des clients) |
 | `src/protocol.hpp` | modèle des liens/points + contrat `IProtocolDriver` |
 | `src/protocol_source.hpp` | liens réseau (`@lien.point`) + aiguillage composite |
-| `src/drivers/modbus.hpp` | Modbus TCP et RTU (lecture seule) |
-| `src/drivers/iec104.hpp` | IEC 60870-5-104 (client) |
-| `src/drivers/can.hpp` | CAN brut, J1939, CANopen (SocketCAN) |
-| `src/drivers/net.hpp` | briques réseau : TCP à délai borné, liaison série |
+| `src/drivers/<protocole>/` | **un dossier par protocole** (voir ci-dessous) |
+| `src/drivers/common/` | briques partagées : TCP/série, socle SocketCAN, pilote déclaré |
 | `src/catalog.generated.hpp` | catalogue généré (`node tools/gen-catalog.mjs`) |
 | `src/protocols.generated.hpp` | protocoles générés (`node tools/gen-protocols.mjs`) |
 | `src/ws.hpp`, `src/sha1.hpp`, `src/json.hpp`, `src/jvalue.hpp` | briques sans dépendance |
@@ -122,11 +120,36 @@ abonnement avec période, lecture des échantillons — puis la passer à la pla
 de `SimSource` dans `main.cpp`. Le reste du serveur et la totalité du
 front-end restent inchangés.
 
+## Organisation des pilotes
+
+Chaque protocole a son dossier ; rien ne traîne à la racine de `src/drivers/`.
+
+| Dossier | Protocole | État |
+|---|---|---|
+| `modbus/` | Modbus TCP et RTU | implémenté |
+| `iec104/` | IEC 60870-5-104 (client) | implémenté |
+| `can/` | CAN, trames brutes | implémenté |
+| `j1939/` | J1939 (PGN mono-trame) | implémenté |
+| `canopen/` | CANopen (TPDO, SDO expédié) | implémenté |
+| `iec61850/` | IEC 61850 (MMS) | déclaré |
+| `opcua/` | OPC UA (IEC 62541) | déclaré |
+| `common/` | `net.hpp` (TCP/série), `can_socket.hpp` (socle SocketCAN), `declared.hpp` | — |
+
+Modbus TCP et RTU partagent un dossier : même PDU, même décodage, seul le
+transport diffère. Les trois protocoles CAN ont chacun le leur, car c'est
+l'inverse — seul le transport leur est commun, et il vit dans
+`common/can_socket.hpp`.
+
+`node tools/check-drivers.mjs` (rejoué par la CI) vérifie cette organisation :
+tout protocole déclaré a son dossier, tout dossier sert un protocole, et
+`make_driver()` les connaît tous.
+
 ## Ajouter un protocole réseau
 
 Décrire les champs dans `web/js/protocols.js`, régénérer
-(`node tools/gen-protocols.mjs`), écrire un `IProtocolDriver` dans
-`src/drivers/`, l'enregistrer dans `make_driver()` de
-`src/protocol_source.hpp`. L'interface web construit ses formulaires à partir
-de la description : elle n'a pas à être modifiée. Détails et périmètre dans
-`docs/PROTOCOLES.md`.
+(`node tools/gen-protocols.mjs`), écrire un `IProtocolDriver` dans son propre
+dossier `src/drivers/<protocole>/`, l'enregistrer dans `make_driver()` de
+`src/protocol_source.hpp`, et ajouter l'entrée correspondante à la table
+`DOSSIERS` de `tools/check-drivers.mjs`. L'interface web construit ses
+formulaires à partir de la description : elle n'a pas à être modifiée. Détails
+et périmètre dans `docs/PROTOCOLES.md`.

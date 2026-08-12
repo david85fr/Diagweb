@@ -147,15 +147,33 @@ sont décrits une seule fois, et `tools/gen-protocols.mjs` en dérive
 `server/src/protocols.generated.hpp`. Une page servie par le contrôleur propose
 donc exactement les champs que le serveur sait lire.
 
-| Protocole | Transport | État | Pilote |
+| Protocole | Transport | État | Dossier du pilote |
 |---|---|---|---|
-| Modbus TCP | TCP/IP | implémenté | `drivers/modbus.hpp` |
-| Modbus RTU | liaison série | implémenté | `drivers/modbus.hpp` |
-| IEC 60870-5-104 | TCP/IP | implémenté | `drivers/iec104.hpp` |
-| CAN (trames brutes) | SocketCAN | implémenté | `drivers/can.hpp` |
-| J1939 | SocketCAN | implémenté (PGN mono-trame) | `drivers/can.hpp` |
-| CANopen | SocketCAN | implémenté (TPDO, SDO expédié) | `drivers/can.hpp` |
-| IEC 61850 (MMS) | ISO sur TCP | **déclaré** | pile ISO/MMS à venir |
+| Modbus TCP | TCP/IP | implémenté | `drivers/modbus/` |
+| Modbus RTU | liaison série | implémenté | `drivers/modbus/` |
+| IEC 60870-5-104 | TCP/IP | implémenté | `drivers/iec104/` |
+| CAN (trames brutes) | SocketCAN | implémenté | `drivers/can/` |
+| J1939 | SocketCAN | implémenté (PGN mono-trame) | `drivers/j1939/` |
+| CANopen | SocketCAN | implémenté (TPDO, SDO expédié) | `drivers/canopen/` |
+| IEC 61850 (MMS) | ISO sur TCP | **déclaré** | `drivers/iec61850/` |
+| OPC UA (IEC 62541) | UA-TCP binaire | **déclaré** | `drivers/opcua/` |
+
+### Un dossier par protocole
+
+`server/src/drivers/` ne contient que des dossiers : chaque protocole a le
+sien, et `common/` regroupe ce qui est partagé — `net.hpp` (TCP à délai borné,
+liaison série), `can_socket.hpp` (socle SocketCAN : ouverture, filtres noyau,
+réception, bus-off) et `declared.hpp` (socle des pilotes déclarés).
+
+Deux protocoles ne partagent un dossier que s'ils partagent leur **couche
+applicative** : Modbus TCP et RTU ont la même PDU et le même décodage, seul le
+transport diffère. C'est exactement l'inverse pour les trois protocoles CAN —
+seul le transport leur est commun — d'où trois dossiers distincts au-dessus
+d'un socle unique.
+
+`node tools/check-drivers.mjs`, rejoué par l'intégration continue, refuse un
+protocole sans dossier, un dossier sans protocole, un en-tête laissé à la
+racine de `drivers/`, ou un protocole que `make_driver()` ignore.
 
 ### Modbus TCP et RTU
 
@@ -236,6 +254,37 @@ BER, soit un volume de code comparable à celui de tout le reste du serveur, et
 elle ne peut pas être validée sans IED réel. C'est une phase ultérieure, pas un
 oubli.
 
+### OPC UA (IEC 62541) — pilote déclaré
+
+Client d'un serveur OPC UA (supervision, passerelle, équipement récent). La
+configuration se saisit et se conserve dès maintenant — point de terminaison
+`opc.tcp://hôte:port`, politique et mode de sécurité, mode de lecture, puis un
+**NodeId** par point (`ns=2;s=Ligne1/Debit`, `ns=2;i=1234`) — mais **aucune
+valeur n'est lue** : le lien s'affiche « non branché » et ne publie rien.
+
+Ce qui manque est une pile UA binaire complète : transport UA-TCP
+(Hello/Acknowledge, découpage en morceaux), SecureConversation avec
+renouvellement de jetons, encodage binaire des types intégrés et des
+structures, puis les services CreateSession / ActivateSession, Read,
+CreateSubscription et CreateMonitoredItems / Publish. Comme pour IEC 61850,
+c'est une phase ultérieure et non un oubli : le projet s'interdit toute
+dépendance externe au runtime, la pile devra donc être écrite.
+
+Deux partis pris sont déjà fixés, pour ne pas avoir à les reprendre :
+
+- **Lecture seule définitive.** Les services `Write` et `Call` ne seront pas
+  implémentés, même une fois la pile disponible — un outil de diagnostic
+  n'écrit pas dans un serveur de supervision.
+- **Aucun secret dans la configuration.** `protocols.json` est lisible par tout
+  poste connecté au serveur de diagnostic et s'exporte en clair depuis
+  l'interface. Le nom d'utilisateur y figure ; le mot de passe et la clé privée
+  du certificat client, jamais. Le champ « Référence du secret » ne porte qu'un
+  **nom** désignant l'entrée du magasin de secrets du contrôleur.
+
+Les deux modes de lecture prévus sont l'**abonnement** (MonitoredItems, avec
+intervalle de publication, échantillonnage et bande morte) et l'**interrogation
+cyclique** (service Read), pour les serveurs qui refusent les abonnements.
+
 ## Ce qui est volontairement hors périmètre
 
 - **Toute écriture** : commandes Modbus, commandes de télécontrôle 104,
@@ -252,6 +301,8 @@ oubli.
   suivis. Un filtre sur adresse source fixe peut donc devenir muet après une
   re-revendication.
 - **GOOSE** (IEC 61850-8-1 couche 2) et **rôle de maître CANopen**.
+- **Écriture et appel de méthode OPC UA** (`Write`, `Call`), **découverte**
+  automatique de l'arborescence (`Browse`) et **historique** (`HistoryRead`).
 
 ## Période, horodatage, qualité
 
@@ -343,12 +394,17 @@ lien dit clairement que les valeurs ne viennent pas du terrain.
 1. Décrire le protocole dans `web/js/protocols.js` (`DW.PROTOCOLS`) : champs du
    lien, champs d'un point, libellés et aides en français.
 2. `node tools/gen-protocols.mjs` pour régénérer l'en-tête C++.
-3. Écrire le pilote dans `server/src/drivers/` en implémentant
-   `IProtocolDriver` (`open` / `service` / `close`), puis l'enregistrer dans
-   `make_driver()` de `server/src/protocol_source.hpp`.
-4. Compléter `docs/PROTOCOLES.md` et les tests (`tests/protocols.mjs` pour un
+3. Écrire le pilote **dans son propre dossier** `server/src/drivers/<protocole>/`
+   en implémentant `IProtocolDriver` (`open` / `service` / `close`), puis
+   l'enregistrer dans `make_driver()` de `server/src/protocol_source.hpp`.
+   Ce qui est réutilisable va dans `drivers/common/`, jamais dans le dossier
+   d'un autre protocole.
+4. Ajouter l'entrée correspondante à la table `DOSSIERS` de
+   `tools/check-drivers.mjs` — sans quoi la CI refuse le protocole, ce qui est
+   voulu : le choix du dossier doit être conscient.
+5. Compléter `docs/PROTOCOLES.md` et les tests (`tests/protocols.mjs` pour un
    échange complet contre un équipement simulé, `tests/decode.cpp` pour le
-   décodage).
+   décodage et les filtres).
 
 L'interface web n'a **pas** à être modifiée : elle construit ses formulaires à
 partir de la description.
@@ -361,9 +417,13 @@ node tests/protocols.mjs        # serveur de diagnostic en fonctionnement
 ```
 
 `tests/decode.cpp` couvre le décodage (champs de bits Intel/Motorola, PGN
-J1939, grammaire `@lien.point`, lecture de la configuration).
+J1939, grammaire `@lien.point`, lecture de la configuration) **et** les filtres
+noyau des trois pilotes CAN, ainsi que leur appariement de trames — un filtre
+trop large ou trop étroit rendrait une variable silencieusement muette.
 `tests/protocols.mjs` monte un **esclave Modbus TCP** et une **station
 IEC 60870-5-104** en Node, configure les liens par REST et vérifie que les
-valeurs arrivent jusqu'au flux WebSocket. Les pilotes CAN ne sont pas
-couverts de bout en bout faute d'interface CAN dans l'environnement de test :
-seul leur décodage l'est.
+valeurs arrivent jusqu'au flux WebSocket ; il vérifie aussi que les pilotes
+**déclarés** (IEC 61850, OPC UA) annoncent « non branché » et ne publient
+aucune valeur. Les pilotes CAN ne sont pas couverts de bout en bout faute
+d'interface CAN dans l'environnement de test : seuls leur décodage, leurs
+filtres et leur appariement le sont.

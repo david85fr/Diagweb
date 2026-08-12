@@ -237,6 +237,17 @@ const config = {
           params: { ref: 'LD0/MMXU1.A.phsA.cVal.mag.f', fc: 'MX', gain: 1, offset: 0 } },
       ],
     },
+    {
+      id: 'supervision', label: 'Supervision OPC UA', protocol: 'opcua', enabled: true,
+      params: { endpoint: 'opc.tcp://127.0.0.1:4840', securityPolicy: 'None',
+                securityMode: 'None', auth: 'anonymous', mode: 'subscribe',
+                publishMs: 500, sessionTimeoutS: 60 },
+      points: [
+        { id: 'debit', label: 'Débit ligne 1', unit: 'm³/h', kind: 'float', periodMs: 1000,
+          params: { nodeId: 'ns=2;s=Ligne1/Debit', attr: 'Value', samplingMs: 200,
+                    deadband: 0, gain: 1, offset: 0 } },
+      ],
+    },
   ],
 };
 
@@ -259,6 +270,9 @@ check('lien IEC 60870-5-104 établi', stMap.poste && stMap.poste.state === 'up',
 check('pilote IEC 61850 annoncé comme non branché (pas de valeur inventée)',
   stMap.poste61850 && stMap.poste61850.state === 'todo',
   stMap.poste61850 ? stMap.poste61850.detail : 'absent');
+check('pilote OPC UA annoncé comme non branché (pas de valeur inventée)',
+  stMap.supervision && stMap.supervision.state === 'todo',
+  stMap.supervision ? stMap.supervision.detail : 'absent');
 
 const test = await api('/api/protocols/test', {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -269,7 +283,7 @@ check('test de connexion du lien Modbus', test.status === 200 && test.json.ok ==
 
 const { got, metas } = await collect(
   ['@banc.reg0', '@banc.reg5', '@banc.flot', '@banc.bobine', '@banc.absent',
-   '@poste.mesure', '@poste.etat', '@poste61850.courant'], 1400);
+   '@poste.mesure', '@poste.etat', '@poste61850.courant', '@supervision.debit'], 1400);
 
 const last = (a) => { const v = got.get(a); return v.length ? v[v.length - 1] : null; };
 
@@ -289,6 +303,8 @@ check('état simple IEC-104 décodé (0/1)',
   [0, 1].includes(last('@poste.etat')), 'valeur ' + last('@poste.etat'));
 check('point IEC 61850 sans valeur (pilote non branché)',
   got.get('@poste61850.courant').length === 0);
+check('point OPC UA sans valeur (pilote non branché)',
+  got.get('@supervision.debit').length === 0);
 check('métadonnées transmises (libellé, unité, famille)',
   metas.get('@banc.flot') && metas.get('@banc.flot').unit === '°C' &&
   metas.get('@banc.flot').family === 'NET',

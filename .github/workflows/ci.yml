@@ -93,6 +93,9 @@ jobs:
                       " Relancer tools/gen-catalog.mjs et tools/gen-protocols.mjs," \
                       " puis commiter."; exit 1; }
 
+      - name: Un dossier de pilote par protocole
+        run: node tools/check-drivers.mjs
+
       - name: Livrables à jour et page autonome (aucune ressource externe)
         run: python3 tools/check-dist.py
 

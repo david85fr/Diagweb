@@ -74,7 +74,9 @@ server/         serveur de diagnostic C++20 (HTTP + WebSocket, sans dépendance)
   src/recorder.hpp   journalisation autonome (navigateur fermé)
   src/protocol.hpp   modèle des liens réseau + contrat IProtocolDriver
   src/protocol_source.hpp  liens réseau (@lien.point) + aiguillage composite
-  src/drivers/       pilotes : modbus, iec104, can (brut/J1939/CANopen), net
+  src/drivers/<proto>/  UN DOSSIER PAR PROTOCOLE : modbus, iec104, can, j1939,
+                     canopen, iec61850, opcua — plus common/ (net, can_socket,
+                     declared) ; contrôlé par tools/check-drivers.mjs
   src/jvalue.hpp     analyseur JSON complet (configuration imbriquée)
   src/main.cpp       HTTP/WS, REST, boucle d'émission
 tools/build.py  assemble dist/ à partir de web/
@@ -82,6 +84,7 @@ tools/check.sh  toutes les vérifications de la CI, en local (serveur|interface)
 tools/check-dist.py  dist/ à jour + page autonome (aucune ressource externe)
 tools/gen-catalog.mjs  régénère server/src/catalog.generated.hpp depuis config.js
 tools/gen-protocols.mjs régénère server/src/protocols.generated.hpp depuis protocols.js
+tools/check-drivers.mjs  un dossier de pilote par protocole (rejoué par la CI)
 tools/serve.py  serveur d'aperçu (port 8080, en-têtes anti-cache)
 tests/ui.mjs    tests d'interface Playwright (24 vérifications)
 tests/dnd.mjs   tests de déplacement de widgets (7 vérifications, http requis)
@@ -124,8 +127,9 @@ vérifications de l'intégration continue (`.github/workflows/ci.yml`), qui
 s'exécute sur `main`, sur les pull requests et sur les branches `claude/**` :
 compilation C++ avec `-Werror`, tests de décodage, liens réseau de bout en
 bout, forçage + journalisation autonome, syntaxe JS, en-têtes générés à jour,
-`dist/` à jour et sans ressource externe, tests d'interface et de déplacement
-de widgets. Toute vérification ajoutée ici doit l'être aux deux endroits.
+un dossier de pilote par protocole, `dist/` à jour et sans ressource externe,
+tests d'interface et de déplacement de widgets. Toute vérification ajoutée ici
+doit l'être aux deux endroits.
 
 ## Points d'architecture à respecter
 
@@ -140,8 +144,10 @@ de widgets. Toute vérification ajoutée ici doit l'être aux deux endroits.
   `node tools/gen-protocols.mjs`. Ne jamais éditer les fichiers `*.generated.hpp`.
 - **Liens réseau** (voir `docs/PROTOCOLES.md`) : un *lien* porte des *points*,
   adressés `@lien.point` (famille NET). Un nouveau protocole s'ajoute par une
-  description dans `protocols.js` + un pilote `IProtocolDriver` ; l'interface
-  construit ses formulaires toute seule. **Lecture seule de bout en bout** :
+  description dans `protocols.js` + un pilote `IProtocolDriver` **dans son
+  propre dossier** `server/src/drivers/<protocole>/`, enregistré dans
+  `make_driver()` et dans la table `DOSSIERS` de `tools/check-drivers.mjs` ;
+  l'interface construit ses formulaires toute seule. **Lecture seule de bout en bout** :
   aucune écriture vers un équipement, hors requête SDO CANopen désactivée par
   défaut. Un pilote non implémenté ne publie **aucune** valeur (jamais de
   valeur inventée) et le lien affiche « non branché ».

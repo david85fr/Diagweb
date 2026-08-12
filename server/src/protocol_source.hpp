@@ -20,9 +20,14 @@
 #include <thread>
 #include <vector>
 
-#include "drivers/can.hpp"
-#include "drivers/iec104.hpp"
-#include "drivers/modbus.hpp"
+#include "drivers/can/can_raw.hpp"
+#include "drivers/canopen/canopen.hpp"
+#include "drivers/common/declared.hpp"
+#include "drivers/iec104/iec104.hpp"
+#include "drivers/iec61850/iec61850.hpp"
+#include "drivers/j1939/j1939.hpp"
+#include "drivers/modbus/modbus.hpp"
+#include "drivers/opcua/opcua.hpp"
 #include "protocol.hpp"
 #include "sim_source.hpp"
 
@@ -35,23 +40,6 @@ struct LinkStatus {
   std::string detail;
   double since = 0;
   long long samples = 0;
-};
-
-/**
- * Pilote « déclaré » : la configuration est acceptée et conservée, la lecture
- * n'est pas implémentée (IEC 61850 : pile ISO/MMS à venir). Il ne publie
- * jamais de valeur — mieux vaut une absence franche qu'une valeur inventée.
- */
-class DeclaredDriver : public IProtocolDriver {
- public:
-  explicit DeclaredDriver(std::string why) : why_(std::move(why)) {}
-  bool implemented() const override { return false; }
-  bool open(std::string& err) override { err = why_; return false; }
-  bool service(std::string& err) override { err = why_; return false; }
-  void close() override {}
-
- private:
-  std::string why_;
 };
 
 /**
@@ -305,12 +293,11 @@ class ProtocolSource : public IVariableSource {
     if (p == "modbus-tcp") return std::make_unique<ModbusDriver>(link, sink, false);
     if (p == "modbus-rtu") return std::make_unique<ModbusDriver>(link, sink, true);
     if (p == "iec104")     return std::make_unique<Iec104Driver>(link, sink);
-    if (p == "can-raw")    return std::make_unique<CanDriver>(link, sink, CanMode::Raw);
-    if (p == "j1939")      return std::make_unique<CanDriver>(link, sink, CanMode::J1939);
-    if (p == "canopen")    return std::make_unique<CanDriver>(link, sink, CanMode::CanOpen);
-    if (p == "iec61850")
-      return std::make_unique<DeclaredDriver>(
-          "pile ISO/MMS non implémentée — configuration conservée (voir docs/PROTOCOLES.md)");
+    if (p == "can-raw")    return std::make_unique<CanRawDriver>(link, sink);
+    if (p == "j1939")      return std::make_unique<J1939Driver>(link, sink);
+    if (p == "canopen")    return std::make_unique<CanOpenDriver>(link, sink);
+    if (p == "iec61850")   return make_iec61850_driver();
+    if (p == "opcua")      return make_opcua_driver();
     return nullptr;
   }
 
