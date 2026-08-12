@@ -264,6 +264,7 @@ button { font-family: var(--sans); }
 .badge.fam-S    { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
 .badge.fam-MB   { color: #c98500; border-color: color-mix(in srgb, #c98500 45%, var(--line)); }
 .badge.fam-CAPI { color: #199e70; border-color: color-mix(in srgb, #199e70 45%, var(--line)); }
+.badge.fam-NET  { color: #d55181; border-color: color-mix(in srgb, #d55181 45%, var(--line)); }
 
 /* ---------- Cartes ---------- */
 .card {
@@ -709,6 +710,47 @@ body.dnd-over-pane #panes {
 .star { color: var(--faint); }
 .star.on { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
 
+/* ---------- Fenêtre « Liens réseau » ---------- */
+.modal.wide { max-width: 760px; }
+.px-list { display: grid; gap: 8px; margin-top: 12px; }
+.px-row {
+  border: 1px solid var(--line); border-radius: 11px;
+  padding: 9px 10px;
+  background: color-mix(in srgb, var(--panel-2) 55%, transparent);
+}
+.px-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.px-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+.px-name.mono { font-family: var(--mono); font-size: 12.5px; }
+.px-unit { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.px-state { margin-left: auto; flex: none; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.px-state.st-up   { color: var(--good); }
+.px-state.st-down { color: var(--crit); }
+.px-state.st-sim  { color: var(--warn); }
+.px-sub { font-size: 11.5px; color: var(--faint); margin-top: 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.px-acts { margin-top: 8px; }
+.px-acts .btn { font-size: 12px; padding: 5px 9px; }
+.btn.danger { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 45%, var(--line)); }
+
+.pf-form { display: grid; gap: 2px; margin: 8px 0 4px; }
+.pf-row {
+  display: grid; grid-template-columns: 1fr; gap: 4px;
+  padding: 6px 0;
+}
+.pf-label { font-size: 12px; color: var(--muted); }
+.pf-input {
+  width: 100%;
+  font: 15px var(--sans); color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 9px;
+  padding: 8px 10px;
+}
+.pf-input.pf-check { width: 22px; height: 22px; padding: 0; }
+@media (min-width: 700px) {
+  .pf-row { grid-template-columns: minmax(160px, 240px) minmax(0, 1fr); align-items: center; gap: 10px; }
+  .pf-label { text-align: right; }
+}
+
 /* ---------- Toasts ---------- */
 #toasts {
   position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
@@ -813,12 +855,13 @@ body.cfg-hidden .tabActions { display: none; }
     </div>
 
     <div class="topIcons">
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">a71e6c4 · #41</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">d6b57f9 · #44</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
         <button id="helpBtn" type="button" title="Récapitulatif des commandes et des gestes (utile sur écran tactile, où les infobulles n’apparaissent pas)">Aide — commandes et gestes…</button>
+        <button id="netBtn" type="button" title="Liens réseau : déclarer des équipements Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939 ou CANopen et choisir les variables à lire">Liens réseau…</button>
         <button id="aboutBtn" type="button" title="Version affichée, mode de fonctionnement et source de données">À propos de Diagweb…</button>
         <button type="button" disabled title="Fonction globale prévue : capture des interfaces réseau du contrôleur">Capture d’interfaces réseau (à venir)</button>
         <button type="button" disabled title="Fonction globale prévue : historique des versions de l’application">Notes de version (à venir)</button>
@@ -829,9 +872,9 @@ body.cfg-hidden .tabActions { display: none; }
       <div class="searchbox">
         <input id="searchInput" type="text" inputmode="text" autocomplete="off" autocapitalize="off"
                autocorrect="off" spellcheck="false"
-               placeholder="Variable : I1.2.3.4, MB414, Regulation.mesure.vitesse…"
+               placeholder="Variable : I1.2.3.4, MB414, Regulation.mesure.vitesse, @lien.point…"
                aria-label="Adresse de la variable à ajouter"
-               title="Adresse à diagnostiquer — bits I/Q/M/S (I1.2.3.4), mot de bus (MB414) ou signal de modèle (Regulation.mesure.vitesse). Les suggestions se filtrent à la frappe.">
+               title="Adresse à diagnostiquer — bits I/Q/M/S (I1.2.3.4), mot de bus (MB414), signal de modèle (Regulation.mesure.vitesse) ou point d’un lien réseau (@lien.point). Les suggestions se filtrent à la frappe.">
       </div>
       <select id="targetSel" aria-label="Destination de la variable"
               title="Où ajouter la variable : tableau numérique, graphique existant, ou nouveau graphique"></select>
@@ -981,12 +1024,17 @@ body.cfg-hidden .tabActions { display: none; }
     S:    { label: 'Variable système',      kind: 'bit' },
     MB:   { label: 'Mot de bus (registre)', kind: 'word' },
     CAPI: { label: 'Signal modèle (C API)', kind: 'float' },
+    NET:  { label: 'Point réseau (lien)',   kind: 'float' },
   };
   DW.FAMILIES = FAMILIES;
 
+  // Identifiant d'un lien ou d'un point réseau (voir web/js/protocols.js)
+  const NET_ID = '[A-Za-z][A-Za-z0-9_-]{0,23}';
+
   const HELP = "Formats acceptés : I1.2.3.4, Q14.15, M1.14, S0.4 (bits), " +
                "MB414 (mot de bus), Modele.sous_systeme.signal (C API Simulink, " +
-               "premier champ = nom du modèle).";
+               "premier champ = nom du modèle), @lien.point (point lu sur un " +
+               "lien réseau).";
 
   /**
    * Analyse une saisie utilisateur.
@@ -997,6 +1045,20 @@ body.cfg-hidden .tabActions { display: none; }
   DW.parseAddr = function (raw) {
     const input = String(raw == null ? '' : raw).trim().replace(/\//g, '.');
     if (!input) return { ok: false, error: 'Saisissez une adresse de variable. ' + HELP };
+
+    // Point réseau : @lien.point — le « @ » lève toute ambiguïté avec les
+    // autres familles, dont les chemins C API séparés par des points.
+    if (input[0] === '@') {
+      const m = new RegExp('^@(' + NET_ID + ')\\.(' + NET_ID + ')$').exec(input);
+      if (m) {
+        const addr = '@' + m[1] + '.' + m[2];
+        const meta = DW.protocols ? DW.protocols.meta(addr) : null;
+        return { ok: true, addr, family: 'NET', kind: meta ? meta.kind : 'float' };
+      }
+      return { ok: false, error: 'Point réseau attendu sous la forme @lien.point ' +
+        '(identifiants : une lettre puis lettres, chiffres, « - » ou « _ »). ' +
+        'Les liens se déclarent dans ☰ → Liens réseau.' };
+    }
 
     // Mot de bus : MB<registre>
     let m = /^mb\s*(\d{1,5})$/i.exec(input);
@@ -1030,6 +1092,15 @@ body.cfg-hidden .tabActions { display: none; }
   DW.resolveMeta = function (addr, parsed) {
     const p = parsed || DW.parseAddr(addr);
     if (!p.ok) return null;
+    // Points réseau : le catalogue est la configuration des liens.
+    if (p.family === 'NET') {
+      const meta = DW.protocols ? DW.protocols.meta(p.addr) : null;
+      if (meta) return meta;
+      return {
+        addr: p.addr, family: 'NET', kind: 'float', unit: '',
+        label: 'Point réseau non configuré', known: false, sim: null,
+      };
+    }
     const known = DW.CATALOG_INDEX.get(p.addr.toUpperCase());
     if (known) return Object.assign({ family: p.family, known: true }, known);
     return {
@@ -1042,6 +1113,528 @@ body.cfg-hidden .tabActions { display: none; }
       sim: null,
     };
   };
+})();
+
+</script>
+<script>
+/* Diagweb — liens réseau : description des protocoles, configuration, points.
+ *
+ * Le serveur de diagnostic sait lire des variables sur des équipements tiers
+ * (Modbus, IEC 61850, IEC 60870-5-104, CAN brut, J1939, CANopen). Ce fichier
+ * est la SOURCE DE VÉRITÉ de la description de ces protocoles : les champs de
+ * configuration, leurs libellés et leurs aides. `tools/gen-protocols.mjs` en
+ * dérive `server/src/protocols.generated.hpp` — ne jamais éditer le .hpp.
+ *
+ * Vocabulaire (voir docs/PROTOCOLES.md) :
+ *   lien  = une connexion vers un équipement ou un réseau (id, protocole,
+ *           paramètres) ;
+ *   point = une variable lue sur ce lien (id, libellé, unité, période, et les
+ *           paramètres d'adressage propres au protocole).
+ * Un point est désigné dans Diagweb par « @lien.point » (famille NET).
+ */
+(function () {
+  "use strict";
+  const DW = (window.DW = window.DW || {});
+
+  // ------------------------------------------------------------------
+  // Description des protocoles
+  // ------------------------------------------------------------------
+  // type : text | int | float | bool | enum | hex
+  // when : n'affiche le champ que si les autres champs ont ces valeurs
+  const F = (key, label, type, def, required, help, extra) =>
+    Object.assign({ key, label, type, def, required, help }, extra || {});
+
+  // Champs communs à tout décodage de valeur brute → grandeur physique
+  const SCALE = [
+    F('gain', 'Gain', 'float', 1, false,
+      'Facteur appliqué à la valeur brute : valeur = brut × gain + décalage.'),
+    F('offset', 'Décalage', 'float', 0, false,
+      'Constante ajoutée après le gain (unité physique).'),
+  ];
+  // Champs communs à l'extraction d'un signal dans une trame (CAN, J1939…)
+  const BITFIELD = [
+    F('startBit', 'Bit de départ', 'int', 0, true,
+      'Position du premier bit du signal dans la trame (0 = bit de poids faible du premier octet).'),
+    F('bitLen', 'Longueur (bits)', 'int', 16, true,
+      'Nombre de bits occupés par le signal (1 à 64).'),
+    F('order', 'Ordre des octets', 'enum', 'intel', false,
+      'Intel = petit-boutiste (poids faible d’abord), Motorola = gros-boutiste — comme dans une base de signaux CAN.',
+      { choices: [['intel', 'Intel (petit-boutiste)'], ['motorola', 'Motorola (gros-boutiste)']] }),
+    F('signed', 'Signé', 'bool', false, false,
+      'Interpréter la valeur brute en complément à deux (valeurs négatives possibles).'),
+  ];
+
+  const MODBUS_POINT = [
+    F('fn', 'Fonction de lecture', 'enum', '3', true,
+      'Fonction Modbus utilisée : bobines (01), entrées TOR (02), registres de maintien (03), registres d’entrée (04).',
+      { choices: [['1', '01 — Bobines (bits)'], ['2', '02 — Entrées TOR (bits)'],
+                  ['3', '03 — Registres de maintien'], ['4', '04 — Registres d’entrée']] }),
+    F('reg', 'Adresse', 'int', 0, true,
+      'Adresse protocole du registre ou du bit, à partir de 0 (le registre « 40001 » d’une documentation correspond en général à l’adresse 0 de la fonction 03).'),
+    F('type', 'Type de donnée', 'enum', 'uint16', true,
+      'Décodage de la donnée. Les types 32 bits occupent deux registres consécutifs.',
+      { choices: [['bool', 'Booléen (bit)'], ['int16', 'Entier 16 bits signé'],
+                  ['uint16', 'Entier 16 bits non signé'], ['int32', 'Entier 32 bits signé'],
+                  ['uint32', 'Entier 32 bits non signé'], ['float32', 'Flottant 32 bits'],
+                  ['float64', 'Flottant 64 bits']] }),
+    F('wordOrder', 'Ordre des mots', 'enum', 'big', false,
+      'Pour les types sur plusieurs registres : mot de poids fort d’abord (usuel) ou de poids faible d’abord.',
+      { choices: [['big', 'Poids fort d’abord'], ['little', 'Poids faible d’abord']],
+        when: { type: ['int32', 'uint32', 'float32', 'float64'] } }),
+    F('bit', 'Bit extrait', 'int', -1, false,
+      'Rang du bit à extraire du registre (0 à 15) ; −1 pour utiliser la valeur entière.',
+      { when: { type: ['int16', 'uint16'] } }),
+  ].concat(SCALE);
+
+  DW.PROTOCOLS = [
+    {
+      id: 'modbus-tcp',
+      label: 'Modbus TCP',
+      transport: 'TCP/IP',
+      state: 'live',
+      help: 'Lecture cyclique de registres et de bits sur un équipement Modbus TCP. ' +
+            'Les registres consécutifs sont regroupés en une seule requête.',
+      linkFields: [
+        F('host', 'Hôte', 'text', '', true, 'Adresse IP ou nom réseau de l’équipement.'),
+        F('port', 'Port', 'int', 502, false, 'Port TCP du serveur Modbus (502 par défaut).'),
+        F('unitId', 'Identifiant d’unité', 'int', 1, false,
+          'Identifiant d’esclave (unit id) placé dans l’en-tête MBAP — 1 par défaut, 255 si l’équipement l’ignore.'),
+        F('timeoutMs', 'Délai d’attente (ms)', 'int', 1000, false,
+          'Temps maximal d’attente d’une réponse avant de signaler le lien en défaut.'),
+        F('groupMax', 'Regroupement (registres)', 'int', 32, false,
+          'Nombre maximal de registres lus en une requête ; 1 pour interroger chaque point séparément.'),
+      ],
+      pointFields: MODBUS_POINT,
+    },
+    {
+      id: 'modbus-rtu',
+      label: 'Modbus RTU (série)',
+      transport: 'Liaison série',
+      state: 'live',
+      help: 'Même adressage que Modbus TCP, sur une liaison série RS-485/RS-232 ' +
+            '(trame RTU avec contrôle CRC-16).',
+      linkFields: [
+        F('device', 'Port série', 'text', '/dev/ttyS0', true,
+          'Fichier de périphérique de la liaison série du contrôleur.'),
+        F('baud', 'Débit', 'enum', 19200, false, 'Débit en bauds, identique à celui de l’équipement.',
+          { choices: [[1200, '1200'], [2400, '2400'], [4800, '4800'], [9600, '9600'],
+                      [19200, '19200'], [38400, '38400'], [57600, '57600'], [115200, '115200']] }),
+        F('parity', 'Parité', 'enum', 'even', false, 'Parité de la liaison — « paire » est l’usage courant en Modbus RTU.',
+          { choices: [['none', 'Aucune'], ['even', 'Paire'], ['odd', 'Impaire']] }),
+        F('stopBits', 'Bits de stop', 'enum', 0, false,
+          'Automatique applique la règle de la spécification série : 1 bit avec parité, ' +
+          '2 bits sans parité. Ne forcer que si l’équipement l’exige.',
+          { choices: [[0, 'Automatique'], [1, '1'], [2, '2']] }),
+        F('unitId', 'Adresse esclave', 'int', 1, true, 'Adresse de l’esclave sur le bus (1 à 247).'),
+        F('timeoutMs', 'Délai d’attente (ms)', 'int', 1000, false, 'Temps maximal d’attente d’une réponse.'),
+        F('groupMax', 'Regroupement (registres)', 'int', 32, false, 'Nombre maximal de registres lus en une requête.'),
+      ],
+      pointFields: MODBUS_POINT,
+    },
+    {
+      id: 'iec104',
+      label: 'IEC 60870-5-104',
+      transport: 'TCP/IP',
+      state: 'live',
+      help: 'Client (maître) télécontrôle : le serveur de diagnostic se connecte, ' +
+            'lance une interrogation générale puis reçoit les données spontanées.',
+      linkFields: [
+        F('host', 'Hôte', 'text', '', true, 'Adresse IP ou nom réseau de la station contrôlée.'),
+        F('port', 'Port', 'int', 2404, false, 'Port TCP (2404 par défaut).'),
+        F('asdu', 'Adresse commune d’ASDU', 'int', 1, true,
+          'Adresse commune de l’équipement (souvent 1) — les objets reçus avec une autre adresse sont ignorés.'),
+        F('originator', 'Adresse d’origine', 'int', 0, false,
+          'Adresse de l’émetteur placée dans la cause de transmission (0 si inutilisée).'),
+        F('gi', 'Interrogation générale', 'bool', true, false,
+          'Demander l’état complet à la connexion (C_IC_NA_1), pour partir de valeurs connues.'),
+        F('giPeriodS', 'Interrogation périodique (s)', 'int', 0, false,
+          'Répéter l’interrogation générale à cet intervalle ; 0 = seulement à la connexion.'),
+        F('k', 'Fenêtre k', 'int', 12, false, 'Nombre maximal de trames I non acquittées (paramètre k de la norme).'),
+        F('w', 'Fenêtre w', 'int', 8, false, 'Acquitter après w trames reçues (paramètre w de la norme).'),
+        F('t1', 'Délai t1 (s)', 'int', 15, false, 'Délai d’attente d’un acquittement avant coupure.'),
+        F('t2', 'Délai t2 (s)', 'int', 10, false, 'Délai avant envoi d’un acquittement de supervision.'),
+        F('t3', 'Délai t3 (s)', 'int', 20, false, 'Délai d’inactivité avant envoi d’un test de liaison.'),
+      ],
+      pointFields: [
+        F('ioa', 'Adresse d’objet (IOA)', 'int', 0, true,
+          'Adresse d’objet d’information sur 3 octets (1 à 16777215).'),
+        F('type', 'Type attendu', 'enum', 'auto', false,
+          'Type d’ASDU attendu. « Automatique » accepte tout type reçu pour cette adresse.',
+          { choices: [['auto', 'Automatique'], ['single', 'Simple (M_SP)'], ['double', 'Double (M_DP)'],
+                      ['normalized', 'Mesure normalisée (M_ME_A/D)'], ['scaled', 'Mesure échelonnée (M_ME_B/E)'],
+                      ['float', 'Mesure flottante (M_ME_C/F)'], ['counter', 'Compteur (M_IT)'],
+                      ['step', 'Position de régleur (M_ST)']] }),
+      ].concat(SCALE),
+    },
+    {
+      id: 'iec61850',
+      label: 'IEC 61850 (MMS)',
+      transport: 'TCP/IP (ISO sur TCP, port 102)',
+      state: 'declared',
+      help: 'Client MMS d’un IED. La configuration et les points se saisissent dès ' +
+            'maintenant ; la lecture effective demande la pile ISO/MMS, prévue en ' +
+            'phase ultérieure (voir docs/PROTOCOLES.md).',
+      linkFields: [
+        F('host', 'Hôte', 'text', '', true, 'Adresse IP ou nom réseau de l’IED.'),
+        F('port', 'Port', 'int', 102, false, 'Port TCP de la pile ISO (102 par défaut).'),
+        F('iedName', 'Nom d’IED', 'text', '', false,
+          'Nom logique de l’IED, utilisé en tête des références d’objet.'),
+        F('mode', 'Mode de lecture', 'enum', 'poll', false,
+          'Interrogation cyclique (MMS Read) ou abonnement aux rapports de l’IED.',
+          { choices: [['poll', 'Interrogation cyclique'], ['report', 'Rapports (BRCB/URCB)']] }),
+        F('dataset', 'Jeu de données', 'text', '', false,
+          'Référence du jeu de données à rapporter (mode rapports).', { when: { mode: ['report'] } }),
+      ],
+      pointFields: [
+        F('ref', 'Référence d’objet', 'text', '', true,
+          'Référence complète de l’attribut, par exemple LD0/MMXU1.A.phsA.cVal.mag.f.'),
+        F('fc', 'Contrainte fonctionnelle', 'enum', 'MX', false,
+          'Contrainte fonctionnelle de l’attribut : mesures (MX), état (ST), consigne (SP), réglage (SE), configuration (CF).',
+          { choices: [['MX', 'MX — mesures'], ['ST', 'ST — état'], ['SP', 'SP — consignes'],
+                      ['SE', 'SE — réglages'], ['CF', 'CF — configuration']] }),
+      ].concat(SCALE),
+    },
+    {
+      id: 'can-raw',
+      label: 'Bus CAN (trames brutes)',
+      transport: 'SocketCAN (Linux)',
+      state: 'live',
+      help: 'Écoute strictement passive d’une interface CAN du contrôleur : un point ' +
+            'est un champ de bits extrait d’un identifiant de trame donné. Le serveur ' +
+            'n’émet jamais sur le bus dans ce mode.',
+      linkFields: [
+        F('iface', 'Interface', 'text', 'can0', true,
+          'Nom de l’interface CAN du système (can0, can1, vcan0…). Elle doit être déjà configurée et active : ' +
+          'le débit du bus relève de l’administration du contrôleur, pas de Diagweb.'),
+        F('fd', 'CAN FD', 'bool', false, false, 'Accepter les trames CAN FD (jusqu’à 64 octets de données).'),
+      ],
+      pointFields: [
+        F('canId', 'Identifiant', 'hex', '0x100', true,
+          'Identifiant CAN de la trame portant le signal, en hexadécimal (ex. 0x18FEF100).'),
+        F('ext', 'Identifiant 29 bits', 'bool', false, false,
+          'Trame à identifiant étendu (29 bits) plutôt que standard (11 bits).'),
+      ].concat(BITFIELD).concat(SCALE),
+    },
+    {
+      id: 'j1939',
+      label: 'J1939 (CAN, PGN mono-trame)',
+      transport: 'SocketCAN (Linux)',
+      state: 'live',
+      help: 'Décodage J1939 au-dessus de CAN : l’identifiant 29 bits est découpé en ' +
+            'priorité, PGN et adresse source ; un point est un SPN extrait du PGN. ' +
+            'Limite importante : seuls les PGN tenant dans une trame (8 octets) sont ' +
+            'lus — le transport multi-trames (BAM, RTS/CTS) n’est pas implémenté, ' +
+            'donc un PGN long comme DM1 ne remontera jamais de valeur.',
+      linkFields: [
+        F('iface', 'Interface', 'text', 'can0', true, 'Nom de l’interface CAN du système.'),
+        F('sa', 'Adresse source filtrée', 'int', -1, false,
+          'N’accepter que les trames émises par cette adresse source (0 à 253) ; −1 pour toutes.'),
+      ],
+      pointFields: [
+        F('pgn', 'PGN', 'int', 61444, true,
+          'Numéro de groupe de paramètres, en décimal (ex. 61444 = régime moteur, EEC1). ' +
+          'Doit tenir dans une seule trame : les PGN multi-trames ne sont pas décodés.'),
+        F('sa', 'Adresse source', 'int', -1, false,
+          'Adresse source attendue pour ce point ; −1 pour accepter n’importe laquelle.'),
+      ].concat(BITFIELD).concat(SCALE),
+    },
+    {
+      id: 'canopen',
+      label: 'CANopen',
+      transport: 'SocketCAN (Linux)',
+      state: 'live',
+      help: 'Deux modes : écoute des TPDO déjà émis par le nœud (sans rien demander), ' +
+            'ou lecture à la demande d’une entrée du dictionnaire d’objets par SDO — ' +
+            'ce second mode est le seul où le serveur émet sur le bus. À savoir : un ' +
+            'nœud qui n’est pas en état opérationnel n’émet aucun TPDO ; le lien ' +
+            'paraîtra alors établi sans qu’aucune valeur ne remonte.',
+      linkFields: [
+        F('iface', 'Interface', 'text', 'can0', true, 'Nom de l’interface CAN du système.'),
+        F('nodeId', 'Identifiant de nœud', 'int', 1, true,
+          'Node-id du nœud CANopen (1 à 127) — il fixe les COB-ID des SDO et des PDO.'),
+        F('listenOnly', 'Écoute seule', 'bool', true, false,
+          'N’émettre aucune requête SDO : seuls les TPDO déjà émis par le nœud sont lus. ' +
+          'Recommandé — interroger un nœud absent fait réémettre le contrôleur CAN jusqu’au ' +
+          'bus-off, ce qui dégrade l’interface elle-même. Décocher active la lecture SDO.'),
+      ],
+      pointFields: [
+        F('mode', 'Mode', 'enum', 'tpdo', true,
+          'TPDO = écoute passive d’une trame déjà émise. SDO = interrogation d’une entrée du dictionnaire d’objets.',
+          { choices: [['tpdo', 'Écoute d’un TPDO'], ['sdo', 'Lecture SDO']] }),
+        F('cobId', 'COB-ID du TPDO', 'hex', '0x181', false,
+          'Identifiant de la trame TPDO à écouter (0x180 + node-id pour le TPDO1, etc.).',
+          { when: { mode: ['tpdo'] } }),
+        F('index', 'Index', 'hex', '0x6041', false,
+          'Index de l’objet dans le dictionnaire (ex. 0x6041 = mot d’état).', { when: { mode: ['sdo'] } }),
+        F('subIndex', 'Sous-index', 'int', 0, false,
+          'Sous-index de l’objet (0 quand l’objet n’est pas structuré).', { when: { mode: ['sdo'] } }),
+        F('type', 'Type de donnée', 'enum', 'u16', false,
+          'Type de l’objet lu par SDO.',
+          { choices: [['u8', 'Entier 8 bits non signé'], ['i8', 'Entier 8 bits signé'],
+                      ['u16', 'Entier 16 bits non signé'], ['i16', 'Entier 16 bits signé'],
+                      ['u32', 'Entier 32 bits non signé'], ['i32', 'Entier 32 bits signé'],
+                      ['f32', 'Flottant 32 bits']],
+            when: { mode: ['sdo'] } }),
+      ].concat(BITFIELD.map((f) => Object.assign({}, f, { when: { mode: ['tpdo'] } }))).concat(SCALE),
+    },
+  ];
+
+  DW.PROTO_INDEX = new Map(DW.PROTOCOLS.map((p) => [p.id, p]));
+
+  // ------------------------------------------------------------------
+  // Modèle de configuration
+  // ------------------------------------------------------------------
+  const STORE_KEY = 'diagweb.protocols.v1';
+  const ID_RE = /^[A-Za-z][A-Za-z0-9_-]{0,23}$/;
+
+  /** Valeur par défaut d'un champ. */
+  function fieldDefault(f) { return f.def; }
+
+  /** Un champ est-il pertinent compte tenu des autres valeurs saisies ? */
+  function fieldApplies(f, params) {
+    if (!f.when) return true;
+    for (const k in f.when) {
+      const cur = params[k] == null ? '' : String(params[k]);
+      if (!f.when[k].map(String).includes(cur)) return false;
+    }
+    return true;
+  }
+
+  function defaults(fields) {
+    const o = {};
+    for (const f of fields) o[f.key] = fieldDefault(f);
+    return o;
+  }
+
+  /** Type de variable Diagweb déduit des paramètres d'un point. */
+  function kindOf(proto, point) {
+    const p = point.params || {};
+    if (proto.id === 'modbus-tcp' || proto.id === 'modbus-rtu') {
+      if (String(p.fn) === '1' || String(p.fn) === '2' || p.type === 'bool') return 'bit';
+      if (Number(p.bit) >= 0) return 'bit';
+      const scaled = Number(p.gain) !== 1 || Number(p.offset) !== 0;
+      if (!scaled && (p.type === 'int16' || p.type === 'uint16')) return 'word';
+      return 'float';
+    }
+    if (proto.id === 'iec104') {
+      if (p.type === 'single' || p.type === 'double') return 'bit';
+      return 'float';
+    }
+    if (Number(p.bitLen) === 1) return 'bit';
+    return 'float';
+  }
+
+  /** Résumé lisible de l'adressage protocole d'un point (listes et infobulles). */
+  function pointSummary(link, point) {
+    const proto = DW.PROTO_INDEX.get(link.protocol);
+    const p = point.params || {};
+    if (!proto) return '';
+    switch (proto.id) {
+      case 'modbus-tcp':
+      case 'modbus-rtu':
+        return 'fonction ' + String(p.fn).padStart(2, '0') + ' · adresse ' + p.reg +
+               ' · ' + p.type + (Number(p.bit) >= 0 ? ' · bit ' + p.bit : '');
+      case 'iec104':
+        return 'IOA ' + p.ioa + ' · ' + (p.type === 'auto' ? 'type automatique' : p.type);
+      case 'iec61850':
+        return (p.ref || '—') + ' [' + p.fc + ']';
+      case 'can-raw':
+        return 'ID ' + p.canId + (p.ext ? ' (29 bits)' : '') + ' · bits ' + p.startBit + '+' + p.bitLen;
+      case 'j1939':
+        return 'PGN ' + p.pgn + (Number(p.sa) >= 0 ? ' · SA ' + p.sa : '') +
+               ' · bits ' + p.startBit + '+' + p.bitLen;
+      case 'canopen':
+        return p.mode === 'sdo'
+          ? 'SDO ' + p.index + '/' + p.subIndex + ' · ' + p.type
+          : 'TPDO ' + p.cobId + ' · bits ' + p.startBit + '+' + p.bitLen;
+      default:
+        return '';
+    }
+  }
+
+  function addrOf(link, point) { return '@' + link.id + '.' + point.id; }
+
+  // ------------------------------------------------------------------
+  // Stockage : serveur de diagnostic si présent, sinon navigateur
+  // ------------------------------------------------------------------
+  const api = {
+    /** 'server' = configuration détenue par le contrôleur ; 'local' = navigateur (valeurs simulées). */
+    mode: 'local',
+    config: { version: 1, links: [] },
+    status: {},          // idLien → {state:'up'|'down'|'off'|'sim', detail, points:{id:quality}}
+    ready: null,
+    onChange: null,      // renseigné par app.js (rafraîchir les suggestions)
+
+    descriptor(id) { return DW.PROTO_INDEX.get(id) || null; },
+    links() { return this.config.links || []; },
+    link(id) { return this.links().find((l) => l.id === id) || null; },
+
+    /** Tous les points configurés, au format des suggestions du catalogue. */
+    catalog() {
+      const out = [];
+      for (const link of this.links()) {
+        const proto = DW.PROTO_INDEX.get(link.protocol);
+        if (!proto) continue;
+        for (const pt of link.points || []) {
+          out.push({
+            addr: addrOf(link, pt),
+            family: 'NET',
+            label: pt.label || (link.label || link.id) + ' — ' + pt.id,
+            unit: pt.unit || '',
+            kind: pt.kind || kindOf(proto, pt),
+            protocol: proto.id,
+            protocolLabel: proto.label,
+            summary: pointSummary(link, pt),
+            periodMs: pt.periodMs,
+            enabled: link.enabled !== false,
+          });
+        }
+      }
+      return out;
+    },
+
+    /** Métadonnées d'un point réseau, ou null si l'adresse n'est pas configurée. */
+    meta(addr) {
+      const e = this.catalog().find((x) => x.addr === addr);
+      if (!e) return null;
+      return {
+        addr: e.addr, family: 'NET', kind: e.kind, unit: e.unit, label: e.label,
+        known: true, protocol: e.protocol, summary: e.summary, sim: null,
+      };
+    },
+
+    /** Période propre au point (sinon la valeur par défaut du réglage d'ajout). */
+    periodOf(addr) {
+      const e = this.catalog().find((x) => x.addr === addr);
+      return e && e.periodMs ? e.periodMs : null;
+    },
+
+    // ---- Persistance ------------------------------------------------
+    async load() {
+      try {
+        // Page ouverte en fichier local (Artifact, copie hors ligne) ou hors
+        // navigateur (générateur d'en-tête C++) : aucun appel réseau à tenter —
+        // la configuration vit alors dans le navigateur.
+        const httpish = typeof location !== 'undefined' &&
+          (location.protocol === 'http:' || location.protocol === 'https:');
+        if (!httpish) throw new Error('page hors serveur');
+        const r = await fetch('/api/protocols', { cache: 'no-store' });
+        if (r.ok) {
+          const j = await r.json();
+          this.config = normalize(j.config || j);
+          this.status = indexStatus(j.status);
+          this.mode = 'server';
+          return this.config;
+        }
+      } catch (e) { /* pas de serveur : configuration locale */ }
+      this.mode = 'local';
+      try {
+        const raw = typeof localStorage === 'undefined' ? null : localStorage.getItem(STORE_KEY);
+        if (raw) this.config = normalize(JSON.parse(raw));
+      } catch (e) { /* stockage indisponible */ }
+      return this.config;
+    },
+
+    async save() {
+      // On envoie une copie remise en forme, sans remplacer les objets vivants :
+      // la fenêtre de configuration garde ses références (un remplacement ferait
+      // écrire les modifications suivantes dans des objets orphelins).
+      const payload = normalize(this.config);
+      if (this.mode === 'server') {
+        const r = await fetch('/api/protocols', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!r.ok) throw new Error('le serveur de diagnostic a refusé la configuration');
+        const j = await r.json().catch(() => ({}));
+        this.status = indexStatus(j.status);
+      } else {
+        try {
+          localStorage.setItem(STORE_KEY, JSON.stringify(payload));
+        } catch (e) {
+          throw new Error('stockage local indisponible');
+        }
+      }
+      if (typeof this.onChange === 'function') this.onChange();
+    },
+
+    async refreshStatus() {
+      if (this.mode !== 'server') return this.status;
+      try {
+        const r = await fetch('/api/protocols/status', { cache: 'no-store' });
+        if (r.ok) this.status = indexStatus(await r.json());
+      } catch (e) { /* lien serveur perdu : on garde le dernier état connu */ }
+      return this.status;
+    },
+
+    /** Teste un lien côté serveur ; en mode local, réponse explicite. */
+    async test(linkId) {
+      if (this.mode !== 'server') {
+        return { ok: false, detail: 'Aucun serveur de diagnostic : la configuration est ' +
+                 'mémorisée dans le navigateur et les valeurs sont simulées.' };
+      }
+      const r = await fetch('/api/protocols/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: linkId }),
+      });
+      const j = await r.json().catch(() => ({}));
+      return { ok: !!j.ok, detail: j.detail || (j.ok ? 'connexion établie' : 'échec') };
+    },
+
+    linkState(id) {
+      const st = this.status[id];
+      if (this.mode !== 'server') return { key: 'sim', label: 'simulé', detail: 'Valeurs simulées (pas de serveur de diagnostic).' };
+      if (!st) return { key: 'off', label: 'inconnu', detail: 'État non communiqué par le serveur.' };
+      return st;
+    },
+
+    addrOf, pointSummary, kindOf, defaults, fieldApplies,
+  };
+
+  function indexStatus(list) {
+    const o = {};
+    for (const s of list || []) o[s.id] = s;
+    return o;
+  }
+
+  /** Remet une configuration lue (fichier, serveur, stockage) en forme sûre. */
+  function normalize(cfg) {
+    const out = { version: 1, links: [] };
+    if (!cfg || typeof cfg !== 'object') return out;
+    for (const l of cfg.links || []) {
+      const proto = DW.PROTO_INDEX.get(l.protocol);
+      if (!proto || !ID_RE.test(String(l.id || ''))) continue;
+      const link = {
+        id: String(l.id),
+        label: String(l.label || l.id).slice(0, 60),
+        protocol: proto.id,
+        enabled: l.enabled !== false,
+        params: Object.assign(defaults(proto.linkFields), l.params || {}),
+        points: [],
+      };
+      for (const p of l.points || []) {
+        if (!ID_RE.test(String(p.id || ''))) continue;
+        if (link.points.some((q) => q.id === p.id)) continue;
+        const point = {
+          id: String(p.id),
+          label: String(p.label || p.id).slice(0, 60),
+          unit: String(p.unit || '').slice(0, 12),
+          periodMs: Math.max(10, Math.min(60000, parseInt(p.periodMs, 10) || 200)),
+          params: Object.assign(defaults(proto.pointFields), p.params || {}),
+        };
+        point.kind = ['bit', 'word', 'float'].includes(p.kind) ? p.kind : kindOf(proto, point);
+        link.points.push(point);
+      }
+      if (!out.links.some((x) => x.id === link.id)) out.links.push(link);
+    }
+    return out;
+  }
+  api.normalize = normalize;
+
+  DW.protocols = api;
+  DW.protocolsReady = api.load();
 })();
 
 </script>
@@ -3351,6 +3944,555 @@ body.cfg-hidden .tabActions { display: none; }
 
 </script>
 <script>
+/* Diagweb — fenêtre « Liens réseau » : saisie de la configuration des
+ * protocoles (Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen) et des
+ * points à lire, puis ajout de ces points au diagnostic.
+ *
+ * Fonction globale (indépendante des onglets) : elle vit dans le menu ☰.
+ * Les descriptions de protocoles viennent de protocols.js ; cette fenêtre ne
+ * connaît que des champs génériques (texte, entier, flottant, booléen, liste,
+ * hexadécimal), ce qui permet d'ajouter un protocole sans toucher à l'UI.
+ */
+(function () {
+  "use strict";
+  const DW = (window.DW = window.DW || {});
+  const P = DW.protocols;
+
+  const esc = (s) => DW.escapeHtml(String(s == null ? '' : s));
+  const STATE_LABEL = {
+    up:   ['●', 'connecté', 'Lien établi : les points remontent des valeurs.'],
+    down: ['⚠', 'en défaut', 'Équipement injoignable ou protocole en erreur — voir le détail.'],
+    off:  ['○', 'désactivé', 'Lien désactivé : aucun échange réseau.'],
+    sim:  ['~', 'simulé', 'Aucun serveur de diagnostic : les valeurs affichées sont simulées.'],
+    todo: ['⋯', 'non branché', 'Protocole configurable, lecture pas encore implémentée (voir docs/PROTOCOLES.md).'],
+  };
+
+  let root = null, view = null, editing = null, noteEl = null;
+
+  // ---------------------------------------------------------------- champs
+  function fieldRow(f, params, onInput) {
+    const wrap = document.createElement('div');
+    wrap.className = 'pf-row';
+    const id = 'pf_' + f.key;
+    const lab = document.createElement('label');
+    lab.className = 'pf-label';
+    lab.setAttribute('for', id);
+    lab.textContent = f.label + (f.required ? ' *' : '');
+    lab.title = f.help;
+    wrap.appendChild(lab);
+
+    let input;
+    if (f.type === 'enum') {
+      input = document.createElement('select');
+      for (const [v, txt] of f.choices) {
+        const o = document.createElement('option');
+        o.value = String(v);
+        o.textContent = txt;
+        input.appendChild(o);
+      }
+      input.value = String(params[f.key] == null ? f.def : params[f.key]);
+    } else if (f.type === 'bool') {
+      input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = params[f.key] === true || params[f.key] === 'true';
+    } else {
+      input = document.createElement('input');
+      input.type = (f.type === 'int' || f.type === 'float') ? 'number' : 'text';
+      if (f.type === 'float') input.step = 'any';
+      if (f.type === 'hex') input.placeholder = '0x…';
+      input.value = params[f.key] == null ? String(f.def) : String(params[f.key]);
+      input.autocomplete = 'off';
+      input.spellcheck = false;
+    }
+    input.id = id;
+    input.className = 'pf-input' + (f.type === 'bool' ? ' pf-check' : '');
+    input.title = f.help;
+    input.addEventListener('input', () => {
+      params[f.key] = f.type === 'bool' ? input.checked
+        : (f.type === 'int' || f.type === 'float') ? numVal(input.value, f)
+        : input.value;
+      if (onInput) onInput();
+    });
+    if (f.type === 'enum' || f.type === 'bool') {
+      input.addEventListener('change', () => {
+        params[f.key] = f.type === 'bool' ? input.checked : input.value;
+        if (onInput) onInput();
+      });
+    }
+    wrap.appendChild(input);
+    return wrap;
+  }
+
+  function numVal(raw, f) {
+    const v = f.type === 'int' ? parseInt(raw, 10) : parseFloat(raw);
+    return isFinite(v) ? v : (raw === '' || raw === '-' ? raw : f.def);
+  }
+
+  /** Formulaire d'une liste de champs, redessiné quand une dépendance change. */
+  function fieldsForm(fields, params) {
+    const box = document.createElement('div');
+    box.className = 'pf-form';
+    const draw = () => {
+      box.innerHTML = '';
+      for (const f of fields) {
+        if (!P.fieldApplies(f, params)) continue;
+        box.appendChild(fieldRow(f, params, () => {
+          // Un champ « when » a pu changer : on redessine le formulaire.
+          if (fields.some((g) => g.when && Object.keys(g.when).includes(f.key))) draw();
+        }));
+      }
+    };
+    draw();
+    return box;
+  }
+
+  // ----------------------------------------------------------------- vues
+  function open() {
+    close();
+    root = document.getElementById('modalRoot');
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    back.innerHTML =
+      '<div class="modal wide" role="dialog" aria-label="Liens réseau">' +
+        '<header class="m-head"><h3 id="pxTitle">Liens réseau</h3>' +
+        '<button class="iconbtn m-close" type="button" title="Fermer cette fenêtre">✕</button></header>' +
+        '<div id="pxBody"></div>' +
+        '<p class="m-note" id="pxNote"></p>' +
+      '</div>';
+    root.innerHTML = '';
+    root.appendChild(back);
+    back.querySelector('.m-close').addEventListener('click', close);
+    back.addEventListener('pointerdown', (e) => { if (e.target === back) close(); });
+    noteEl = back.querySelector('#pxNote');
+    view = 'links';
+    render();
+    if (P.mode === 'server') P.refreshStatus().then(() => { if (view === 'links') render(); });
+  }
+
+  function close() {
+    const r = document.getElementById('modalRoot');
+    if (r) r.innerHTML = '';
+    root = null; view = null; editing = null;
+  }
+
+  function body() { return document.getElementById('pxBody'); }
+  function setTitle(t) { document.getElementById('pxTitle').textContent = t; }
+  function note(t) { if (noteEl) noteEl.textContent = t; }
+
+  function render() {
+    if (!root) return;
+    const b = body();
+    b.innerHTML = '';
+    if (view === 'links') renderLinks(b);
+    else if (view === 'link') renderLink(b);
+    else if (view === 'points') renderPoints(b);
+    else if (view === 'point') renderPoint(b);
+  }
+
+  // ---- liste des liens ---------------------------------------------
+  function renderLinks(b) {
+    setTitle('Liens réseau');
+    note(P.mode === 'server'
+      ? 'Configuration détenue par le contrôleur : le serveur de diagnostic ouvre lui-même les liens et lit les points.'
+      : 'Aucun serveur de diagnostic joignable : la configuration est mémorisée dans ce navigateur et les valeurs des points sont simulées.');
+
+    const bar = document.createElement('div');
+    bar.className = 'm-actions';
+    bar.appendChild(btn('+ Nouveau lien', 'primary',
+      'Déclarer une connexion vers un équipement ou un réseau (Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen)',
+      () => { editing = newLink(); view = 'link'; render(); }));
+    bar.appendChild(btn('Exporter', '',
+      'Télécharger toute la configuration des liens réseau au format JSON',
+      () => DW.store.download('liens-reseau', JSON.stringify(P.config, null, 2), 'json', 'application/json')));
+    bar.appendChild(btn('Importer', '',
+      'Charger une configuration de liens réseau depuis un fichier JSON',
+      importConfig));
+    b.appendChild(bar);
+
+    const list = document.createElement('div');
+    list.className = 'px-list';
+    const links = P.links();
+    if (!links.length) {
+      const none = document.createElement('p');
+      none.className = 'm-note';
+      none.textContent = 'Aucun lien déclaré. « + Nouveau lien » ajoute une connexion ; ' +
+        'ses points deviennent ensuite des variables ordinaires du diagnostic (@lien.point).';
+      list.appendChild(none);
+    }
+    for (const link of links) {
+      const proto = P.descriptor(link.protocol);
+      const st = link.enabled === false ? { key: 'off' } :
+                 (proto && proto.state === 'declared' && P.mode === 'server') ? { key: 'todo' } :
+                 P.linkState(link.id);
+      const [icon, label, help] = STATE_LABEL[st.key] || STATE_LABEL.off;
+      const row = document.createElement('div');
+      row.className = 'px-row';
+      row.innerHTML =
+        '<div class="px-head">' +
+          '<span class="badge fam-NET" title="Protocole du lien">' + esc(proto ? proto.label : link.protocol) + '</span>' +
+          '<b class="px-name"></b>' +
+          '<span class="px-state st-' + st.key + '"></span>' +
+        '</div>' +
+        '<div class="px-sub"></div>';
+      row.querySelector('.px-name').textContent = link.label || link.id;
+      row.querySelector('.px-name').title = 'Nom du lien — les points s’adressent par @' + link.id + '.<point>';
+      const stEl = row.querySelector('.px-state');
+      stEl.textContent = icon + ' ' + label;
+      stEl.title = (st.detail || help);
+      row.querySelector('.px-sub').textContent =
+        target(link) + ' · ' + (link.points || []).length + ' point(s)';
+      row.querySelector('.px-sub').title = 'Cible du lien et nombre de points configurés';
+
+      const acts = document.createElement('div');
+      acts.className = 'm-actions px-acts';
+      acts.appendChild(btn('Points', '', 'Voir, ajouter ou modifier les variables lues sur ce lien',
+        () => { editing = link; view = 'points'; render(); }));
+      acts.appendChild(btn('Modifier', '', 'Modifier le protocole et les paramètres de connexion de ce lien',
+        () => { editing = link; view = 'link'; render(); }));
+      acts.appendChild(btn('Tester', '', 'Demander au serveur de diagnostic d’ouvrir ce lien et de signaler le résultat',
+        async (ev) => {
+          const el = ev.currentTarget;
+          el.disabled = true;
+          try {
+            const r = await P.test(link.id);
+            DW.app.toast((r.ok ? '✓ ' : '✗ ') + (link.label || link.id) + ' : ' + r.detail, r.ok ? '' : 'err');
+            if (P.mode === 'server') { await P.refreshStatus(); render(); }
+          } finally { el.disabled = false; }
+        }));
+      acts.appendChild(btn(link.enabled === false ? 'Activer' : 'Désactiver', '',
+        'Suspendre ou reprendre les échanges réseau de ce lien, sans perdre sa configuration',
+        async () => { link.enabled = link.enabled === false; await persist(); render(); }));
+      acts.appendChild(btn('Supprimer', 'danger', 'Supprimer ce lien et tous ses points',
+        async () => {
+          if (!window.confirm('Supprimer le lien « ' + (link.label || link.id) + ' » et ses ' +
+              (link.points || []).length + ' point(s) ?')) return;
+          P.config.links = P.links().filter((l) => l !== link);
+          await persist();
+          render();
+        }));
+      row.appendChild(acts);
+      list.appendChild(row);
+    }
+    b.appendChild(list);
+  }
+
+  function target(link) {
+    const p = link.params || {};
+    if (p.host) return p.host + ':' + (p.port || '');
+    if (p.device) return p.device + ' · ' + (p.baud || '') + ' bauds';
+    if (p.iface) return 'interface ' + p.iface + (p.nodeId ? ' · nœud ' + p.nodeId : '');
+    return '—';
+  }
+
+  // ---- édition d'un lien -------------------------------------------
+  function newLink() {
+    const proto = DW.PROTOCOLS[0];
+    let n = 1;
+    while (P.link('lien' + n)) n++;
+    return {
+      id: 'lien' + n, label: 'Lien ' + n, protocol: proto.id, enabled: true,
+      params: P.defaults(proto.linkFields), points: [], _new: true,
+    };
+  }
+
+  function renderLink(b) {
+    const link = editing;
+    const proto = P.descriptor(link.protocol);
+    setTitle(link._new ? 'Nouveau lien réseau' : 'Lien « ' + (link.label || link.id) + ' »');
+    note(proto.help + (proto.state === 'declared'
+      ? ' — pilote déclaré : la configuration est acceptée et conservée, la lecture viendra avec la pile protocolaire.'
+      : ''));
+
+    b.appendChild(textRow('Identifiant', link.id,
+      'Identifiant court du lien, utilisé dans les adresses : @' + link.id + '.<point>. ' +
+      'Lettres, chiffres, tiret et souligné, 24 caractères maximum.',
+      (v) => { link.id = v; }));
+    b.appendChild(textRow('Nom', link.label,
+      'Nom lisible affiché dans la liste des liens et dans les libellés de points.',
+      (v) => { link.label = v; }));
+
+    const protoRow = document.createElement('div');
+    protoRow.className = 'pf-row';
+    const pl = document.createElement('label');
+    pl.className = 'pf-label';
+    pl.textContent = 'Protocole';
+    pl.setAttribute('for', 'pxProto');
+    pl.title = 'Protocole utilisé par le serveur de diagnostic pour lire les points de ce lien';
+    const sel = document.createElement('select');
+    sel.id = 'pxProto';
+    sel.className = 'pf-input';
+    sel.title = pl.title;
+    for (const p of DW.PROTOCOLS) {
+      const o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.label + ' — ' + p.transport + (p.state === 'declared' ? ' (non branché)' : '');
+      sel.appendChild(o);
+    }
+    sel.value = link.protocol;
+    sel.addEventListener('change', () => {
+      link.protocol = sel.value;
+      const np = P.descriptor(link.protocol);
+      link.params = P.defaults(np.linkFields);
+      for (const pt of link.points || []) pt.params = P.defaults(np.pointFields);
+      render();
+    });
+    protoRow.appendChild(pl);
+    protoRow.appendChild(sel);
+    b.appendChild(protoRow);
+
+    b.appendChild(fieldsForm(proto.linkFields, link.params));
+
+    const acts = document.createElement('div');
+    acts.className = 'm-actions';
+    acts.appendChild(btn('Enregistrer', 'primary', 'Valider ce lien et revenir à la liste', async () => {
+      const err = validateLink(link);
+      if (err) { DW.app.toast(err, 'err'); return; }
+      if (link._new) { delete link._new; P.config.links.push(link); }
+      await persist();
+      view = 'links'; render();
+    }));
+    acts.appendChild(btn('Points…', '', 'Configurer les variables lues sur ce lien', () => {
+      const err = validateLink(link);
+      if (err) { DW.app.toast(err, 'err'); return; }
+      if (link._new) { delete link._new; P.config.links.push(link); }
+      persist().then(() => { view = 'points'; render(); });
+    }));
+    acts.appendChild(btn('Annuler', '', 'Revenir à la liste sans conserver les modifications', () => {
+      P.load().then(() => { view = 'links'; render(); });
+    }));
+    b.appendChild(acts);
+  }
+
+  function validateLink(link) {
+    if (!/^[A-Za-z][A-Za-z0-9_-]{0,23}$/.test(link.id)) {
+      return 'Identifiant de lien invalide : une lettre puis lettres, chiffres, « - » ou « _ » (24 max).';
+    }
+    if (P.links().some((l) => l !== link && l.id === link.id)) {
+      return 'Un autre lien porte déjà l’identifiant « ' + link.id +' ».';
+    }
+    const proto = P.descriptor(link.protocol);
+    for (const f of proto.linkFields) {
+      if (!f.required || !P.fieldApplies(f, link.params)) continue;
+      const v = link.params[f.key];
+      if (v === '' || v == null) return 'Champ obligatoire non renseigné : ' + f.label + '.';
+    }
+    return null;
+  }
+
+  // ---- points d'un lien ---------------------------------------------
+  function renderPoints(b) {
+    const link = editing;
+    const proto = P.descriptor(link.protocol);
+    setTitle('Points de « ' + (link.label || link.id) + ' »');
+    note('Chaque point devient une variable du diagnostic, adressée @' + link.id + '.<point>, ' +
+         'utilisable au tableau, en courbe et dans le journal.');
+
+    const bar = document.createElement('div');
+    bar.className = 'm-actions';
+    bar.appendChild(btn('+ Nouveau point', 'primary', 'Déclarer une variable à lire sur ce lien',
+      () => { editing = { link, point: newPoint(link, proto) }; view = 'point'; render(); }));
+    bar.appendChild(btn('← Liens', '', 'Revenir à la liste des liens réseau',
+      () => { editing = null; view = 'links'; render(); }));
+    b.appendChild(bar);
+
+    const list = document.createElement('div');
+    list.className = 'px-list';
+    if (!(link.points || []).length) {
+      const none = document.createElement('p');
+      none.className = 'm-note';
+      none.textContent = 'Aucun point sur ce lien.';
+      list.appendChild(none);
+    }
+    for (const pt of link.points || []) {
+      const row = document.createElement('div');
+      row.className = 'px-row';
+      row.innerHTML =
+        '<div class="px-head"><span class="badge fam-NET" title="Variable réseau">NET</span>' +
+        '<b class="px-name mono"></b><span class="px-unit"></span></div>' +
+        '<div class="px-sub"></div>';
+      row.querySelector('.px-name').textContent = P.addrOf(link, pt);
+      row.querySelector('.px-name').title = 'Adresse à saisir dans la barre de recherche';
+      row.querySelector('.px-unit').textContent = pt.unit || '';
+      row.querySelector('.px-unit').title = 'Unité affichée dans le tableau et sur les axes';
+      const sub = row.querySelector('.px-sub');
+      sub.textContent = (pt.label || pt.id) + ' · ' + P.pointSummary(link, pt) + ' · ' + pt.periodMs + ' ms';
+      sub.title = 'Libellé, adressage protocole et période de lecture';
+
+      const acts = document.createElement('div');
+      acts.className = 'm-actions px-acts';
+      acts.appendChild(btn('Ajouter au diagnostic', 'primary',
+        'Ajouter cette variable à la destination choisie dans la barre du haut (tableau ou graphique)',
+        () => {
+          if (DW.app.addVariable(P.addrOf(link, pt), pt.periodMs)) close();
+        }));
+      acts.appendChild(btn('Modifier', '', 'Modifier l’adressage, l’unité ou la période de ce point',
+        () => { editing = { link, point: pt }; view = 'point'; render(); }));
+      acts.appendChild(btn('Dupliquer', '', 'Créer un point identique, à ajuster (registre suivant, autre bit…)',
+        async () => {
+          const copy = JSON.parse(JSON.stringify(pt));
+          let n = 2;
+          while ((link.points || []).some((q) => q.id === pt.id + '_' + n)) n++;
+          copy.id = pt.id + '_' + n;
+          link.points.push(copy);
+          await persist();
+          render();
+        }));
+      acts.appendChild(btn('Supprimer', 'danger', 'Supprimer ce point de la configuration',
+        async () => {
+          link.points = link.points.filter((q) => q !== pt);
+          await persist();
+          render();
+        }));
+      row.appendChild(acts);
+      list.appendChild(row);
+    }
+    b.appendChild(list);
+  }
+
+  function newPoint(link, proto) {
+    let n = 1;
+    while ((link.points || []).some((p) => p.id === 'point' + n)) n++;
+    return {
+      id: 'point' + n, label: '', unit: '', periodMs: 200, kind: 'float',
+      params: P.defaults(proto.pointFields), _new: true,
+    };
+  }
+
+  function renderPoint(b) {
+    const { link, point } = editing;
+    const proto = P.descriptor(link.protocol);
+    setTitle(point._new ? 'Nouveau point' : 'Point ' + P.addrOf(link, point));
+    note('Adresse dans Diagweb : @' + link.id + '.' + point.id +
+         ' — protocole ' + proto.label + '.');
+
+    b.appendChild(textRow('Identifiant', point.id,
+      'Identifiant court du point : il complète l’adresse @' + link.id + '.<identifiant>.',
+      (v) => { point.id = v; }));
+    b.appendChild(textRow('Libellé', point.label,
+      'Description affichée dans le tableau, les suggestions et les légendes de courbes.',
+      (v) => { point.label = v; }));
+    b.appendChild(textRow('Unité', point.unit,
+      'Unité physique après application du gain et du décalage (bar, °C, tr/min…). ' +
+      'Les courbes de même unité partagent une échelle.',
+      (v) => { point.unit = v; }));
+    b.appendChild(fieldRow(
+      { key: 'periodMs', label: 'Période de lecture (ms)', type: 'int', def: 200, required: true,
+        help: 'Cadence à laquelle le serveur de diagnostic lit ce point (10 ms à 60 s). ' +
+              'Une période courte sur un lien lent peut saturer l’équipement.' },
+      point));
+    b.appendChild(fieldRow(
+      { key: 'kind', label: 'Type de variable', type: 'enum', def: 'float', required: false,
+        help: 'Présentation dans le diagnostic : bit (LED 0/1), mot 16 bits (décimal + hexadécimal) ou grandeur flottante.',
+        choices: [['bit', 'Bit (0/1)'], ['word', 'Mot 16 bits'], ['float', 'Grandeur flottante']] },
+      point));
+
+    const h = document.createElement('h4');
+    h.className = 'help-h';
+    h.textContent = 'Adressage ' + proto.label;
+    h.title = 'Paramètres propres au protocole de ce lien';
+    b.appendChild(h);
+    b.appendChild(fieldsForm(proto.pointFields, point.params));
+
+    const acts = document.createElement('div');
+    acts.className = 'm-actions';
+    acts.appendChild(btn('Enregistrer', 'primary', 'Valider ce point et revenir à la liste', async () => {
+      const err = validatePoint(link, point, proto);
+      if (err) { DW.app.toast(err, 'err'); return; }
+      if (point._new) { delete point._new; link.points.push(point); }
+      await persist();
+      editing = link; view = 'points'; render();
+    }));
+    acts.appendChild(btn('Annuler', '', 'Revenir à la liste des points sans conserver les modifications',
+      () => { P.load().then(() => { editing = P.link(link.id); view = 'points'; render(); }); }));
+    b.appendChild(acts);
+  }
+
+  function validatePoint(link, point, proto) {
+    if (!/^[A-Za-z][A-Za-z0-9_-]{0,23}$/.test(point.id)) {
+      return 'Identifiant de point invalide : une lettre puis lettres, chiffres, « - » ou « _ » (24 max).';
+    }
+    if ((link.points || []).some((p) => p !== point && p.id === point.id)) {
+      return 'Ce lien a déjà un point « ' + point.id + ' ».';
+    }
+    const per = parseInt(point.periodMs, 10);
+    if (!isFinite(per) || per < 10 || per > 60000) {
+      return 'Période de lecture attendue entre 10 ms et 60 000 ms.';
+    }
+    for (const f of proto.pointFields) {
+      if (!f.required || !P.fieldApplies(f, point.params)) continue;
+      const v = point.params[f.key];
+      if (v === '' || v == null) return 'Champ obligatoire non renseigné : ' + f.label + '.';
+    }
+    return null;
+  }
+
+  // ------------------------------------------------------------- outils
+  function textRow(label, value, help, set) {
+    const wrap = document.createElement('div');
+    wrap.className = 'pf-row';
+    const id = 'px_' + label.replace(/[^a-z]/gi, '');
+    const l = document.createElement('label');
+    l.className = 'pf-label';
+    l.textContent = label;
+    l.setAttribute('for', id);
+    l.title = help;
+    const i = document.createElement('input');
+    i.id = id;
+    i.className = 'pf-input';
+    i.type = 'text';
+    i.value = value || '';
+    i.title = help;
+    i.autocomplete = 'off';
+    i.spellcheck = false;
+    i.addEventListener('input', () => set(i.value.trim()));
+    wrap.appendChild(l);
+    wrap.appendChild(i);
+    return wrap;
+  }
+
+  function btn(text, cls, title, fn) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn' + (cls ? ' ' + cls : '');
+    b.textContent = text;
+    b.title = title;
+    b.addEventListener('click', fn);
+    return b;
+  }
+
+  async function persist() {
+    try {
+      await P.save();
+    } catch (e) {
+      DW.app.toast('Configuration non enregistrée : ' + e.message, 'err');
+    }
+  }
+
+  function importConfig() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.addEventListener('change', async () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      try {
+        const cfg = P.normalize(JSON.parse(await file.text()));
+        P.config = cfg;
+        await persist();
+        render();
+        DW.app.toast(cfg.links.length + ' lien(s) importé(s).');
+      } catch (e) {
+        DW.app.toast('Fichier de liens réseau illisible.', 'err');
+      }
+    });
+    input.click();
+  }
+
+  DW.protocolsUI = { open, close };
+})();
+
+</script>
+<script>
 /* Diagweb — logique applicative & interface.
  *
  * Espace de travail multi-onglets : chaque onglet porte sa propre
@@ -3383,6 +4525,8 @@ body.cfg-hidden .tabActions { display: none; }
     PLC: 'Variables PLC : entrées I, sorties Q, bits mémoire M, variables système S',
     MB: 'Registres de bus (MB) — mots de 16 bits',
     CAPI: 'Signaux des modèles, via la C API (Modele.sous_systeme.signal)',
+    NET: 'Points lus sur les liens réseau du serveur de diagnostic (@lien.point) — ' +
+         'Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen',
   };
 
   // ---------- Notifications -------------------------------------------
@@ -3727,11 +4871,14 @@ body.cfg-hidden .tabActions { display: none; }
   }
 
   // ---------- Ajout d'une variable ------------------------------------
-  function addVariable(rawAddr) {
+  function addVariable(rawAddr, forcePeriodMs) {
     const p = DW.parseAddr(rawAddr != null ? rawAddr : $('searchInput').value);
     if (!p.ok) { toast(p.error, 'err'); return false; }
     const target = $('targetSel').value;
-    const periodMs = parseInt($('periodSel').value, 10) || CFG.defaultPeriodMs;
+    // Un point réseau porte sa propre période de lecture (configuration du lien).
+    const netPeriod = p.family === 'NET' && DW.protocols ? DW.protocols.periodOf(p.addr) : null;
+    const periodMs = forcePeriodMs || netPeriod ||
+      parseInt($('periodSel').value, 10) || CFG.defaultPeriodMs;
     let destLabel = '';
     if (target === 'table') {
       const r = addToTable(p.addr, periodMs);
@@ -3764,12 +4911,13 @@ body.cfg-hidden .tabActions { display: none; }
 
   // ---------- Autocomplétion ------------------------------------------
   let sugIndex = -1;
-  let famFilter = 'all';   // 'all' | 'PLC' (I/Q/M/S) | 'MB' | 'CAPI'
+  let famFilter = 'all';   // 'all' | 'PLC' (I/Q/M/S) | 'MB' | 'CAPI' | 'NET'
   const FAM_FILTERS = [
     ['all', 'Toutes'],
     ['PLC', 'PLC'],
     ['MB', 'Modbus'],
     ['CAPI', 'Simulink'],
+    ['NET', 'Réseau'],
   ];
   function matchFilter(family) {
     if (famFilter === 'all') return true;
@@ -3808,6 +4956,12 @@ body.cfg-hidden .tabActions { display: none; }
   }
   const CATALOG_F = catalogWithFamily();
 
+  /** Catalogue proposé : variables du contrôleur + points des liens réseau. */
+  function suggestPool() {
+    const net = DW.protocols ? DW.protocols.catalog() : [];
+    return CATALOG_F.concat(net);
+  }
+
   function updateSuggest() {
     const box = $('suggestBox');
     const q = $('searchInput').value.trim().toLowerCase();
@@ -3832,13 +4986,13 @@ body.cfg-hidden .tabActions { display: none; }
     }
     box.appendChild(bar);
 
-    const pool = CATALOG_F.filter((e) => matchFilter(e.family));
+    const pool = suggestPool().filter((e) => matchFilter(e.family));
     let list;
     if (!q) {
       const help = document.createElement('div');
       help.className = 'sug-help';
       help.innerHTML = 'Formats : <code>I1.2.3.4</code> <code>Q14.15</code> <code>M1.14</code> ' +
-        '<code>S0.4</code> <code>MB414</code> <code>Modele.signal</code>';
+        '<code>S0.4</code> <code>MB414</code> <code>Modele.signal</code> <code>@lien.point</code>';
       box.appendChild(help);
       list = pool.slice(0, 8);
     } else {
@@ -4591,6 +5745,12 @@ body.cfg-hidden .tabActions { display: none; }
             ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
           ]) +
+          S('Liens réseau (☰ → Liens réseau)') +
+          L([
+            ['Lien', 'Une connexion vers un équipement ou un réseau : Modbus TCP/RTU, IEC 60870-5-104, IEC 61850, CAN, J1939, CANopen. Le serveur de diagnostic ouvre le lien et lit les points.'],
+            ['Point', 'Une variable lue sur un lien (registre, IOA, SPN, objet…), avec son unité et sa période. Elle s’adresse ensuite <b>@lien.point</b> comme n’importe quelle variable.'],
+            ['Sans serveur', 'La configuration reste dans le navigateur et les valeurs des points sont simulées — l’interface est démontrable sans matériel.'],
+          ]) +
           S('Courbes') +
           L([
             ['Pastille de légende', 'Couleur (palette ou teinte libre), masquer, échelle dédiée, décalage vertical, retrait.'],
@@ -4601,6 +5761,8 @@ body.cfg-hidden .tabActions { display: none; }
       back.addEventListener('pointerdown', (e) => { if (e.target === back) root.innerHTML = ''; });
       root.appendChild(back);
     });
+
+    $('netBtn').addEventListener('click', () => DW.protocolsUI.open());
 
     $('aboutBtn').addEventListener('click', () => {
       const root = $('modalRoot');
@@ -4672,6 +5834,13 @@ body.cfg-hidden .tabActions { display: none; }
   }
 
   // ---------- Démarrage ------------------------------------------------
+  // API minimale offerte aux modules d'interface (fenêtre des liens réseau).
+  DW.app = {
+    addVariable: (addr, periodMs) => addVariable(addr, periodMs),
+    toast,
+    refreshTargets,
+  };
+
   function boot() {
     bindUi();
 
@@ -4716,8 +5885,13 @@ body.cfg-hidden .tabActions { display: none; }
   // La source (simulation ou serveur de diagnostic) doit être choisie avant
   // de construire l'espace de travail : les premiers abonnements en dépendent.
   function start() {
-    const ready = DW.sourceReady || Promise.resolve();
-    ready.catch(() => {}).then(boot);
+    // La source (simulation ou serveur) et la configuration des liens réseau
+    // doivent être connues avant les premiers abonnements.
+    const ready = Promise.all([
+      (DW.sourceReady || Promise.resolve()).catch(() => {}),
+      (DW.protocolsReady || Promise.resolve()).catch(() => {}),
+    ]);
+    ready.then(boot);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
