@@ -346,9 +346,12 @@
       title: opts.title || 'Graphique ' + tab.chartSeq,
       windowS: opts.windowS,
       heightMode: opts.heightMode,
+      customH: opts.customH,
+      colSpan: opts.colSpan,
     });
     tab.charts.push(chart);
     tab.chartsGridEl.appendChild(chart.root);
+    chart.applyHeightMode();   // la largeur en colonnes dépend de la grille d'accueil
     if (tab === state.active) refreshTargets();
     onChange();
     return chart;
@@ -548,7 +551,10 @@
     }
     // On ne bascule pas d'onglet : en multi-écran, l'utilisateur range des
     // widgets sans quitter ce qu'il regarde (un message indique la cible).
-    const chart = createChart({ title: cfg.title, windowS: cfg.windowS, heightMode: cfg.heightMode }, target);
+    const chart = createChart({
+      title: cfg.title, windowS: cfg.windowS, heightMode: cfg.heightMode,
+      customH: cfg.customH, colSpan: cfg.colSpan,
+    }, target);
     if (chart) {
       for (const s of cfg.series || []) {
         const p = DW.parseAddr(s.addr);
@@ -669,7 +675,10 @@
       if (p.ok) addToTable(p.addr, periodMs);
     }
     for (const c of data.charts || []) {
-      const chart = createChart({ title: c.title, windowS: c.windowS, heightMode: c.heightMode });
+      const chart = createChart({
+        title: c.title, windowS: c.windowS, heightMode: c.heightMode,
+        customH: c.customH, colSpan: c.colSpan,
+      });
       if (!chart) break;
       for (const s of c.series || []) {
         const p = DW.parseAddr(s.addr);
@@ -1225,7 +1234,8 @@
           L([
             ['Poignée ⠿', 'Glisser un graphique ou le tableau vers un onglet, une autre fenêtre, ou sur un autre graphique pour le ranger.'],
             ['Ligne du tableau', 'Se glisse seule vers un autre onglet ou une autre fenêtre.'],
-            ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
+            ['Poignée ◢ (coin bas-droit)', 'Redimensionner un graphique à la souris : ↕ hauteur libre, ↔ largeur en nombre de colonnes. Double-clic pour revenir à la taille automatique. Sur mobile la disposition reste en une colonne, avec les hauteurs M/L/XL.'],
+            ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
           ]) +
           S('Courbes') +

@@ -319,9 +319,28 @@ button { font-family: var(--sans); }
 .v-del:hover { color: var(--crit); background: var(--panel-2); }
 
 /* ---------- Grille de graphiques ---------- */
-.charts-grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
+/* --col-min : largeur minimale d'une colonne, lue par chart.js pour connaître
+   le nombre de colonnes « naturelles » (0 = une seule colonne, mobile). */
+.charts-grid { display: grid; gap: 12px; grid-template-columns: 1fr; --col-min: 0px; }
 
-.chart-card { display: flex; flex-direction: column; min-width: 0; }
+.chart-card { position: relative; display: flex; flex-direction: column; min-width: 0; }
+
+/* Poignée de redimensionnement (coin bas-droit, souris ou stylet) */
+.resize-grip {
+  display: none;                      /* activée ≥ 700 px — cf. media query */
+  position: absolute; right: 2px; bottom: 2px;
+  width: 18px; height: 18px;
+  cursor: nwse-resize; touch-action: none;
+  border-bottom-right-radius: 12px;
+  opacity: .45;
+  background:
+    linear-gradient(135deg, transparent 46%, var(--faint) 46%, var(--faint) 58%, transparent 58%),
+    linear-gradient(135deg, transparent 68%, var(--faint) 68%, var(--faint) 80%, transparent 80%);
+}
+.resize-grip:hover { opacity: 1; }
+.chart-card.resizing { outline: 1px solid color-mix(in srgb, var(--accent) 60%, transparent); }
+.chart-card.resizing .resize-grip { opacity: 1; }
+.chart-card.fs .resize-grip { display: none; }
 .chart-head {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 10px 6px;
@@ -721,10 +740,16 @@ body.dnd-over-pane #panes {
 @media (min-width: 700px) {
   body { font-size: 14.5px; }
   .wrap { padding: 12px 20px 64px; }
-  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); --col-min: 380px; }
   .modal-back { place-items: center; padding: 20px; }
   .modal { border-radius: 16px; }
   .chip-addr { max-width: 240px; }
+
+  /* Dimensionnement libre à la poignée — réservé aux écrans multi-colonnes ;
+     sur mobile la grille reste en une colonne avec les hauteurs M/L/XL. */
+  .resize-grip { display: block; }
+  .chart-card.has-custom-h .chart-body { height: var(--custom-h); }
+  .chart-card.has-span { grid-column: span var(--col-span); }
 }
 
 /* Barre supérieure sur une seule ligne : uniquement quand tout tient */
@@ -740,10 +765,10 @@ body.dnd-over-pane #panes {
 body.cfg-hidden .searchrow { display: none; }
 body.cfg-hidden .tabActions { display: none; }
 @media (min-width: 1700px) {
-  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); }
+  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); --col-min: 500px; }
 }
 @media (min-width: 2300px) {
-  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(620px, 1fr)); }
+  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(620px, 1fr)); --col-min: 620px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

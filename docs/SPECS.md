@@ -123,6 +123,22 @@ restent partagées entre toutes les fenêtres (stockage local).
   pleine largeur de la grille) — mémorisé dans la configuration
   (`heightMode`). **Plein écran** par graphique (menu ⋮, sortie par Échap
   ou le menu).
+- **Dimensionnement libre à la poignée** (coin bas-droit, souris ou stylet) :
+  glisser ↕ règle la **hauteur** libre (150–2000 px, `customH`), glisser ↔ la
+  **largeur** exprimée en **nombre de colonnes de la grille** (2 à 6,
+  `colSpan` ; 1 = automatique). **Double-clic** sur la poignée — ou menu ⋮ →
+  « Taille automatique » — revient au préréglage M/L/XL. Les deux valeurs
+  sont mémorisées dans la configuration et suivent le graphique lors d'une
+  duplication ou d'un déplacement.
+  - La largeur **appliquée** est bornée au nombre de colonnes disponibles
+    (recalculé depuis `--col-min` à chaque redimensionnement de la fenêtre) :
+    une fenêtre rétrécie ne crée jamais de colonne supplémentaire, et la
+    largeur voulue est retrouvée dès que la place revient.
+  - **Disposition différente sur mobile** : sous 700 px la poignée est
+    masquée et le dimensionnement libre est neutralisé — la grille reste en
+    une colonne avec les hauteurs M/L/XL. Une configuration réglée sur un
+    poste de travail s'ouvre donc proprement sur téléphone, sans perdre ses
+    valeurs (elles redeviennent actives sur grand écran).
 - Sur canvas étroit (< 520 px) : règles d'axes compactes (38 px), 2 règles
   visibles au maximum (les groupes suivants gardent leur mise à l'échelle,
   badge « É· ») ; ≥ 1100 px : règles de 50 px, police 11 px.
@@ -201,8 +217,13 @@ Historique conservé : 330 s glissantes.
 ## 6. Configurations (liste des variables + agencement)
 
 Configuration (une par onglet) : `{version: 1, table: [{addr, periodMs?}],
-charts: [{title, windowS, series: [{addr, axisMode: 'auto'|'solo', visible,
-periodMs?, offsetY?, colorIdx?, color?}]}]}`. `periodMs` absent = 10 ms ;
+charts: [{title, windowS, heightMode?, customH?, colSpan?, series: [{addr,
+axisMode: 'auto'|'solo', visible, periodMs?, offsetY?, colorIdx?,
+color?}]}]}`. `periodMs` absent = 10 ms ;
+`heightMode` = préréglage `'L'|'XL'` (absent = M), `customH` = hauteur libre
+en pixels et `colSpan` = largeur en colonnes de grille, tous deux issus de la
+poignée de redimensionnement (absents = taille automatique, ignorés sous
+700 px) ;
 `offsetY` = décalage vertical (unités de la variable, absent = 0) ;
 `colorIdx` = emplacement de palette (suit le thème), `color` = teinte libre
 en hexadécimal qui, si présente, l'emporte. L'ordre du tableau `charts`
@@ -340,7 +361,7 @@ L'implémentation de référence est `server/` (C++20, sans dépendance) : voir
   non documenté.
 - **Aide** (menu ☰) : récapitulatif des commandes et des gestes en cinq
   sections — ajout de variables, gestes sur le tracé, gestes sur les règles
-  d'axes, organisation, courbes. Elle remplace les infobulles sur écran
+  d'axes, organisation (poignées ⠿ et ◢, menu ⋮, onglets), courbes. Elle remplace les infobulles sur écran
   tactile, où elles n'apparaissent pas.
 - **Identification de version** tout en haut à droite, en face de la barre
   d'onglets : `hash court · #n`
@@ -361,6 +382,8 @@ L'implémentation de référence est `server/` (C++20, sans dépendance) : voir
 - [x] Onglets multiples (une configuration par onglet, session v2)
 - [x] Déplacement de widgets entre onglets et entre fenêtres (multi-écran)
 - [x] Duplication de graphiques, rangement de la grille, couleur des courbes
+- [x] Dimensionnement libre à la poignée (hauteur + largeur en colonnes),
+      neutralisé sur mobile
 - [x] Infobulles sur tous les objets + fenêtre d'aide (gestes et commandes)
 - [x] Configurations : session, navigateur, export JSON + CSV, import JSON,
       ★ auto, stub contrôleur

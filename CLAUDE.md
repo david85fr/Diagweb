@@ -45,7 +45,7 @@ server/         serveur de diagnostic C++20 (HTTP + WebSocket, sans dépendance)
 tools/build.py  assemble dist/ à partir de web/
 tools/gen-catalog.mjs  régénère server/src/catalog.generated.hpp depuis config.js
 tools/serve.py  serveur d'aperçu (port 8080, en-têtes anti-cache)
-tests/ui.mjs    tests d'interface Playwright (16 vérifications)
+tests/ui.mjs    tests d'interface Playwright (18 vérifications)
 tests/dnd.mjs   tests de déplacement de widgets (7 vérifications, http requis)
 dist/           livrables générés (commités) : index.html autonome + artifact.html
 docs/           PROJET.md, SPECS.md

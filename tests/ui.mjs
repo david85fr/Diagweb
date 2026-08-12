@@ -138,6 +138,26 @@ check('session restaurée au rechargement (onglets + journal)',
   await p1.locator('.tab').count() === 2 &&
   await p1.locator(PANE + '.vrow').count() === 7 &&
   await p1.locator('.tab .recdot').count() === 1);
+
+// Disposition mobile : poignée masquée et taille libre (venue d'un poste
+// de travail) neutralisée — la grille reste en une colonne.
+const mobSize = await p1.locator(PANE + '.chart-card').first().evaluate((el) => {
+  el.classList.add('has-custom-h', 'has-span');
+  el.style.setProperty('--custom-h', '900px');
+  el.style.setProperty('--col-span', '3');
+  const r = {
+    h: el.querySelector('.chart-body').getBoundingClientRect().height,
+    col: getComputedStyle(el).gridColumnEnd,
+    grip: getComputedStyle(el.querySelector('.resize-grip')).display,
+  };
+  el.classList.remove('has-custom-h', 'has-span');
+  el.style.removeProperty('--custom-h');
+  el.style.removeProperty('--col-span');
+  return r;
+});
+check('mobile : poignée masquée et dimensionnement libre ignoré',
+  mobSize.grip === 'none' && mobSize.h < 420 && !/span/.test(mobSize.col),
+  `hauteur ${Math.round(mobSize.h)} px, colonne « ${mobSize.col} »`);
 await mob.close();
 
 // --------------------------------------------------------------- desktop
@@ -224,10 +244,42 @@ await p2.waitForTimeout(300);
 check('clic bref : curseur de mesure épinglé',
   await card.locator('.chart-tip:visible').count() === 1);
 
+// Poignée bas-droite : hauteur libre + largeur en colonnes, conservées au
+// rechargement, annulées par un double-clic.
+const geom = () => p2.locator(PANE + '.chart-card').first().evaluate((el) => ({
+  w: Math.round(el.getBoundingClientRect().width),
+  h: Math.round(el.querySelector('.chart-body').getBoundingClientRect().height),
+}));
+const g0 = await geom();
+const grip = p2.locator(PANE + '.chart-card').first().locator('.resize-grip');
+await grip.scrollIntoViewIfNeeded();
+// La barre d'état est fixée en bas : on dégage la poignée de dessous.
+await p2.evaluate(() => window.scrollBy(0, 120));
+await p2.waitForTimeout(200);
+const gb = await grip.boundingBox();
+await p2.mouse.move(gb.x + gb.width / 2, gb.y + gb.height / 2);
+await p2.mouse.down();
+await p2.mouse.move(gb.x + gb.width / 2 + 320, gb.y + gb.height / 2 + 130, { steps: 12 });
+await p2.mouse.up();
+await p2.waitForTimeout(900);   // > debounce de sauvegarde de session
+const g1 = await geom();
+await p2.reload();
+await p2.waitForSelector(PANE + '.chart-card', { timeout: 20000 });
+await p2.waitForTimeout(1200);
+const g2 = await geom();
+await p2.locator(PANE + '.chart-card').first().locator('.resize-grip').dblclick();
+await p2.waitForTimeout(400);
+const g3 = await geom();
+check('poignée de redimensionnement (hauteur + largeur), mémorisée et annulable',
+  Math.abs(g1.h - g0.h - 130) < 24 && g1.w > g0.w + 100 &&
+  Math.abs(g2.h - g1.h) < 4 && Math.abs(g2.w - g1.w) < 4 &&
+  Math.abs(g3.h - g0.h) < 4 && Math.abs(g3.w - g0.w) < 4,
+  `${g0.w}×${g0.h} → ${g1.w}×${g1.h} → recharge ${g2.w}×${g2.h} → auto ${g3.w}×${g3.h}`);
+
 // Couverture des infobulles : chaque objet interactif doit être documenté
 const AUDIT = () => {
   const sel = 'button, select, input, .tab, .chip, .drag-handle, .vrow, .badge,' +
-    ' .sug, .acc-btn, .fbtn, .sw-btn, .sw-custom, .tab-close, .v-del, .recdot';
+    ' .sug, .acc-btn, .fbtn, .sw-btn, .sw-custom, .tab-close, .v-del, .recdot, .resize-grip';
   const out = [];
   for (const el of document.querySelectorAll(sel)) {
     if (el.getAttribute('title') || el.getAttribute('aria-label')) continue;

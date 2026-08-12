@@ -28,6 +28,22 @@
   const SHRINK_DELAY_S = 2;      // hystérésis de rétraction des échelles
   const SHRINK_OCCUPANCY = 0.55; // rétraction si les données occupent < 55 %
   const HEIGHT_MODES = ['M', 'L', 'XL'];
+  // Dimensionnement libre à la poignée (bureau uniquement — voir app.css :
+  // sous le point de rupture mobile la grille reste en une colonne).
+  const MIN_CUSTOM_H = 150;
+  const MAX_CUSTOM_H = 2000;
+  const MAX_COL_SPAN = 6;
+
+  function sanitizeH(h) {
+    h = parseInt(h, 10);
+    if (!isFinite(h) || h <= 0) return null;
+    return clamp(h, MIN_CUSTOM_H, MAX_CUSTOM_H);
+  }
+  function sanitizeSpan(n) {
+    n = parseInt(n, 10);
+    if (!isFinite(n) || n <= 1) return null;
+    return clamp(n, 2, MAX_COL_SPAN);
+  }
 
   // ---------- Formatage ------------------------------------------------
   DW.fmtVal = function (v, meta) {
@@ -209,6 +225,8 @@
       this.cursor = null;          // curseur transitoire {x} (survol souris)
       this.series = [];            // {addr, meta, colorIdx, axisMode, visible, periodMs, offsetY}
       this.heightMode = HEIGHT_MODES.includes(opts.heightMode) ? opts.heightMode : 'M';
+      this.customH = sanitizeH(opts.customH);      // hauteur libre (px), null = préréglage
+      this.colSpan = sanitizeSpan(opts.colSpan);   // largeur en colonnes de grille, null = auto
       this.fullscreen = false;
       this.moveSeries = null;      // adresse en cours de décalage (mode explicite)
       this.axisState = new Map();  // clé de groupe -> état d'échelle
@@ -251,7 +269,10 @@
           '<div class="chart-hint">Ajoutez une variable via la barre de recherche, cible « ' +
             '<b class="hint-name"></b> ».</div>' +
         '</div>' +
-        '<div class="chart-legend" role="list"></div>';
+        '<div class="chart-legend" role="list"></div>' +
+        '<span class="resize-grip" role="separator" aria-label="Redimensionner le graphique" ' +
+          'title="Glisser pour redimensionner ce graphique : ↕ hauteur libre, ↔ largeur en nombre ' +
+          'de colonnes de la grille — double-clic pour revenir à la taille automatique"></span>';
 
       this.titleEl = this.root.querySelector('.chart-title');
       this.titleEl.value = opts.title || 'Graphique';
@@ -304,8 +325,12 @@
 
       this._escHandler = (e) => { if (e.key === 'Escape' && this.fullscreen) this.setFullscreen(false); };
       document.addEventListener('keydown', this._escHandler);
+      // La largeur voulue est mémorisée ; l'appliquée suit la place disponible.
+      this._resizeHandler = () => { if (this.colSpan != null) this.applyHeightMode(); };
+      window.addEventListener('resize', this._resizeHandler);
 
       this.bindCanvasGestures();
+      this.bindResizeGrip();
     }
 
     get title() { return this.titleEl.value.trim() || 'Graphique'; }
@@ -347,12 +372,96 @@
     applyHeightMode() {
       this.root.classList.toggle('size-L', this.heightMode === 'L');
       this.root.classList.toggle('size-XL', this.heightMode === 'XL');
+      // Taille libre : appliquée par variables CSS, neutralisées sous le
+      // point de rupture mobile (la grille y reste en une colonne).
+      this.root.classList.toggle('has-custom-h', this.customH != null);
+      this.root.classList.toggle('has-span', this.colSpan != null);
+      if (this.customH != null) this.root.style.setProperty('--custom-h', this.customH + 'px');
+      else this.root.style.removeProperty('--custom-h');
+      if (this.colSpan != null) {
+        // Jamais plus large que la grille : une fenêtre rétrécie ne doit pas
+        // forcer des colonnes supplémentaires (la largeur voulue est conservée).
+        const m = this.gridMetrics();
+        this.root.style.setProperty('--col-span',
+          String(m ? Math.min(this.colSpan, m.count) : this.colSpan));
+      } else {
+        this.root.style.removeProperty('--col-span');
+      }
     }
     cycleHeight() {
       const i = HEIGHT_MODES.indexOf(this.heightMode);
       this.heightMode = HEIGHT_MODES[(i + 1) % HEIGHT_MODES.length];
+      this.customH = null;   // le préréglage reprend la main sur la taille libre
       this.applyHeightMode();
       this.app.onChange();
+    }
+    /** Retour à la taille automatique (préréglage M/L/XL). */
+    resetSize() {
+      if (this.customH == null && this.colSpan == null) return;
+      this.customH = null;
+      this.colSpan = null;
+      this.applyHeightMode();
+      this.app.onChange();
+      this.app.toast('Taille automatique rétablie.');
+    }
+
+    /**
+     * Géométrie de la grille : nombre de colonnes « naturelles », largeur de
+     * colonne et gouttière. Le compte est recalculé depuis `--col-min` (et non
+     * depuis le template résolu) pour rester indépendant des largeurs déjà
+     * imposées par les graphiques élargis.
+     */
+    gridMetrics() {
+      const grid = this.root.parentElement;
+      if (!grid || !grid.classList.contains('charts-grid')) return null;
+      const cs = getComputedStyle(grid);
+      const gap = parseFloat(cs.columnGap) || 0;
+      const min = parseFloat(cs.getPropertyValue('--col-min')) || 0;
+      const w = grid.clientWidth;
+      if (!(w > 0)) return null;
+      const count = min > 0 ? Math.max(1, Math.floor((w + gap) / (min + gap))) : 1;
+      return { count, colW: (w - gap * (count - 1)) / count, gap };
+    }
+
+    /** Poignée bas-droite : redimensionnement libre à la souris (ou au doigt). */
+    bindResizeGrip() {
+      const grip = this.root.querySelector('.resize-grip');
+      let g = null;
+      grip.addEventListener('pointerdown', (e) => {
+        if (this.fullscreen || e.button > 0) return;
+        const m = this.gridMetrics();
+        g = {
+          id: e.pointerId,
+          x: e.clientX, y: e.clientY,
+          h: this.root.querySelector('.chart-body').clientHeight,
+          span: this.colSpan || 1,
+          w: this.root.getBoundingClientRect().width,
+          m,
+        };
+        try { grip.setPointerCapture(e.pointerId); } catch (err) { /* capture facultative */ }
+        this.root.classList.add('resizing');
+        e.preventDefault();
+      });
+      grip.addEventListener('pointermove', (e) => {
+        if (!g || e.pointerId !== g.id) return;
+        this.customH = sanitizeH(Math.round(g.h + (e.clientY - g.y)));
+        if (g.m && g.m.count > 1) {
+          const unit = g.m.colW + g.m.gap;
+          const span = Math.round((g.w + (e.clientX - g.x) + g.m.gap) / unit);
+          this.colSpan = sanitizeSpan(clamp(span, 1, Math.min(g.m.count, MAX_COL_SPAN)));
+        }
+        this.applyHeightMode();
+        e.preventDefault();
+      });
+      const end = (e) => {
+        if (!g || (e && e.pointerId !== g.id)) return;
+        g = null;
+        this.root.classList.remove('resizing');
+        this.app.onChange();
+      };
+      grip.addEventListener('pointerup', end);
+      grip.addEventListener('pointercancel', end);
+      grip.addEventListener('dblclick', (e) => { e.preventDefault(); this.resetSize(); });
     }
     setFullscreen(on) {
       this.fullscreen = on;
@@ -370,6 +479,10 @@
         mk('Taille : ' + this.heightMode + ' → ' + next +
            (next === 'XL' ? ' (pleine largeur)' : ''), () => this.cycleHeight(), null,
           'Hauteur du graphique : M (normale), L (grande), XL (grande et pleine largeur de la grille)');
+        if (this.customH != null || this.colSpan != null) {
+          mk('Taille automatique', () => this.resetSize(), null,
+            'Annuler le dimensionnement fait à la poignée (coin bas-droit) et revenir au préréglage M/L/XL');
+        }
         mk(this.fullscreen ? 'Quitter le plein écran' : 'Plein écran', () =>
           this.setFullscreen(!this.fullscreen), null,
           'Afficher ce graphique seul sur tout l’écran (sortie par Échap)');
@@ -1136,6 +1249,8 @@
         title: this.title,
         windowS: Math.round(this.windowS * 10) / 10,
         heightMode: this.heightMode !== 'M' ? this.heightMode : undefined,
+        customH: this.customH || undefined,
+        colSpan: this.colSpan || undefined,
         series: this.series.map((s) => ({
           addr: s.addr,
           axisMode: s.axisMode,
@@ -1151,6 +1266,7 @@
     destroy() {
       if (this.fullscreen) this.setFullscreen(false);
       document.removeEventListener('keydown', this._escHandler);
+      window.removeEventListener('resize', this._resizeHandler);
       for (const s of this.series) this.app.release(s.addr);
       this.series = [];
       closePopover();
