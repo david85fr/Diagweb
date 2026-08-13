@@ -372,9 +372,13 @@ await p2.waitForTimeout(200);
 check('forçage d’un point réseau refusé (lecture seule)',
   await p2.locator('.toast.err').filter({ hasText: 'lecture seule' }).count() >= 1);
 
-// Redimensionnement du tableau numérique : hauteur libre + défilement interne
+// Redimensionnement du tableau numérique : hauteur libre + défilement interne.
+// La CARTE doit rétrécir, pas seulement sa zone de lignes : le tableau vit
+// dans la grille des graphiques, qui étirerait sinon chaque carte à la hauteur
+// de sa rangée — la réduction serait alors sans effet visible.
 const tgrip = p2.locator(PANE + '.table-card .table-grip');
 await tgrip.scrollIntoViewIfNeeded();
+const hAvant = Math.round((await p2.locator(PANE + '.table-card').boundingBox()).height);
 const tb = await tgrip.boundingBox();
 await p2.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2);
 await p2.mouse.down();
@@ -385,8 +389,10 @@ const tableSized = await p2.locator(PANE + '.table-card').evaluate((el) => ({
   has: el.classList.contains('has-th'),
   overflow: getComputedStyle(el.querySelector('.trows')).overflowY,
 }));
-check('redimensionnement du tableau numérique (hauteur + défilement interne)',
-  tableSized.has && tableSized.overflow === 'auto', JSON.stringify(tableSized));
+const hApres = Math.round((await p2.locator(PANE + '.table-card').boundingBox()).height);
+check('redimensionnement du tableau numérique (la carte rétrécit, défilement interne)',
+  tableSized.has && tableSized.overflow === 'auto' && hApres < hAvant - 40,
+  hAvant + ' → ' + hApres + ' px · ' + JSON.stringify(tableSized));
 
 // Couverture des infobulles : chaque objet interactif doit être documenté
 const AUDIT = () => {
