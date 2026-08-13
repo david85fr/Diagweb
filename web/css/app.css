@@ -92,6 +92,15 @@ button { font-family: var(--sans); }
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 .logo svg { width: 18px; height: 18px; display: block; }
+/* Logo fourni par l'exploitant : il remplace la pastille d'accent, fond
+   compris — une image de marque sur un carré coloré ne rend jamais bien. */
+/* Un logo de marque est presque toujours plus large que haut : la pastille
+   carrée s'efface et laisse la place, en gardant la hauteur de la barre. */
+.logo:has(img) {
+  background: none; box-shadow: none; border-radius: 6px;
+  width: auto; max-width: 132px;
+}
+.logo img { max-width: 100%; max-height: 30px; display: block; object-fit: contain; }
 
 .topIcons {
   grid-area: icons;
@@ -741,6 +750,25 @@ body.dnd-over-pane #panes {
   margin-bottom: 10px;
 }
 .m-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---------- Apparence : logo et couleurs ---------- */
+.modal.skin { max-width: 620px; }
+.skin-logo { display: flex; align-items: center; gap: 14px; }
+.skin-prev {
+  width: 96px; height: 56px; flex: none;
+  display: grid; place-items: center; overflow: hidden;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+}
+.skin-prev.vide { color: var(--faint); font-size: 11px; }
+.skin-prev img { max-width: 88px; max-height: 48px; object-fit: contain; }
+.skin-logo-act { display: flex; flex-wrap: wrap; gap: 8px; }
+.skin-colors { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.skin-color { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink); }
+.skin-color input[type="color"] {
+  width: 34px; height: 26px; flex: none; padding: 0;
+  background: none; border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
+}
+.skin-msg { flex: 1; align-self: center; font-size: 12px; color: var(--muted); }
 
 /* ---------- Sélecteur de variables (bouton « + ») ---------- */
 /* Grande fenêtre : on vient y VOIR le catalogue, pas deviner une adresse. */

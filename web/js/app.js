@@ -1557,6 +1557,143 @@
     } catch (e) { return false; }
   }
 
+  // ---------- Apparence : logo et couleurs -----------------------------
+  /**
+   * Fenêtre « Apparence ». Le logo et les couleurs appartiennent à
+   * l'installation : servis par le contrôleur, ils valent pour tous les postes
+   * connectés ; page ouverte hors serveur, ils restent dans ce navigateur.
+   * L'aperçu est immédiat — on juge une couleur sur l'interface, pas sur une
+   * pastille.
+   */
+  function openAppearance() {
+    const A = DW.appearance;
+    if (!A) return;
+    const root = $('modalRoot');
+    root.innerHTML = '';
+    const sombre = DW.isDarkTheme();
+    const portee = A.surServeur()
+      ? 'Enregistré sur le contrôleur : tous les postes connectés voient la même identité.'
+      : 'Page ouverte hors serveur : ces réglages restent dans ce navigateur.';
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    back.innerHTML =
+      '<div class="modal skin" role="dialog" aria-label="Apparence">' +
+        '<header class="m-head"><h3>Apparence</h3>' +
+          '<button class="iconbtn m-close" type="button" title="Fermer">✕</button></header>' +
+        '<p class="m-note">' + DW.escapeHtml(portee) + '</p>' +
+        '<div class="m-section">' +
+          '<span class="m-label">Logo de l’installation</span>' +
+          '<div class="skin-logo">' +
+            '<span class="skin-prev" title="Aperçu du logo, à la taille où il s’affiche"></span>' +
+            '<div class="skin-logo-act">' +
+              '<button class="btn skin-pick" type="button" ' +
+                'title="Choisir une image : PNG, JPEG, SVG ou WebP. Elle est réduite et ' +
+                'incorporée à la configuration — aucune ressource extérieure n’est appelée">' +
+                'Choisir une image…</button>' +
+              '<button class="btn skin-clear" type="button" ' +
+                'title="Revenir au logo de Diagweb">Retirer</button>' +
+              '<input class="skin-file hide" type="file" accept="image/*" ' +
+                'aria-label="Fichier image du logo">' +
+            '</div>' +
+          '</div>' +
+          '<p class="m-note">Réduite à 128 px de haut et incorporée à la page ' +
+            '(384 ko au plus). Elle sert aussi d’icône d’onglet.</p>' +
+        '</div>' +
+        '<div class="m-section">' +
+          '<span class="m-label">Couleurs — thème ' + (sombre ? 'sombre' : 'clair') + '</span>' +
+          '<div class="skin-colors"></div>' +
+          '<p class="m-note">Chaque thème garde ses propres couleurs : basculez le thème ' +
+            '(☰) pour régler l’autre. Les gris et les nuances d’accent en sont déduits.</p>' +
+        '</div>' +
+        '<footer class="m-actions">' +
+          '<button class="btn skin-reset" type="button" ' +
+            'title="Remettre les couleurs de ce thème à celles du produit">Couleurs d’origine</button>' +
+          '<span class="skin-msg"></span>' +
+          '<button class="btn primary skin-ok" type="button" ' +
+            'title="Enregistrer l’apparence">Enregistrer</button>' +
+        '</footer>' +
+      '</div>';
+
+    const prev = back.querySelector('.skin-prev');
+    const majPrev = () => {
+      prev.innerHTML = '';
+      const uri = A.etat().logo;
+      if (uri) {
+        const img = document.createElement('img');
+        img.src = uri;
+        img.alt = 'Logo choisi';
+        prev.appendChild(img);
+      } else {
+        prev.textContent = 'logo Diagweb';
+        prev.classList.add('vide');
+      }
+      prev.classList.toggle('vide', !uri);
+    };
+    majPrev();
+
+    const colors = back.querySelector('.skin-colors');
+    const champs = [];
+    for (const t of A.TOKENS) {
+      const l = document.createElement('label');
+      l.className = 'skin-color';
+      l.title = t.help;
+      l.innerHTML = '<input type="color" aria-label="' + DW.escapeHtml(t.label) + '">' +
+                    '<span></span>';
+      l.querySelector('span').textContent = t.label;
+      const inp = l.querySelector('input');
+      inp.value = A.valeur(t.key);
+      inp.title = t.help;
+      // Aperçu à la volée : on juge une couleur sur l'interface entière.
+      inp.addEventListener('input', () => A.setCouleur(t.key, inp.value));
+      champs.push({ t, inp });
+      colors.appendChild(l);
+    }
+
+    const file = back.querySelector('.skin-file');
+    const msg = back.querySelector('.skin-msg');
+    back.querySelector('.skin-pick').addEventListener('click', () => file.click());
+    file.addEventListener('change', () => {
+      const f = file.files && file.files[0];
+      if (!f) return;
+      A.lireLogo(f).then((uri) => {
+        A.setLogo(uri);
+        majPrev();
+        const ko = uri.length / 1024;
+        msg.textContent = 'Image chargée (' +
+          (ko < 1 ? 'moins de 1' : Math.round(ko)) + ' ko).';
+      }).catch((e) => {
+        msg.textContent = 'Refusé : ' + e.message;
+        toast('Logo refusé : ' + e.message, 'err');
+      });
+      file.value = '';
+    });
+    back.querySelector('.skin-clear').addEventListener('click', () => {
+      A.setLogo('');
+      majPrev();
+      msg.textContent = 'Logo retiré.';
+    });
+    back.querySelector('.skin-reset').addEventListener('click', () => {
+      A.reinitialiserCouleurs();
+      for (const c of champs) c.inp.value = A.valeur(c.t.key);
+      msg.textContent = 'Couleurs d’origine rétablies.';
+    });
+    back.querySelector('.skin-ok').addEventListener('click', () => {
+      A.enregistrer().then((r) => {
+        if (r.ok) {
+          root.innerHTML = '';
+          toast('Apparence enregistrée (' + r.portee + ').');
+        } else {
+          msg.textContent = r.error;
+          toast('Enregistrement refusé : ' + r.error, 'err');
+        }
+      });
+    });
+    const fermer = () => { root.innerHTML = ''; A.charger(); };   // annule l'aperçu
+    back.querySelector('.m-close').addEventListener('click', fermer);
+    back.addEventListener('pointerdown', (e) => { if (e.target === back) fermer(); });
+    root.appendChild(back);
+  }
+
   // ---------- Sélecteur de variables (bouton « + ») --------------------
   /**
    * Grande fenêtre d'ajout, ouverte par le « + » d'un tableau ou d'un
@@ -1863,6 +2000,12 @@
             ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
           ]) +
+          S('Apparence (☰ → Apparence)') +
+          L([
+            ['Logo', 'Une image de l’installation remplace le logo Diagweb dans la barre du haut, et sert d’icône d’onglet. PNG, JPEG, SVG ou WebP : elle est réduite et <b>incorporée</b> à la configuration — aucune ressource extérieure n’est appelée, la page reste servable hors ligne.'],
+            ['Couleurs', 'Six réglages : accent, fond, cartes, fond secondaire, texte, traits. L’aperçu est immédiat. Les gris et les nuances d’accent en sont déduits. <b>Chaque thème garde les siennes</b> : basculez le thème pour régler l’autre.'],
+            ['Portée', 'Page servie par le contrôleur : l’apparence est enregistrée sur lui et <b>tous les postes</b> la voient. Page ouverte hors serveur : elle reste dans ce navigateur.'],
+          ]) +
           S('Liens réseau (☰ → Liens réseau)') +
           L([
             ['Lien', 'Une connexion vers un équipement ou un réseau : Modbus TCP/RTU, IEC 60870-5-104, IEC 61850, CAN, J1939, CANopen, SNMP, OPC UA. Le serveur de diagnostic ouvre le lien et lit les points.'],
@@ -1926,7 +2069,18 @@
       const next = cur === 'dark' ? 'light' : cur === 'light' ? 'dark'
         : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'light' : 'dark');
       document.documentElement.setAttribute('data-theme', next);
+      // Les couleurs personnalisées sont propres à chaque thème : l'apparence
+      // se réapplique avant que les graphiques ne relisent l'encre.
+      document.dispatchEvent(new CustomEvent('dw:theme'));
       DW.invalidateChartTheme();
+      for (const tab of state.tabs) for (const c of tab.charts) c.rebuildLegend();
+    });
+
+    // (le menu ☰ se referme déjà sur le clic de n'importe lequel de ses boutons)
+    $('skinBtn').addEventListener('click', openAppearance);
+    // Couleurs changées (ici ou dans une autre fenêtre) : les légendes et les
+    // tracés relisent la palette.
+    document.addEventListener('dw:appearance', () => {
       for (const tab of state.tabs) for (const c of tab.charts) c.rebuildLegend();
     });
 
@@ -2033,6 +2187,10 @@
   function start() {
     // La source (simulation ou serveur) et la configuration des liens réseau
     // doivent être connues avant les premiers abonnements.
+    // L'apparence s'applique tout de suite depuis le stockage local, puis se
+    // met à jour depuis le contrôleur : la page ne change pas de couleur sous
+    // les yeux de l'opérateur au bout d'une seconde.
+    if (DW.appearance) DW.appearance.charger();
     const ready = Promise.all([
       (DW.sourceReady || Promise.resolve()).catch(() => {}),
       (DW.protocolsReady || Promise.resolve()).catch(() => {}),

@@ -15,6 +15,8 @@
 //   PUT  /api/protocols         enregistre et applique la configuration des liens
 //   GET  /api/protocols/status  état courant des liens
 //   POST /api/protocols/test    test de connexion d'un lien
+//   GET  /api/appearance       logo et couleurs de l'installation
+//   PUT  /api/appearance       enregistre l'apparence (partagée par tous les postes)
 //   GET  /api/layouts           liste des configurations enregistrées
 //   GET  /api/layouts/<nom>     une configuration
 //   PUT  /api/layouts/<nom>     enregistre une configuration
@@ -60,6 +62,9 @@ using namespace diagweb;
 namespace {
 
 std::atomic<bool> g_stop{false};
+
+/** Taille maximale de l'apparence (logo incorporé compris). */
+constexpr size_t kMaxAppearance = 512 * 1024;
 
 struct Options {
   int port = 8080;
@@ -327,6 +332,49 @@ bool handle_api(int fd, const Request& req, IVariableSource& src, const Options&
     o << "{\"ok\":" << (ok ? "true" : "false") << ",\"detail\":\"" << jesc(detail) << "\"}";
     respond_json(fd, o.str());
     return true;
+  }
+
+  // ---- apparence (logo et couleurs de l'installation) ---------------
+  // Réglages d'exploitant, partagés par tous les postes : ils vivent donc ici
+  // et non dans le navigateur qui les a saisis.
+  if (t == "/api/appearance") {
+    const fs::path file = fs::path(opt.data_dir) / "appearance.json";
+    if (req.method == "GET") {
+      std::ifstream f(file, std::ios::binary);
+      if (!f) { respond_json(fd, "{}"); return true; }
+      std::ostringstream body;
+      body << f.rdbuf();
+      respond_json(fd, body.str());
+      return true;
+    }
+    if (req.method == "PUT" || req.method == "POST") {
+      // Le logo est une image INCORPORÉE : la charge utile est donc bien plus
+      // grosse qu'une configuration ordinaire, sans être illimitée pour
+      // autant — ce fichier est relu à chaque ouverture de page.
+      if (req.body.size() > kMaxAppearance) {
+        respond_json(fd, "{\"error\":\"apparence trop volumineuse (512 ko au plus)\"}", 413);
+        return true;
+      }
+      bool ok = false;
+      const JValue j = jparse(req.body, &ok);
+      if (!ok) { respond_json(fd, "{\"error\":\"JSON invalide\"}", 400); return true; }
+      // Un logo n'est jamais une URL : seule une image incorporée est acceptée,
+      // sans quoi la page irait chercher une ressource extérieure — ce que la
+      // règle du projet interdit, et qu'une CSP stricte refuserait.
+      const std::string logo = j.str("logo");
+      if (!logo.empty() && logo.rfind("data:image/", 0) != 0) {
+        respond_json(fd, "{\"error\":\"logo refuse : image incorporee (data:image/...) attendue\"}", 400);
+        return true;
+      }
+      std::error_code ec;
+      fs::create_directories(opt.data_dir, ec);
+      std::ofstream f(file, std::ios::binary | std::ios::trunc);
+      if (!f) { respond_json(fd, "{\"error\":\"ecriture impossible\"}", 500); return true; }
+      f << req.body;
+      std::cout << "  apparence enregistree (" << req.body.size() << " o)" << std::endl;
+      respond_json(fd, "{\"ok\":true}");
+      return true;
+    }
   }
 
   const fs::path layouts = fs::path(opt.data_dir) / "layouts";

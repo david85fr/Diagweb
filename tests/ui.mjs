@@ -394,6 +394,62 @@ check('redimensionnement du tableau numérique (la carte rétrécit, défilement
   tableSized.has && tableSized.overflow === 'auto' && hApres < hAvant - 40,
   hAvant + ' → ' + hApres + ' px · ' + JSON.stringify(tableSized));
 
+// Apparence : logo de l'exploitant et couleurs. Page ouverte hors serveur ici,
+// donc réglages du navigateur — le tour serveur est couvert par tests/server.mjs.
+await p2.click('#menuBtn');
+await p2.waitForTimeout(150);
+await p2.click('#skinBtn');
+await p2.waitForTimeout(300);
+const accent0 = await p2.evaluate(() =>
+  getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
+await p2.locator('.skin-color input').first().evaluate((el) => {
+  el.value = '#ff7a00';
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+});
+await p2.waitForTimeout(200);
+const accent1 = await p2.evaluate(() => ({
+  accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
+  dim: getComputedStyle(document.documentElement).getPropertyValue('--accent-dim').trim(),
+}));
+check('couleurs de l’interface personnalisables (aperçu immédiat, nuances déduites)',
+  accent0 !== accent1.accent && accent1.accent === '#ff7a00' && /ff7a00/.test(accent1.dim),
+  accent0 + ' → ' + accent1.accent);
+
+// Logo : une image fournie par l'exploitant, incorporée (jamais une URL).
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAFklEQVQoU2P8z8Dwn4EIwDiqkL4hBQCcvwf+r0BvnAAAAABJRU5ErkJggg==',
+  'base64');
+await p2.setInputFiles('.skin-file', { name: 'logo.png', mimeType: 'image/png', buffer: PNG });
+await p2.waitForTimeout(500);
+const logoPose = await p2.evaluate(() => {
+  const img = document.querySelector('.logo img');
+  const ico = document.querySelector('link[rel="icon"]');
+  return { src: img ? img.src.slice(0, 14) : null, ico: ico ? ico.href.slice(0, 14) : null };
+});
+await p2.click('.skin-ok');
+await p2.waitForTimeout(400);
+await p2.reload();
+await p2.waitForSelector(PANE + '.chart-card', { timeout: 20000 });
+await p2.waitForTimeout(1200);
+const apres = await p2.evaluate(() => ({
+  accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
+  logo: !!document.querySelector('.logo img'),
+}));
+check('logo de l’exploitant incorporé (data:), icône d’onglet comprise',
+  logoPose.src === 'data:image/png' && logoPose.ico === 'data:image/png',
+  JSON.stringify(logoPose));
+check('apparence conservée au rechargement',
+  apres.accent === '#ff7a00' && apres.logo, JSON.stringify(apres));
+
+// Remise en état : les vérifications suivantes (et les captures) partent de
+// l'apparence d'origine.
+await p2.evaluate(() => {
+  DW.appearance.setLogo('');
+  DW.appearance.reinitialiserCouleurs();
+  return DW.appearance.enregistrer();
+});
+await p2.waitForTimeout(300);
+
 // Couverture des infobulles : chaque objet interactif doit être documenté
 const AUDIT = () => {
   const sel = 'button, select, input, .tab, .chip, .drag-handle, .vrow, .badge,' +

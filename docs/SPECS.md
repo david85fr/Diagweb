@@ -510,7 +510,8 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
   onglets (＋ inclus), et à droite le tag de version, le bouton de **repli
   de la zone de configuration** (⌃/⌄) et le **menu burger ☰**.
 - **Menu burger ☰ = fonctions globales** (indépendantes des onglets) :
-  aujourd'hui Basculer le thème, Aide (commandes et gestes), **Liens réseau**
+  aujourd'hui Basculer le thème, **Apparence** (logo et couleurs, §8 bis),
+  Aide (commandes et gestes), **Liens réseau**
   (configuration des protocoles industriels, §7 bis) et À propos
   (version, mode) ; réservé aux
   futures fonctions globales (capture d'interfaces réseau, notes de
@@ -549,6 +550,33 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
   `prefers-reduced-motion` respecté ; libellés en français.
 - Palette de courbes : 8 teintes catégorielles validées (déclinaisons claire
   et sombre), ordre fixe.
+
+## 8 bis. Apparence (logo et couleurs de l'installation)
+
+L'outil est déployé chez des exploitants différents : l'interface doit pouvoir
+porter **leur** identité, sans recompilation ni fichier à déposer sur le
+contrôleur.
+
+- **Logo** : une image fournie par l'opérateur (PNG, JPEG, SVG, WebP) remplace
+  le logo Diagweb dans la barre supérieure et sert d'**icône d'onglet**. Elle
+  est réduite (128 px de haut) puis **incorporée** en `data:` — jamais une URL :
+  la page doit se servir hors ligne depuis le contrôleur, et la page publiée
+  l'est sous CSP stricte. Le fichier est rendu dans une balise `<img>`, jamais
+  injecté comme balisage : un SVG y est traité en image, ses scripts éventuels
+  ne s'exécutent pas.
+- **Couleurs** : six jetons réglables — accent, fond de page, cartes, fond
+  secondaire, texte, traits. Les gris atténués et les nuances d'accent en sont
+  **déduits**, pour qu'une palette cohérente demande six choix et non vingt.
+  Aperçu immédiat sur l'interface entière. Réglages **propres à chaque thème**
+  (clair et sombre gardent les leurs).
+- **Portée** : page servie par le contrôleur ⇒ enregistrée sur lui
+  (`<data-dir>/appearance.json`, `GET/PUT /api/appearance`), donc partagée par
+  **tous les postes** ; page ouverte hors serveur ⇒ conservée dans le
+  navigateur. Les fenêtres ouvertes sur la même origine se mettent à jour sans
+  rechargement.
+- **Garde-fous serveur** : 512 ko au plus, JSON valide exigé, et un logo qui
+  n'est pas une image incorporée est **refusé** — sans quoi la configuration
+  deviendrait un moyen de faire appeler un hôte tiers par toutes les pages.
 
 ## 9. État d'avancement
 

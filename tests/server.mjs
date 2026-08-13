@@ -108,6 +108,63 @@ const stop = await api('/api/datalog/stop', {
 const stillThere = (stop.json && stop.json.status || []).some((x) => x.name === NAME);
 check('arrêt de la campagne', stop.status === 200 && stop.json.ok === true && !stillThere);
 
+// ---- apparence : logo et couleurs de l'installation ----------------------
+// Réglages d'exploitant partagés par tous les postes : ils sont conservés par
+// le serveur, et lui seul décide de ce qu'il accepte.
+{
+  const depart = await api('/api/appearance');
+  check('apparence : point d’entrée disponible (JSON, même sans réglage)',
+    depart.status === 200 && depart.json && typeof depart.json === 'object',
+    JSON.stringify(depart.json).slice(0, 40));
+
+  const skin = {
+    version: 1,
+    logo: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    colors: { dark: { accent: '#ff7a00' }, light: { bg: '#fafafa' } },
+  };
+  const mis = await api('/api/appearance', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(skin),
+  });
+  const relu = await api('/api/appearance');
+  check('apparence enregistrée et relue à l’identique',
+    mis.status === 200 && mis.json.ok === true &&
+    relu.json && relu.json.logo === skin.logo &&
+    relu.json.colors.dark.accent === '#ff7a00');
+
+  // Un logo est une image INCORPORÉE. Une URL ferait sortir la page vers un
+  // hôte tiers — interdit par la règle du projet, et refusé par une CSP
+  // stricte : le serveur doit dire non plutôt que d'enregistrer un piège.
+  const distant = await api('/api/appearance', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ logo: 'https://exemple.tld/logo.png' }),
+  });
+  check('apparence : logo distant refusé (aucune ressource externe)',
+    distant.status === 400 && /data:image/.test(distant.json.error || ''),
+    distant.json && distant.json.error);
+
+  const gros = await api('/api/appearance', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: '{"logo":"data:image/png;base64,' + 'A'.repeat(600000) + '"}',
+  });
+  check('apparence : charge utile démesurée refusée (413)', gros.status === 413,
+    gros.json && gros.json.error);
+
+  const casse = await api('/api/appearance', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: 'pas du json',
+  });
+  const intact = await api('/api/appearance');
+  check('apparence : JSON invalide refusé, réglage précédent intact',
+    casse.status === 400 && intact.json.colors.dark.accent === '#ff7a00');
+
+  // Le test ne laisse pas sa marque : l'installation retrouve son apparence
+  // d'origine, et une seconde exécution part du même état.
+  await api('/api/appearance', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ version: 1, logo: '', colors: { dark: {}, light: {} } }),
+  });
+}
+
 // ------------------------------------------ robustesse aux entrées hostiles
 // Chacune de ces requêtes provoquait auparavant une exception non capturée
 // (std::sto*) qui faisait tomber tout le serveur. Il doit y survivre.

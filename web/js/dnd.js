@@ -39,12 +39,23 @@
       else if (m.type === 'variable-renamed' && m.origin !== winId && api && api.applyRename) {
         api.applyRename(m.addr, m.name);
       }
+      // L'apparence appartient à l'installation : elle vaut pour toutes les
+      // fenêtres ouvertes sur le même contrôleur, sans attendre un rechargement.
+      else if (m.type === 'appearance' && m.origin !== winId &&
+               DW.appearance && DW.appearance.recevoir) {
+        DW.appearance.recevoir(m.value);
+      }
     });
   }
 
   /** Annonce un renommage aux autres fenêtres de la même origine. */
   function shareRename(addr, name) {
     if (bc) bc.postMessage({ type: 'variable-renamed', origin: winId, addr, name });
+  }
+
+  /** Annonce un changement d'apparence aux autres fenêtres. */
+  function shareAppearance(value) {
+    if (bc) bc.postMessage({ type: 'appearance', origin: winId, value });
   }
 
   function envelope(payload, dragId) {
@@ -233,6 +244,7 @@
     startDrag,
     endDrag,
     shareRename,
+    shareAppearance,
     openInNewWindow,
     consumeOpenParam,
     describe,

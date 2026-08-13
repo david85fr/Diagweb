@@ -59,6 +59,7 @@ cmake -B build-arm -S . -DCMAKE_TOOLCHAIN_FILE=<sdk>/toolchain.cmake
 | GET/PUT | `/api/protocols` | configuration des liens réseau (+ état, protocoles) |
 | GET | `/api/protocols/status` | état courant des liens réseau |
 | POST | `/api/protocols/test` | test de connexion d'un lien |
+| GET/PUT | `/api/appearance` | logo et couleurs de l'installation, partagés par tous les postes (512 ko au plus ; un logo doit être une image incorporée `data:image/…`) |
 | GET | `/api/layouts` | configurations enregistrées |
 | GET/PUT | `/api/layouts/<nom>` | lecture / enregistrement d'une configuration |
 | GET | `/api/datalog` | état des campagnes de journalisation |

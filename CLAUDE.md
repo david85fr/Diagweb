@@ -76,6 +76,7 @@ web/            sources de l'application (page de dev : web/index.html)
   js/source-ws.js source WebSocket (même contrat que sim.js)
   js/source.js  choix de la source au démarrage (DW.sourceReady)
   js/dnd.js     déplacement de widgets entre onglets et fenêtres
+  js/appearance.js logo de l'exploitant + couleurs (partagés par tous les postes)
   js/store.js   configurations : localStorage, export/import JSON+CSV, stub
   js/app.js     onglets, recherche, tableau, journal, boucle de rendu
 server/         serveur de diagnostic C++20 (HTTP + WebSocket ; open62541 pour
