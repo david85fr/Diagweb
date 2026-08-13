@@ -22,6 +22,7 @@
 
 #include "../common/ber.hpp"
 #include "../common/l2_socket.hpp"
+#include "time61850.hpp"
 
 namespace diagweb {
 
@@ -39,6 +40,7 @@ struct GoosePdu {
   bool simulation = false;
   bool nds_com = false;
   uint32_t entries = 0;
+  double t_utc = 0;                    // date du dernier changement d'état
   const uint8_t* all_data = nullptr;   // contenu de allData, non copié
   size_t all_data_len = 0;
 };
@@ -66,6 +68,7 @@ inline bool decode_goose(const uint8_t* d, size_t n, GoosePdu& out) {
       case 0x80: out.gocb_ref.assign(reinterpret_cast<const char*>(body), len); break;
       case 0x82: out.dat_set.assign(reinterpret_cast<const char*>(body), len); break;
       case 0x83: out.go_id.assign(reinterpret_cast<const char*>(body), len); break;
+      case 0x84: out.t_utc = utc_time_61850(body, len); break;
       case 0x85: if (ber::read_int(body, len, i)) out.st_num = static_cast<uint32_t>(i); break;
       case 0x86: if (ber::read_int(body, len, i)) out.sq_num = static_cast<uint32_t>(i); break;
       case 0x87: out.simulation = len && body[len - 1]; break;
@@ -189,7 +192,7 @@ class GooseDriver : public L2DriverBase {
       } else if (!goose_entry(pdu.all_data, pdu.all_data_len, points_[i].index, v)) {
         continue;                                     // entrée absente ou non numérique
       }
-      sink_.publish(i, v * points_[i].gain + points_[i].offset);
+      sink_.publish(i, v * points_[i].gain + points_[i].offset, pdu.t_utc);
     }
   }
 

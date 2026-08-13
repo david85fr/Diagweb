@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <ctime>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -21,6 +22,29 @@
 #include "../common/net.hpp"
 
 namespace diagweb {
+
+/**
+ * CP56Time2a (7 octets, en fin d'objet) → secondes UTC ; 0 si absent ou
+ * marqué invalide. Millisecondes et minutes en tête, année sur 7 bits
+ * comptée depuis 2000 — la norme n'a pas prévu au-delà de 2099.
+ */
+inline double cp56time2a_utc(const uint8_t* p, int taille) {
+  if (taille < 7) return 0;
+  const uint8_t* t = p + taille - 7;
+  if (t[2] & 0x80) return 0;                       // bit IV de l'horodatage
+  std::tm tm{};
+  tm.tm_min = t[2] & 0x3F;
+  tm.tm_hour = t[3] & 0x1F;
+  tm.tm_mday = t[4] & 0x1F;
+  tm.tm_mon = (t[5] & 0x0F) - 1;
+  tm.tm_year = (t[6] & 0x7F) + 100;                // 2000 = 100 depuis 1900
+  if (tm.tm_mon < 0 || tm.tm_mon > 11 || tm.tm_mday < 1) return 0;
+  const time_t base = ::timegm(&tm);
+  if (base <= 0) return 0;
+  const unsigned ms = static_cast<unsigned>(t[0] | (t[1] << 8));
+  return static_cast<double>(base) + (ms % 60000) / 1000.0;
+}
+
 
 class Iec104Driver : public IProtocolDriver {
  public:
@@ -188,6 +212,11 @@ class Iec104Driver : public IProtocolDriver {
     return true;
   }
 
+  /** Ces types portent un horodatage CP56Time2a en fin d'objet. */
+  static bool horodate(int t) {
+    return t == 30 || t == 31 || t == 32 || t == 34 || t == 35 || t == 36 || t == 37;
+  }
+
   static double normalized(const uint8_t* p) {
     return static_cast<double>(static_cast<int16_t>(p[0] | (p[1] << 8))) / 32768.0;
   }
@@ -299,9 +328,12 @@ class Iec104Driver : public IProtocolDriver {
       if (invalid) continue;                             // qualité IV : valeur non publiée
       auto it = by_ioa_.find(ioa);
       if (it == by_ioa_.end()) continue;
+      // Les types horodatés portent la date de l'ÉVÉNEMENT à la station, bien
+      // plus fidèle que l'instant où le serveur l'a reçue.
+      const double t_src = horodate(type) ? cp56time2a_utc(a + off - ti.size, ti.size) : 0.0;
       for (size_t idx : it->second) {
         const PointConfig& p = link_.points[idx];
-        sink_.publish(idx, v * p.num("gain", 1) + p.num("offset", 0));
+        sink_.publish(idx, v * p.num("gain", 1) + p.num("offset", 0), t_src);
       }
     }
   }

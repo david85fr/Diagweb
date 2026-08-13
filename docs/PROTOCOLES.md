@@ -573,23 +573,69 @@ GCC recompilait son code C avec nos options, dont `-Werror`.
 
 ## Période, horodatage, qualité
 
-- **Protocoles à interrogation** (Modbus, SDO) : la période du point est la
-  cadence d'interrogation. Une période courte sur une liaison lente sature
-  l'équipement — à 9600 bauds, une centaine de registres prennent déjà environ
-  250 ms.
-- **Protocoles à flux** (IEC-104, CAN, TPDO) : la période est une
-  **décimation**. Elle borne la cadence conservée dans l'historique, mais
-  **tout changement de valeur passe** : une transition n'est jamais masquée.
-- **Horodatage** : les échantillons portent l'horloge du **serveur de
-  diagnostic**, commune aux variables du `controller` — c'est la condition
-  pour que les courbes soient comparables entre elles. Les horodatages
-  d'origine (CP56Time2a des types 104 à date) sont **volontairement ignorés** :
-  une station dont l'horloge dérive placerait ses points dans le futur ou le
-  passé et fausserait toute comparaison. Les exploiter demanderait un recalage
-  explicite par lien — évolution possible, pas un oubli.
-- **Qualité** : une valeur marquée invalide (bit IV en 104), une exception
-  Modbus, un abandon SDO ou un lien coupé ne produisent **aucun échantillon**.
-  La courbe montre un trou, et l'état du lien en donne la raison.
+- **Protocoles à interrogation** (Modbus, SDO, SNMP, lecture MMS, OPC UA en
+  interrogation cyclique) : la période du point est la cadence
+  d'interrogation. Une période courte sur une liaison lente sature
+  l'équipement — le message d'erreur le dira, mais autant l'éviter.
+- **Protocoles à flux** (IEC-104, CAN, GOOSE, Sampled Values, rapports,
+  abonnement OPC UA) : la période sert de **décimation**. Tout changement de
+  valeur passe malgré tout, pour ne jamais masquer une transition.
+- **Qualité** : bit IV en IEC-104, qualité invalide d'une voie Sampled Values,
+  `StatusCode` mauvais en OPC UA, exception Modbus, `noSuchObject` SNMP, abandon
+  SDO, lien coupé ⇒ **aucun échantillon publié** (trou franc dans la courbe), la
+  cause restant lisible dans l'état du lien.
+
+### Horodatage : à la source, ou du serveur
+
+Un événement se produit à un instant, et il arrive à un autre. Sur un réseau
+chargé, ou derrière une passerelle, l'écart se compte en centaines de
+millisecondes — assez pour inverser l'ordre apparent de deux causes. Quand le
+protocole transporte la date de l'événement, c'est **elle** qui est retenue.
+
+| Protocole | Horodatage à la source ? |
+|---|---|
+| IEC 60870-5-104 | oui, types horodatés (`CP56Time2a`) : 30, 31, 32, 34, 35, 36, 37 |
+| IEC 61850 GOOSE | oui, champ `t` (dernier changement d'état) |
+| IEC 61850 Sampled Values | oui, `refrTm` |
+| IEC 61850 rapports | oui, `TimeOfEntry`, si le bloc l'annonce dans `OptFlds` |
+| OPC UA | oui en **abonnement** (`SourceTimestamp`) ; non en interrogation cyclique |
+| Modbus, SNMP, CAN, J1939, CANopen, lecture MMS | non : le protocole n'en transporte pas |
+
+**Le choix se fait point par point** — champ « Horodatage » de chaque point :
+
+- **De l'équipement si disponible** (défaut) — la date du protocole, quand il y
+  en a une ; l'horloge du serveur sinon.
+- **Du serveur (forcé)** — ignorer délibérément la date du protocole. À choisir
+  quand l'horloge de l'équipement n'est pas de confiance : c'est fréquent sur
+  un matériel ancien ou mal synchronisé, et une date fausse est pire qu'une
+  date approximative.
+
+#### Comment la date est ramenée dans la base de temps du serveur
+
+Les échantillons de Diagweb sont datés sur l'horloge du serveur, pour que
+toutes les courbes restent comparables — y compris avec les variables internes
+du `controller`. Une date d'équipement n'est donc **pas recopiée** : c'est son
+**écart** à l'heure courante qui est appliqué. Un événement daté 300 ms dans le
+passé se range 300 ms avant l'instant présent, quelle que soit l'origine de
+temps de l'équipement.
+
+**Garde-fou.** Au-delà de l'« écart d'horloge admis » du lien (10 s par
+défaut), la date de l'équipement est écartée et celle du serveur utilisée, avec
+un message dans l'état du lien. Sans ce garde-fou, un équipement dont l'horloge
+est fausse de deux heures placerait ses échantillons hors de toute fenêtre
+visible — ce qui se lit comme **une variable morte alors qu'elle remonte très
+bien**, et fait chercher la panne au mauvais endroit.
+
+**Ordre chronologique.** Les horodatages source peuvent arriver dans le
+désordre — rafale IEC-104, rapport groupé. L'historique s'appuyant sur une
+recherche dichotomique, un échantillon inséré hors séquence la fausserait :
+il est donc rangé à sa place, en ne remontant que d'une fenêtre bornée
+(64 échantillons). Au-delà, il est trop vieux pour l'historique et il est
+écarté plutôt que de désordonner le tampon.
+
+**Journalisation.** Le journal autonome écrit l'horodatage retenu, source
+comprise : c'est le sens de tout ce mécanisme — une campagne enregistrée porte
+l'heure des événements, pas celle de leur transmission.
 
 ## Robustesse
 

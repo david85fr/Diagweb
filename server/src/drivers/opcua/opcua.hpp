@@ -16,6 +16,10 @@
 //   interrogation cyclique — service Read répété, pour les serveurs qui
 //   refusent les abonnements.
 //
+// L'horodatage à la source (SourceTimestamp) n'accompagne que les
+// notifications d'abonnement : en interrogation cyclique, seule la valeur est
+// demandée, et les échantillons portent donc l'horloge du serveur.
+//
 // LECTURE SEULE DÉFINITIVE : ni Write ni Call ne sont appelés, et le contrat
 // CompositeSource refuse de toute façon toute écriture vers un point « @ ».
 //
@@ -281,16 +285,23 @@ class OpcUaDriver : public IProtocolDriver {
       // Qualité mauvaise : aucun échantillon, comme le bit IV en IEC-104.
       return;
     }
-    c->self->publier(c->index, &v->value);
+    // SourceTimestamp : l'instant où la DONNÉE a été produite, à distinguer du
+    // ServerTimestamp qui n'est que l'instant où le serveur OPC UA l'a vue.
+    double t_src = 0;
+    if (v->hasSourceTimestamp) {
+      t_src = static_cast<double>(v->sourceTimestamp - UA_DATETIME_UNIX_EPOCH) /
+              static_cast<double>(UA_DATETIME_SEC);
+    }
+    c->self->publier(c->index, &v->value, t_src);
   }
 
-  void publier(size_t idx, const UA_Variant* v) {
+  void publier(size_t idx, const UA_Variant* v, double t_source = 0) {
     double val = 0;
     if (!vers_double(v, val)) {
       sink_.warn(points_[idx].node + " : type non numérique, valeur non publiée");
       return;
     }
-    sink_.publish(idx, val * points_[idx].gain + points_[idx].offset);
+    sink_.publish(idx, val * points_[idx].gain + points_[idx].offset, t_source);
   }
 
   /** Types intégrés numériques uniquement : rien n'est inventé pour le reste. */

@@ -34,6 +34,21 @@
     F('offset', 'Décalage', 'float', 0, false,
       'Constante ajoutée après le gain (unité physique).'),
   ];
+  // Choix de l'horodatage, proposé sur CHAQUE point : faire confiance à
+  // l'horloge d'un équipement de terrain n'est pas anodin, et cela se décide
+  // variable par variable.
+  const HORODATAGE = [
+    F('timestamp', 'Horodatage', 'enum', 'source', false,
+      'Équipement : la date que l’équipement attache lui-même à la donnée — la ' +
+      'seule fidèle quand l’événement précède sa transmission. Fournie par ' +
+      'IEC 60870-5-104 (types horodatés), IEC 61850 (GOOSE, Sampled Values, ' +
+      'rapports) et OPC UA en abonnement ; ailleurs, l’horloge du serveur est ' +
+      'utilisée de toute façon. Serveur : ignorer délibérément l’horodatage du ' +
+      'protocole — à choisir quand l’horloge de l’équipement n’est pas de confiance.',
+      { choices: [['source', 'De l’équipement si disponible'],
+                  ['server', 'Du serveur (forcé)']] }),
+  ];
+
   // Champs communs à l'extraction d'un signal dans une trame (CAN, J1939…)
   const BITFIELD = [
     F('startBit', 'Bit de départ', 'int', 0, true,
@@ -67,7 +82,7 @@
     F('bit', 'Bit extrait', 'int', -1, false,
       'Rang du bit à extraire du registre (0 à 15) ; −1 pour utiliser la valeur entière.',
       { when: { type: ['int16', 'uint16'] } }),
-  ].concat(SCALE);
+  ].concat(SCALE).concat(HORODATAGE);
 
   DW.PROTOCOLS = [
     {
@@ -137,6 +152,12 @@
         F('t1', 'Délai t1 (s)', 'int', 15, false, 'Délai d’attente d’un acquittement avant coupure.'),
         F('t2', 'Délai t2 (s)', 'int', 10, false, 'Délai avant envoi d’un acquittement de supervision.'),
         F('t3', 'Délai t3 (s)', 'int', 20, false, 'Délai d’inactivité avant envoi d’un test de liaison.'),
+        F('clockSkewS', 'Écart d’horloge admis (s)', 'int', 10, false,
+          'Au-delà de cet écart entre l’horloge de l’équipement et celle du serveur, ' +
+          'l’horodatage de l’équipement est écarté et celui du serveur utilisé, avec ' +
+          'un message. Sans ce garde-fou, un équipement dont l’horloge est fausse de ' +
+          'deux heures placerait ses échantillons hors de toute fenêtre visible — ce ' +
+          'qui se lit comme une variable morte alors qu’elle remonte très bien.'),
       ],
       pointFields: [
         F('ioa', 'Adresse d’objet (IOA)', 'int', 0, true,
@@ -147,7 +168,7 @@
                       ['normalized', 'Mesure normalisée (M_ME_A/D)'], ['scaled', 'Mesure échelonnée (M_ME_B/E)'],
                       ['float', 'Mesure flottante (M_ME_C/F)'], ['counter', 'Compteur (M_IT)'],
                       ['step', 'Position de régleur (M_ST)']] }),
-      ].concat(SCALE),
+      ].concat(SCALE).concat(HORODATAGE),
     },
     {
       id: 'iec61850',
@@ -227,6 +248,12 @@
         F('timeoutMs', 'Délai d’attente (ms)', 'int', 5000, false,
           'Temps maximal d’attente d’une réponse de l’IED avant de signaler le lien en ' +
           'défaut.', { when: { mode: ['mms', 'report'] } }),
+        F('clockSkewS', 'Écart d’horloge admis (s)', 'int', 10, false,
+          'Au-delà de cet écart entre l’horloge de l’équipement et celle du serveur, ' +
+          'l’horodatage de l’équipement est écarté et celui du serveur utilisé, avec ' +
+          'un message. Sans ce garde-fou, un équipement dont l’horloge est fausse de ' +
+          'deux heures placerait ses échantillons hors de toute fenêtre visible — ce ' +
+          'qui se lit comme une variable morte alors qu’elle remonte très bien.'),
       ],
       pointFields: [
         // --- GOOSE ---
@@ -266,7 +293,7 @@
           { choices: [['MX', 'MX — mesures'], ['ST', 'ST — état'], ['SP', 'SP — consignes'],
                       ['SE', 'SE — réglages'], ['CF', 'CF — configuration']],
             when: { mode: ['mms', 'report'] } }),
-      ].concat(SCALE),
+      ].concat(SCALE).concat(HORODATAGE),
     },
     {
       id: 'can-raw',
@@ -287,7 +314,7 @@
           'Identifiant CAN de la trame portant le signal, en hexadécimal (ex. 0x18FEF100).'),
         F('ext', 'Identifiant 29 bits', 'bool', false, false,
           'Trame à identifiant étendu (29 bits) plutôt que standard (11 bits).'),
-      ].concat(BITFIELD).concat(SCALE),
+      ].concat(BITFIELD).concat(SCALE).concat(HORODATAGE),
     },
     {
       id: 'j1939',
@@ -327,7 +354,7 @@
           'PGN ne déclenchent qu’une seule demande, à la plus courte des périodes ' +
           'réclamées. Trop court, on charge le bus et le calculateur pour rien.',
           { when: { request: ['true'] } }),
-      ].concat(BITFIELD).concat(SCALE),
+      ].concat(BITFIELD).concat(SCALE).concat(HORODATAGE),
     },
     {
       id: 'canopen',
@@ -366,7 +393,7 @@
                       ['u32', 'Entier 32 bits non signé'], ['i32', 'Entier 32 bits signé'],
                       ['f32', 'Flottant 32 bits']],
             when: { mode: ['sdo'] } }),
-      ].concat(BITFIELD.map((f) => Object.assign({}, f, { when: { mode: ['tpdo'] } }))).concat(SCALE),
+      ].concat(BITFIELD.map((f) => Object.assign({}, f, { when: { mode: ['tpdo'] } }))).concat(SCALE).concat(HORODATAGE),
     },
     {
       id: 'snmp',
@@ -422,7 +449,7 @@
           'Identifiant d’objet en notation pointée. Un scalaire se termine par « .0 » ' +
           '(ex. 1.3.6.1.2.1.1.3.0 = temps depuis le démarrage) ; une entrée de table ' +
           'porte son index (ex. 1.3.6.1.2.1.2.2.1.10.2 = octets reçus sur l’interface 2).'),
-      ].concat(SCALE),
+      ].concat(SCALE).concat(HORODATAGE),
     },
     {
       id: 'opcua',
@@ -475,6 +502,12 @@
           { when: { mode: ['subscribe'] } }),
         F('sessionTimeoutS', 'Expiration de session (s)', 'int', 60, false,
           'Durée au-delà de laquelle le serveur ferme une session restée sans échange.'),
+        F('clockSkewS', 'Écart d’horloge admis (s)', 'int', 10, false,
+          'Au-delà de cet écart entre l’horloge de l’équipement et celle du serveur, ' +
+          'l’horodatage de l’équipement est écarté et celui du serveur utilisé, avec ' +
+          'un message. Sans ce garde-fou, un équipement dont l’horloge est fausse de ' +
+          'deux heures placerait ses échantillons hors de toute fenêtre visible — ce ' +
+          'qui se lit comme une variable morte alors qu’elle remonte très bien.'),
       ],
       pointFields: [
         F('nodeId', 'NodeId', 'text', 'ns=2;s=', true,
@@ -492,7 +525,7 @@
         F('deadband', 'Bande morte (%)', 'float', 0, false,
           'Variation minimale, en pourcentage de l’étendue, avant notification d’un ' +
           'changement (mode abonnement) ; 0 pour tout notifier.'),
-      ].concat(SCALE),
+      ].concat(SCALE).concat(HORODATAGE),
     },
   ];
 

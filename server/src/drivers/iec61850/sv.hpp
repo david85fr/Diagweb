@@ -22,6 +22,7 @@
 
 #include "../common/ber.hpp"
 #include "../common/l2_socket.hpp"
+#include "time61850.hpp"
 
 namespace diagweb {
 
@@ -34,6 +35,7 @@ struct SvAsdu {
   uint32_t smp_cnt = 0;
   uint32_t conf_rev = 0;
   uint8_t smp_synch = 0;
+  double t_utc = 0;                   // refrTm : instant d'échantillonnage
   const uint8_t* data = nullptr;      // seqData, non copié
   size_t data_len = 0;
 };
@@ -74,6 +76,7 @@ inline bool decode_sv(const uint8_t* d, size_t n, std::vector<SvAsdu>& out) {
         case 0x80: a.sv_id.assign(reinterpret_cast<const char*>(body), len); break;
         case 0x82: if (ber::read_int(body, len, i)) a.smp_cnt = static_cast<uint32_t>(i); break;
         case 0x83: if (ber::read_int(body, len, i)) a.conf_rev = static_cast<uint32_t>(i); break;
+        case 0x84: a.t_utc = utc_time_61850(body, len); break;   // refrTm
         case 0x85: a.smp_synch = len ? body[len - 1] : 0; break;
         case 0x87: a.data = body; a.data_len = len; break;            // seqData
         default: break;
@@ -151,7 +154,7 @@ class SvDriver : public L2DriverBase {
         uint32_t q = 0;
         if (sv_quality(a.data, a.data_len, p.voie, q) && (q & 0x00000003u) != 0) continue;
       }
-      sink_.publish(i, v * p.gain + p.offset);
+      sink_.publish(i, v * p.gain + p.offset, a.t_utc);
     }
   }
 

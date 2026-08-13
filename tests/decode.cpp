@@ -19,7 +19,9 @@
 #include "drivers/j1939/j1939.hpp"
 #include "drivers/common/ber.hpp"
 #include "drivers/iec61850/goose.hpp"
+#include "drivers/iec104/iec104.hpp"
 #include "drivers/iec61850/sv.hpp"
+#include "drivers/iec61850/time61850.hpp"
 #include "protocol.hpp"
 
 using namespace diagweb;
@@ -36,7 +38,8 @@ void check(const char* name, bool ok, const std::string& detail = {}) {
 }
 void near(const char* name, double got, double want) {
   char buf[96];
-  std::snprintf(buf, sizeof buf, "obtenu %.6g, attendu %.6g", got, want);
+  // %.9g : sans cela, deux horodatages Unix distincts s'affichent identiques.
+  std::snprintf(buf, sizeof buf, "obtenu %.9g, attendu %.9g", got, want);
   check(name, std::fabs(got - want) < 1e-6, buf);
 }
 }  // namespace
@@ -119,7 +122,7 @@ int main() {
 
     struct Capteur : IPointSink {
       std::vector<std::pair<size_t, double>> vus;
-      void publish(size_t i, double v) override { vus.push_back({i, v}); }
+      void publish(size_t i, double v, double) override { vus.push_back({i, v}); }
       double now() const override { return 0; }
     } sink;
 
@@ -523,6 +526,43 @@ int main() {
       lu = ok && sv_channel(asdus[0].data, asdus[0].data_len, 40, v);
       check("SV : voie au-delà du bloc de données", ok && !lu);
     }
+  }
+
+  // ---- horodatages à la source ------------------------------------------
+  // Une erreur ici ne casse rien de visible : elle décale silencieusement les
+  // échantillons, ce qui est bien pire qu'une panne franche.
+  {
+    // CP56Time2a : 2024-03-15 14:30:45,250 UTC → 1710513045,25.
+    const uint8_t objet[12] = {0, 0, 0, 0, 0,          // charge utile (float + QDS)
+                               0xC2, 0xB0,             // 45 250 ms = 45 s + 250 ms
+                               30,                     // minutes
+                               14,                     // heures
+                               15,                     // jour du mois
+                               3,                      // mois
+                               24};                    // année depuis 2000
+    near("CP56Time2a décodé en secondes UTC", cp56time2a_utc(objet, 12), 1710513045.25);
+
+    uint8_t invalide[12];
+    std::memcpy(invalide, objet, 12);
+    invalide[7] |= 0x80;                               // bit IV de l'horodatage
+    check("CP56Time2a marqué invalide refusé", cp56time2a_utc(invalide, 12) == 0);
+    check("CP56Time2a : objet trop court refusé", cp56time2a_utc(objet, 5) == 0);
+
+    // UtcTime d'IEC 61850 : secondes depuis 1970, puis fraction en 1/2²⁴.
+    const uint8_t utc[8] = {0x65, 0xF4, 0x5B, 0x95, 0x40, 0x00, 0x00, 0x0A};
+    near("UtcTime 61850 décodé", utc_time_61850(utc, 8), 1710513045.25);
+    uint8_t utc_ko[8];
+    std::memcpy(utc_ko, utc, 8);
+    utc_ko[7] = 0x40;                                  // qualité : valeur invalide
+    check("UtcTime 61850 marqué invalide refusé", utc_time_61850(utc_ko, 8) == 0);
+
+    // BinaryTime : millisecondes depuis minuit, jours depuis 1984.
+    // Le même instant, dans les trois formats : c'est la meilleure preuve que
+    // les trois décodeurs sont d'accord entre eux.
+    const uint8_t bt[6] = {0x03, 0x1D, 0x33, 0x02, 0x39, 0x5C};
+    near("BinaryTime décodé (jours depuis 1984 + ms depuis minuit)",
+         binary_time_61850(bt, 6), 1710513045.25);
+    check("BinaryTime tronqué refusé", binary_time_61850(bt, 4) == 0);
   }
 
   // ---- adresses « @lien.point » ----------------------------------------

@@ -77,7 +77,7 @@ class SimProtocolDriver : public IProtocolDriver {
     for (size_t i = 0; i < gens_.size(); ++i) {
       if (t < due_[i]) continue;
       due_[i] = t + link_.points[i].period_ms / 1000.0;
-      sink_.publish(i, (*gens_[i])(t));
+      sink_.publish(i, (*gens_[i])(t), 0.0);
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     return true;
@@ -234,8 +234,12 @@ class ProtocolSource : public IVariableSource {
         period_.push_back(p.period_ms / 1000.0);
         last_t_.push_back(-1e18);
         last_v_.push_back(0);
+        // Par défaut on prend l'horodatage de l'équipement quand le protocole
+        // en fournit un ; « serveur » l'ignore délibérément.
+        source_t_.push_back(p.str("timestamp", "source") != "server");
       }
       id_ = link.id;
+      ecart_max_ = std::max(0.5, link.num("clockSkewS", 10));
     }
     double now() const override { return src_.now(); }
 
@@ -247,22 +251,51 @@ class ProtocolSource : public IVariableSource {
      */
     void warn(const std::string& msg) override { src_.set_status(id_, "up", msg); }
 
-    void publish(size_t idx, double value) override {
+    void publish(size_t idx, double value, double t_source) override {
       if (idx >= addrs_.size()) return;
       const double t = src_.now();
       if (t - last_t_[idx] < period_[idx] && value == last_v_[idx]) return;
       last_t_[idx] = t;
       last_v_[idx] = value;
-      src_.push(addrs_[idx], value);
+      src_.push(addrs_[idx], value, horodate(idx, t, t_source));
       ++count_;
       if (count_ % 64 == 1) src_.bump_samples(id_, count_);
+    }
+
+    /**
+     * Ramène un horodatage d'équipement dans la base de temps du serveur.
+     *
+     * Les deux horloges n'ont ni la même origine ni forcément le même réglage.
+     * On ne recopie donc pas la date reçue : on applique son ÉCART à notre
+     * propre horloge. Et si cet écart dépasse le seuil du lien, on retombe sur
+     * l'horloge du serveur — un équipement dont l'horloge est fausse de deux
+     * heures placerait sinon ses échantillons hors de toute fenêtre visible,
+     * ce qui se lit comme une variable morte alors qu'elle remonte très bien.
+     */
+    double horodate(size_t idx, double t_serveur, double t_source) {
+      if (t_source <= 0 || !source_t_[idx]) return t_serveur;
+      const double ecart = t_source - utc_now();
+      if (std::fabs(ecart) > ecart_max_) {
+        if (!derive_signalee_) {
+          derive_signalee_ = true;
+          src_.set_status(id_, "up",
+                          "horloge de l'équipement décalée de " +
+                          std::to_string(static_cast<long long>(ecart)) +
+                          " s : horodatage du serveur utilisé");
+        }
+        return t_serveur;
+      }
+      return t_serveur + ecart;
     }
 
    private:
     ProtocolSource& src_;
     std::vector<std::string> addrs_;
     std::vector<double> period_, last_t_, last_v_;
+    std::vector<bool> source_t_;      // ce point suit-il l'horloge de l'équipement ?
     std::string id_;
+    double ecart_max_ = 10;
+    bool derive_signalee_ = false;
     long long count_ = 0;
   };
 
@@ -271,7 +304,7 @@ class ProtocolSource : public IVariableSource {
    public:
     explicit NullSink(double t) : t_(t) {}
     double now() const override { return t_; }
-    void publish(size_t, double) override {}
+    void publish(size_t, double, double) override {}
 
    private:
     double t_;
@@ -303,14 +336,35 @@ class ProtocolSource : public IVariableSource {
     return nullptr;
   }
 
-  void push(const std::string& addr, double v) {
+  /**
+   * Range un échantillon en conservant l'ordre chronologique du tampon : la
+   * lecture s'appuie sur une recherche dichotomique, qu'un échantillon inséré
+   * hors séquence rendrait fausse. Un horodatage source peut arriver dans le
+   * désordre (rafale IEC-104, rapport groupé) ; on l'insère alors à sa place,
+   * en ne remontant que d'une fenêtre bornée. Au-delà, il est trop vieux pour
+   * l'historique et on le laisse tomber plutôt que de désordonner le tampon.
+   */
+  void push(const std::string& addr, double v, double t) {
     std::lock_guard<std::mutex> lock(mu_);
     auto it = chans_.find(addr);
     if (it == chans_.end()) return;
     auto& ch = it->second;
-    const double t = now();
-    ch.buf.push_back({t, v});
-    const double min_t = t - horizon_s_;
+
+    if (ch.buf.empty() || t >= ch.buf.back().t) {
+      ch.buf.push_back({t, v});
+    } else {
+      size_t recul = 0;
+      auto pos = ch.buf.end();
+      while (pos != ch.buf.begin() && recul < 64) {
+        --pos;
+        ++recul;
+        if (pos->t <= t) { ++pos; break; }
+      }
+      if (recul >= 64 && pos->t > t) return;          // hors de portée : ignoré
+      ch.buf.insert(pos, {t, v});
+    }
+
+    const double min_t = now() - horizon_s_;
     while (!ch.buf.empty() && ch.buf.front().t < min_t) ch.buf.pop_front();
   }
 

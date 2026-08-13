@@ -31,6 +31,7 @@
 #include "../common/ber.hpp"
 #include "../common/net.hpp"
 #include "iso_stack.hpp"
+#include "time61850.hpp"
 
 namespace diagweb {
 
@@ -458,10 +459,16 @@ class MmsDriver : public IProtocolDriver {
     const uint8_t* opt = b;
     const size_t optn = l;
 
-    // Champs optionnels annoncés, dans l'ordre de la norme.
+    // Champs optionnels annoncés, dans l'ordre de la norme. L'horodatage
+    // d'entrée est retenu au passage : c'est la date que l'IED donne à
+    // l'événement, bien plus fidèle que l'instant de réception.
+    double t_src = 0;
+    if (bit_de(opt, optn, 1) && !ber::read_tlv(c, tag, b, l)) return;   // n° de séquence
+    if (bit_de(opt, optn, 2)) {
+      if (!ber::read_tlv(c, tag, b, l)) return;                        // TimeOfEntry
+      t_src = binary_time_61850(b, l);
+    }
     size_t a_sauter = 0;
-    if (bit_de(opt, optn, 1)) ++a_sauter;                  // numéro de séquence
-    if (bit_de(opt, optn, 2)) ++a_sauter;                  // horodatage
     if (bit_de(opt, optn, 4)) ++a_sauter;                  // nom du jeu de données
     if (bit_de(opt, optn, 6)) ++a_sauter;                  // débordement de tampon
     if (bit_de(opt, optn, 7)) ++a_sauter;                  // identifiant d'entrée
@@ -485,15 +492,15 @@ class MmsDriver : public IProtocolDriver {
       double v = 0;
       const bool ok = (tag == 0xA2 || tag == 0xA1) ? mms_first_value(b, l, v)
                                                    : mms_value(tag, b, l, v);
-      if (ok) publier_rang(rang, v);
+      if (ok) publier_rang(rang, v, t_src);
     }
   }
 
   /** Publie sur tous les points qui visent ce rang du jeu de données. */
-  void publier_rang(size_t rang, double v) {
+  void publier_rang(size_t rang, double v, double t_source) {
     for (size_t i = 0; i < points_.size(); ++i) {
       if (static_cast<size_t>(link_.points[i].num("index", 0)) != rang) continue;
-      sink_.publish(i, v * points_[i].gain + points_[i].offset);
+      sink_.publish(i, v * points_[i].gain + points_[i].offset, t_source);
     }
   }
 

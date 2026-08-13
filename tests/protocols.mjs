@@ -91,9 +91,25 @@ function startModbusSlave() {
 
 /**
  * Station IEC 60870-5-104 minimale : répond à STARTDT, à l'interrogation
- * générale, puis émet périodiquement une mesure flottante (M_ME_NC_1, IOA 100)
- * et un état simple (M_SP_NA_1, IOA 200).
+ * générale, puis émet périodiquement une mesure flottante (M_ME_NC_1, IOA 100),
+ * un état simple (M_SP_NA_1, IOA 200) et une mesure HORODATÉE (M_ME_TF_1,
+ * IOA 300) datée volontairement DECALAGE_S secondes dans le passé — de quoi
+ * vérifier que l'horodatage à la source est bien celui retenu.
  */
+const DECALAGE_S = 2;
+
+/** Encode un CP56Time2a (7 octets) pour un instant donné. */
+function cp56(date) {
+  const b = Buffer.alloc(7);
+  b.writeUInt16LE(date.getUTCSeconds() * 1000 + date.getUTCMilliseconds(), 0);
+  b[2] = date.getUTCMinutes();
+  b[3] = date.getUTCHours();
+  b[4] = date.getUTCDate();
+  b[5] = date.getUTCMonth() + 1;
+  b[6] = date.getUTCFullYear() - 2000;
+  return b;
+}
+
 function startIec104Station() {
   let timer = null;
   const server = net.createServer((sock) => {
@@ -133,6 +149,16 @@ function startIec104Station() {
                 b[6] = 200; b[7] = 0; b[8] = 0;
                 b[9] = k % 2;                        // SIQ : bit d'état
                 sendI(b);
+
+                // M_ME_TF_1 : flottant + QDS + CP56Time2a, daté dans le passé.
+                const c = Buffer.alloc(21);
+                c[0] = 36; c[1] = 1; c[2] = 3; c[3] = 0;
+                c.writeUInt16LE(1, 4);
+                c[6] = 44; c[7] = 1; c[8] = 0;       // IOA 300
+                c.writeFloatLE(77.5, 9);
+                c[13] = 0;                           // qualité : valide
+                cp56(new Date(Date.now() - DECALAGE_S * 1000)).copy(c, 14);
+                sendI(c);
               }, 100);
             }
           }
@@ -292,8 +318,9 @@ function collect(addrs, ms) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(BASE.replace(/^http/, 'ws') + '/ws');
     const got = new Map(addrs.map((a) => [a, []]));
+    const dates = new Map(addrs.map((a) => [a, []]));
     const metas = new Map();
-    const timer = setTimeout(() => { try { ws.close(); } catch {} resolve({ got, metas }); }, ms);
+    const timer = setTimeout(() => { try { ws.close(); } catch {} resolve({ got, dates, metas }); }, ms);
     ws.onerror = () => { clearTimeout(timer); reject(new Error('WebSocket indisponible')); };
     ws.onopen = () => { for (const a of addrs) ws.send(JSON.stringify({ c: 'sub', addr: a })); };
     ws.onmessage = (ev) => {
@@ -301,7 +328,7 @@ function collect(addrs, ms) {
       if (m.e === 'meta') metas.set(m.addr, m);
       if (m.e === 'd') {
         for (const a of addrs) {
-          for (const [, v] of m.s[a] || []) got.get(a).push(v);
+          for (const [t, v] of m.s[a] || []) { got.get(a).push(v); dates.get(a).push(t); }
         }
       }
     };
@@ -357,6 +384,12 @@ const config = {
           params: { ioa: 100, type: 'auto', gain: 1, offset: 0 } },
         { id: 'etat', label: 'État simple', unit: '', kind: 'bit', periodMs: 100,
           params: { ioa: 200, type: 'auto', gain: 1, offset: 0 } },
+        { id: 'date_src', label: 'Mesure horodatée (source)', unit: 'V', kind: 'float',
+          periodMs: 100,
+          params: { ioa: 300, type: 'auto', gain: 1, offset: 0, timestamp: 'source' } },
+        { id: 'date_srv', label: 'Mesure horodatée (serveur)', unit: 'V', kind: 'float',
+          periodMs: 100,
+          params: { ioa: 300, type: 'auto', gain: 1, offset: 0, timestamp: 'server' } },
       ],
     },
     {
@@ -518,9 +551,10 @@ const test = await api('/api/protocols/test', {
 check('test de connexion du lien Modbus', test.status === 200 && test.json.ok === true,
   test.json && test.json.detail);
 
-const { got, metas } = await collect(
+const { got, dates, metas } = await collect(
   ['@banc.reg0', '@banc.reg5', '@banc.flot', '@banc.bobine', '@banc.absent',
-   '@poste.mesure', '@poste.etat', '@poste61850.courant', '@poste61850.pos',
+   '@poste.mesure', '@poste.etat', '@poste.date_src', '@poste.date_srv',
+   '@poste61850.courant', '@poste61850.pos',
    '@poste61850.absent', '@rapports.pos', '@rapports.courant', '@goose.decl',
    '@supervision.pression', '@supervision.compteur', '@supervision.marche',
    '@supervision.texte', '@uapoll.regime', '@uasecu.regime',
@@ -590,6 +624,30 @@ check('SNMP : noSuchObject ne publie rien',
   got.get('@commut.absent').length === 0);
 check('SNMP : aucun point lu sur un lien v3',
   got.get('@snmpv3.uptime').length === 0);
+// Horodatage : les deux points lisent le MÊME objet, l'un daté par la station
+// (2 s dans le passé), l'autre par le serveur. L'écart doit apparaître.
+{
+  const src = dates.get('@poste.date_src');
+  const srv = dates.get('@poste.date_srv');
+  const ecart = (src.length && srv.length)
+    ? srv[srv.length - 1] - src[src.length - 1] : NaN;
+  check('horodatage à la source retenu (IEC-104, CP56Time2a)',
+    Math.abs(ecart - DECALAGE_S) < 0.5,
+    'écart source/serveur ' + (isNaN(ecart) ? 'indisponible' : ecart.toFixed(3) + ' s'));
+  // Le point forcé au serveur doit être daté comme les variables non
+  // horodatées du même lien : c'est ce qui prouve que le forçage écarte bien
+  // l'horloge de la station.
+  const ref = dates.get('@poste.mesure');
+  const alignement = (srv.length && ref.length)
+    ? Math.abs(srv[srv.length - 1] - ref[ref.length - 1]) : NaN;
+  check('horodatage forcé au serveur, aligné sur les autres variables du lien',
+    alignement < 0.5,
+    isNaN(alignement) ? 'indisponible' : 'écart ' + alignement.toFixed(3) + ' s');
+  check('valeur identique quel que soit l’horodatage',
+    last('@poste.date_src') === 77.5 && last('@poste.date_srv') === 77.5,
+    'source ' + last('@poste.date_src') + ' / serveur ' + last('@poste.date_srv'));
+}
+
 check('métadonnées transmises (libellé, unité, famille)',
   metas.get('@banc.flot') && metas.get('@banc.flot').unit === '°C' &&
   metas.get('@banc.flot').family === 'NET',

@@ -15,6 +15,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -53,12 +54,29 @@ struct LinkConfig {
   bool flag(const std::string& k, bool d = false) const { return params.flag(k, d); }
 };
 
+/** Horloge murale en secondes depuis l'époque Unix (horodatages source). */
+inline double utc_now() {
+  return static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(
+             std::chrono::system_clock::now().time_since_epoch()).count()) / 1e6;
+}
+
 /** Où un pilote dépose ses valeurs (une entrée par point du lien). */
 class IPointSink {
  public:
   virtual ~IPointSink() = default;
-  /** Nouvelle valeur pour le point d'indice `idx` (unité physique). */
-  virtual void publish(size_t idx, double value) = 0;
+
+  /**
+   * Nouvelle valeur pour le point d'indice `idx` (unité physique).
+   *
+   * `t_source` est l'horodatage produit par l'ÉQUIPEMENT, en secondes UTC
+   * depuis l'époque Unix ; 0 signifie « le protocole n'en fournit pas ». Le
+   * réceptacle décide s'il l'utilise : c'est un réglage par point, car faire
+   * confiance à l'horloge d'un équipement de terrain n'est pas anodin.
+   */
+  virtual void publish(size_t idx, double value, double t_source) = 0;
+
+  /** Raccourci pour les protocoles sans horodatage à la source. */
+  void publish(size_t idx, double value) { publish(idx, value, 0.0); }
   /** Horloge de la source, en secondes depuis le démarrage du serveur. */
   virtual double now() const = 0;
   /**

@@ -485,8 +485,15 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
 - **Qualité** : valeur invalide (bit IV), exception Modbus, abandon SDO ou
   lien coupé ⇒ **aucun échantillon publié** (trou dans la courbe), la cause
   étant lisible dans l'état du lien.
-- **Horodatage commun** : les points réseau sont datés sur l'horloge du
-  serveur, comme les variables du `controller` — courbes comparables.
+- **Horodatage** : quand le protocole transporte la date de l'événement, c'est
+  elle qui est retenue (IEC-104 types horodatés, GOOSE, Sampled Values,
+  rapports, OPC UA en abonnement). Le choix est **par point** : « de
+  l'équipement si disponible » (défaut) ou « du serveur (forcé) », pour une
+  horloge d'équipement qui n'est pas de confiance. La date reçue n'est pas
+  recopiée : son **écart** à l'heure courante est appliqué, afin que toutes les
+  courbes restent comparables ; au-delà de l'écart admis par le lien (10 s par
+  défaut), elle est écartée avec un message. Détail dans `docs/PROTOCOLES.md`
+  § « Horodatage : à la source, ou du serveur ».
 - REST : `GET/PUT /api/protocols`, `GET /api/protocols/status`,
   `POST /api/protocols/test`.
 
