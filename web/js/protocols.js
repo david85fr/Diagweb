@@ -154,22 +154,19 @@
       label: 'IEC 61850',
       transport: 'Ethernet niveau 2 (GOOSE, SV) · ISO sur TCP (MMS)',
       state: 'live',
-      help: 'Quatre mécanismes très différents cohabitent dans la norme. GOOSE et ' +
-            'Sampled Values sont des trames Ethernet diffusées, sans session ni ' +
-            'négociation : elles sont lues. La lecture MMS et les rapports (BRCB, ' +
-            'URCB) roulent sur une pile ISO complète, non implémentée — leur ' +
-            'configuration se saisit et se conserve, mais le lien reste « non ' +
-            'branché ». Voir docs/PROTOCOLES.md.',
+      help: 'Quatre mécanismes cohabitent dans la norme, tous implémentés. GOOSE et ' +
+            'Sampled Values sont des trames Ethernet diffusées, écoutées en niveau 2. ' +
+            'La lecture MMS et les rapports (BRCB, URCB) passent par la pile ISO sur ' +
+            'TCP. Activer un rapport est la SEULE écriture du pilote, et elle ne touche ' +
+            'que les attributs du bloc de contrôle. Voir docs/PROTOCOLES.md.',
       linkFields: [
         F('mode', 'Mécanisme', 'enum', 'goose', true,
           'GOOSE : événements diffusés par un IED (protection, position d’organe). ' +
           'Sampled Values : mesures échantillonnées d’un TC/TP numérique, à 4 000 ou ' +
           '4 800 trames par seconde. Lecture MMS : interrogation cyclique d’attributs. ' +
           'Rapports : l’IED notifie, avec ou sans mémoire tampon.',
-          { choices: [['goose', 'GOOSE (8-1) — implémenté'],
-                      ['sv', 'Sampled Values (9-2) — implémenté'],
-                      ['mms', 'Lecture MMS — non branché'],
-                      ['report', 'Rapports BRCB/URCB — non branché']] }),
+          { choices: [['goose', 'GOOSE (8-1)'], ['sv', 'Sampled Values (9-2)'],
+                      ['mms', 'Lecture MMS'], ['report', 'Rapports BRCB/URCB']] }),
 
         // --- GOOSE et Sampled Values : Ethernet de niveau 2 ---
         F('iface', 'Interface réseau', 'text', 'eth0', true,
@@ -227,8 +224,9 @@
         F('intgPd', 'Période d’intégrité (ms)', 'int', 1000, false,
           'Intervalle des rapports périodiques ; 0 pour n’envoyer que sur événement.',
           { when: { mode: ['report'] } }),
-        F('pollMs', 'Période d’interrogation (ms)', 'int', 1000, false,
-          'Cadence des lectures MMS.', { when: { mode: ['mms'] } }),
+        F('timeoutMs', 'Délai d’attente (ms)', 'int', 5000, false,
+          'Temps maximal d’attente d’une réponse de l’IED avant de signaler le lien en ' +
+          'défaut.', { when: { mode: ['mms', 'report'] } }),
       ],
       pointFields: [
         // --- GOOSE ---
@@ -239,8 +237,9 @@
                       ['sqNum', 'sqNum (réémissions)']], when: { mode: ['goose'] } }),
         F('index', 'Indice dans le jeu de données', 'int', 0, false,
           'Rang de l’entrée dans le dataset, à partir de 0, tel que le fichier SCL le ' +
-          'fixe. Les membres d’une structure comptent chacun pour une entrée.',
-          { when: { mode: ['goose'] } }),
+          'fixe. Les membres d’une structure comptent chacun pour une entrée. Sert aussi ' +
+          'à repérer la valeur dans un rapport, qui arrive dans ce même ordre.',
+          { when: { mode: ['goose', 'report'] } }),
 
         // --- Sampled Values ---
         F('asdu', 'ASDU', 'int', 0, false,
@@ -258,7 +257,8 @@
 
         // --- MMS et rapports ---
         F('ref', 'Référence d’objet', 'text', '', false,
-          'Référence complète de l’attribut, par exemple LD0/MMXU1.A.phsA.cVal.mag.f.',
+          'Référence complète de l’attribut, par exemple LD0/MMXU1.A.phsA.cVal.mag.f. ' +
+          'Elle est traduite en nom MMS (domaine + LN$FC$DO$DA) à l’ouverture du lien.',
           { when: { mode: ['mms', 'report'] } }),
         F('fc', 'Contrainte fonctionnelle', 'enum', 'MX', false,
           'Contrainte fonctionnelle de l’attribut : mesures (MX), état (ST), consigne (SP), ' +

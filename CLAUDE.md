@@ -102,6 +102,7 @@ tests/dnd.mjs   tests de déplacement de widgets (7 vérifications, http requis)
 tests/protocols.mjs  liens réseau bout en bout (équipements simulés, serveur requis)
 tests/decode.cpp     décodage des protocoles (cible CMake diagweb-decode-test)
 tests/opcua_server.c serveur OPC UA de test (cible diagweb-opcua-test-server)
+tests/mms_ied.mjs    IED IEC 61850 simulé (pile ISO, MMS, rapports)
 tests/server.mjs     forçage + journalisation autonome (serveur requis)
 dist/           livrables générés (commités) : index.html autonome + artifact.html
 docs/           PROJET.md, SPECS.md, PROTOCOLES.md

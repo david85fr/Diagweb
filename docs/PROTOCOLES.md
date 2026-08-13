@@ -159,7 +159,8 @@ donc exactement les champs que le serveur sait lire.
 | SNMP v3 | UDP/161 | **déclaré** (USM à écrire) | `drivers/snmp/` |
 | IEC 61850 GOOSE (8-1) | Ethernet 0x88B8 | implémenté | `drivers/iec61850/` |
 | IEC 61850 Sampled Values (9-2) | Ethernet 0x88BA | implémenté | `drivers/iec61850/` |
-| IEC 61850 MMS et rapports | ISO sur TCP | **déclaré** | `drivers/iec61850/` |
+| IEC 61850 lecture MMS | ISO sur TCP | implémenté | `drivers/iec61850/` |
+| IEC 61850 rapports BRCB/URCB | MMS | implémenté | `drivers/iec61850/` |
 | OPC UA (IEC 62541) | UA-TCP binaire | implémenté (open62541) | `drivers/opcua/` |
 
 ### Un dossier par protocole
@@ -344,31 +345,29 @@ recevoir sa réponse en connexion plutôt qu'en diffusion, et sans l'accusé
 attendu le transfert n'aboutirait jamais. Un lien qui se contente d'écouter
 n'émet donc aucun `CTS`.
 
-### IEC 61850 — quatre mécanismes, deux implémentés
+### IEC 61850 — quatre mécanismes
 
 La norme couvre quatre façons très différentes de récupérer une donnée, et
 elles ne se valent pas du tout en coût d'implémentation. Le mécanisme se
 choisit sur le lien, et l'interface adapte ensuite ses champs toute seule.
 
-| Mécanisme | Transport | État |
+| Mécanisme | Transport | Le mécanisme en un mot |
 |---|---|---|
-| **GOOSE** (8-1) | Ethernet 0x88B8, diffusé | **implémenté** |
-| **Sampled Values** (9-2) | Ethernet 0x88BA, diffusé | **implémenté** |
-| Lecture MMS | ISO sur TCP (port 102) | déclaré |
-| Rapports BRCB / URCB | MMS | déclaré |
+| **GOOSE** (8-1) | Ethernet 0x88B8, diffusé | l'IED crie, on écoute |
+| **Sampled Values** (9-2) | Ethernet 0x88BA, diffusé | idem, à 4 000 trames/s |
+| **Lecture MMS** | ISO sur TCP (port 102) | on demande, l'IED répond |
+| **Rapports BRCB / URCB** | MMS | on s'abonne, l'IED notifie |
 
-**Pourquoi cette coupure exactement là.** GOOSE et Sampled Values sont des
-trames Ethernet diffusées : ni session, ni négociation, ni chiffrement. Il n'y
-a rien à établir, juste à écouter et décoder — et le codec BER écrit pour SNMP
-se réemploie tel quel. MMS demande à l'inverse une pile ISO complète
-(ISO-on-TCP, COTP, session, présentation, ACSE, puis MMS en ASN.1 BER), soit un
-volume comparable à tout le reste du serveur, non validable sans IED réel. Les
-rapports roulent sur MMS : ils héritent du même blocage.
+Les quatre sont implémentés, **sans aucune bibliothèque** : les piles C
+matures d'IEC 61850 sont en double licence GPLv3 ou commerciale payante, donc
+écartées par la règle du projet (voir § « Bibliothèques externes et
+licences »). Aucune pile permissive en C n'existe. Tout est donc écrit ici, le
+codec BER de SNMP servant de socle commun.
 
-Et ce blocage est **juridique autant que technique** : les piles C matures sont
-en double licence GPLv3 ou commerciale payante, donc écartées par la règle du
-projet — voir § « Bibliothèques externes et licences ». Aucune pile IEC 61850
-permissive en C n'existe à ce jour.
+GOOSE et Sampled Values ont été les moins coûteux : trames diffusées, ni
+session ni négociation. MMS a demandé la pile ISO complète — ISO-on-TCP
+(RFC 1006), COTP, session, présentation, ACSE — soit cinq poignées de main
+avant la première lecture, dont aucune ne transporte de donnée utile.
 
 #### GOOSE
 
@@ -403,6 +402,53 @@ comme des variables, pour surveiller la santé et la synchronisation du flux.
 **Cadence** : à 4 000 trames par seconde, publier chaque échantillon
 saturerait l'historique en quelques secondes. La décimation par la période du
 point s'en charge, et seules les ASDU réellement demandées sont décodées.
+
+#### Lecture MMS
+
+Un point porte une **référence 61850** (`LD0/MMXU1.A.phsA.cVal.mag.f`) et sa
+contrainte fonctionnelle. La traduction en nom MMS est faite à l'ouverture du
+lien :
+
+| | |
+|---|---|
+| domaine | `<nom d'IED>` + `<LD>` → `IED1LD0` |
+| élément | `LN$FC$DO$DA$…` → `MMXU1$MX$A$phsA$cVal$mag$f` |
+
+Les points échus partent groupés (16 au plus) dans une même requête `Read`.
+Une référence illisible ou un objet refusé par l'IED est signalé dans l'état du
+lien et ne publie rien, les autres points continuant d'être lus. Les valeurs
+rendues sous forme de structure sont parcourues jusqu'à la première feuille
+numérique — certains IED emballent `cVal.mag.f` de cette façon.
+
+#### Rapports (BRCB et URCB)
+
+L'IED notifie de lui-même, par `InformationReport`, au lieu d'être interrogé.
+Un point désigne alors sa valeur par son **indice dans le jeu de données**.
+
+Décoder un rapport suppose de décoder d'abord **OptFlds**, la chaîne de bits
+qui annonce quels champs optionnels précèdent les données : numéro de séquence,
+horodatage, nom du jeu, débordement de tampon, identifiant d'entrée, révision
+de configuration, segmentation. Se repérer sur « la chaîne de bits » ne suffit
+pas — OptFlds en est une aussi, et la confondre avec la chaîne d'inclusion fait
+lire le numéro de séquence à la place de la première valeur. Le nombre de
+membres inclus se lit dans la chaîne d'inclusion, et les références de données
+qui la suivent sont sautées si OptFlds les annonce.
+
+**Un bloc bufférisé (BRCB) conserve les rapports pendant une coupure** et les
+rejoue à la reconnexion ; un URCB perd ce qui s'est produit hors ligne. Pour du
+diagnostic, le bufférisé est le choix sûr.
+
+##### La seule écriture de tout Diagweb
+
+Activer un rapport suppose d'écrire dans son bloc de contrôle : `TrgOps` et
+`IntgPd` d'abord — un bloc déjà actif refuse qu'on change ses conditions de
+déclenchement — puis `RptEna`. C'est une **exception assumée** à la règle de
+lecture seule, du même ordre que la requête SDO de CANopen :
+
+- elle ne touche **que les attributs du bloc de rapport**, jamais une donnée de
+  procédé ;
+- elle n'a lieu que si l'utilisateur a choisi le mode « rapports » ;
+- aucun service de commande n'est implémenté, et ne le sera pas.
 
 #### Ce que GOOSE et SV exigent du système
 
@@ -512,8 +558,10 @@ GCC recompilait son code C avec nos options, dont `-Werror`.
   re-revendication.
 - **Rôle de maître CANopen**, et côté IEC 61850 : **émission** de GOOSE ou de
   Sampled Values (Diagweb écoute, il ne publie rien sur le réseau de poste),
-  lecture du **fichier SCL** pour déduire les jeux de données — les indices se
-  saisissent à la main — et **contrôle** (services de commande).
+  lecture du **fichier SCL** pour déduire les jeux de données — les indices et
+  les références se saisissent à la main — **contrôle** (services de commande),
+  **parcours** de l'arborescence MMS (GetNameList), **fichiers** (transfert de
+  perturbographies) et **segmentation** des rapports volumineux.
 - **Écriture et appel de méthode OPC UA** (`Write`, `Call`), **découverte**
   automatique de l'arborescence (`Browse`), **historique** (`HistoryRead`) et
   **événements** (`EventNotifier`). Les types non scalaires — tableaux,
@@ -652,14 +700,18 @@ publiées, ce qui ne concerne pas le code de Diagweb. Version épinglée v1.5.6,
 licence vérifiée dans son fichier `LICENSE`. C'est la **seule** dépendance du
 serveur, et elle se débranche par `-DDIAGWEB_WITH_OPCUA=OFF`.
 
-**IEC 61850 — la contrainte de licence ne ferme la porte qu'à moitié.** GOOSE
-et Sampled Values ont été écrits à la main : ce sont des trames diffusées,
-sans session ni négociation, et le codec BER de SNMP se réemploie. MMS et les
-rapports restent bloqués, eux : toutes les piles C matures sont en double
-licence GPLv3 / commerciale — gratuites tant que le produit est lui-même GPL,
-payantes sinon — et aucune pile permissive en C n'existe. Trois issues, hors du
-champ technique : acheter une licence, écrire la pile ISO/MMS, ou laisser ces
-deux mécanismes déclarés. C'est le choix actuel.
+**IEC 61850 — écrit à la main, faute de licence acceptable.** Toutes les piles
+C matures sont en double licence GPLv3 / commerciale : gratuites tant que le
+produit est lui-même GPL, payantes sinon. Aucune pile permissive en C n'existe.
+Les quatre mécanismes ont donc été écrits dans le projet, y compris la pile ISO
+sous MMS. Le codec BER de SNMP a servi de socle commun, ce qui a rendu
+l'ensemble raisonnable.
+
+**Réserve à connaître** : cette pile est validée contre un IED simulé
+(`tests/mms_ied.mjs`), pas contre un équipement du commerce. Elle prouve que ce
+que Diagweb émet est analysable et que ce qu'il décode a la forme attendue ;
+l'interopérabilité réelle demande un essai sur site, et c'est là que se
+révéleront les écarts d'implémentation propres à chaque constructeur.
 
 **Modbus, IEC 60870-5-104, CAN — on garde l'existant.** Ces pilotes
 fonctionnent, sont couverts de bout en bout par les tests et ne coûtent rien à
@@ -713,7 +765,9 @@ filtres
 noyau des trois pilotes CAN, ainsi que leur appariement de trames — un filtre
 trop large ou trop étroit rendrait une variable silencieusement muette.
 `tests/protocols.mjs` monte un **esclave Modbus TCP**, une **station
-IEC 60870-5-104** et un **agent SNMP v2c** en Node, configure les liens par
+IEC 60870-5-104**, un **agent SNMP v2c** et un **IED IEC 61850** (pile ISO,
+association MMS, service Read, activation de bloc de rapport et émission
+d'`InformationReport`) en Node, configure les liens par
 REST et vérifie que les
 valeurs arrivent jusqu'au flux WebSocket. Un **serveur OPC UA de test**
 (`tests/opcua_server.c`, cible `diagweb-opcua-test-server`) est lancé de la

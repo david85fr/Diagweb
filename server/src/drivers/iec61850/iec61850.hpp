@@ -3,10 +3,10 @@
 // La norme couvre quatre façons très différentes de récupérer une donnée, et
 // elles ne se valent pas du tout en coût d'implémentation :
 //
-//   GOOSE (8-1)   Ethernet 0x88B8, BER, aucune session       → IMPLÉMENTÉ
-//   SV (9-2)      Ethernet 0x88BA, BER, aucune session       → IMPLÉMENTÉ
-//   MMS lecture   ISO 8073/8327/8823 + ACSE + MMS sur TCP    → déclaré
-//   Rapports      MMS + BRCB/URCB (bufférisés ou non)        → déclaré
+//   GOOSE (8-1)   Ethernet 0x88B8, BER, aucune session       → implémenté
+//   SV (9-2)      Ethernet 0x88BA, BER, aucune session       → implémenté
+//   MMS lecture   ISO 8073/8327/8823 + ACSE + MMS sur TCP    → implémenté
+//   Rapports      MMS + BRCB/URCB (bufférisés ou non)        → implémenté
 //
 // GOOSE et Sampled Values sont des trames diffusées : rien à établir, rien à
 // négocier, juste à écouter et décoder. C'est ce qui les rend écrivables ici.
@@ -25,6 +25,7 @@
 
 #include "../common/declared.hpp"
 #include "goose.hpp"
+#include "mms.hpp"
 #include "sv.hpp"
 
 namespace diagweb {
@@ -34,14 +35,7 @@ inline DriverPtr make_iec61850_driver(const LinkConfig& link, IPointSink& sink) 
   const std::string mode = link.str("mode", "goose");
   if (mode == "goose") return std::make_unique<GooseDriver>(link, sink);
   if (mode == "sv")    return std::make_unique<SvDriver>(link, sink);
-  if (mode == "report") {
-    return std::make_unique<DeclaredDriver>(
-        "rapports MMS (BRCB/URCB) non implémentés — ils roulent sur la pile "
-        "ISO/MMS, absente ; configuration conservée (voir docs/PROTOCOLES.md)");
-  }
-  return std::make_unique<DeclaredDriver>(
-      "lecture MMS non implémentée — pile ISO/MMS absente ; configuration "
-      "conservée (voir docs/PROTOCOLES.md)");
+  return std::make_unique<MmsDriver>(link, sink);   // lecture MMS et rapports
 }
 
 }  // namespace diagweb

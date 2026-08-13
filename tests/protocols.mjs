@@ -263,6 +263,14 @@ function startSnmpAgent() {
  * (cible diagweb-opcua-test-server). Son absence n'est pas passée sous
  * silence — les vérifications OPC UA échouent avec la raison.
  */
+function startMmsIed(port) {
+  const script = new URL('./mms_ied.mjs', import.meta.url).pathname;
+  const proc = spawn(process.execPath, [script, String(port)],
+                     { stdio: ['ignore', 'ignore', 'ignore'] });
+  proc.on('error', () => {});
+  return new Promise((res) => setTimeout(() => res({ proc, port }), 600));
+}
+
 function startOpcUaServer(port) {
   const bin = process.env.DIAGWEB_OPCUA_TEST_SERVER ||
               new URL('../server/build/diagweb-opcua-test-server', import.meta.url).pathname;
@@ -314,6 +322,7 @@ const modbus = await startModbusSlave();
 const iec = await startIec104Station();
 const snmp = await startSnmpAgent();
 const ua = await startOpcUaServer(48401);
+const ied = await startMmsIed(10250);
 
 const before = await api('/api/protocols');
 check('description des protocoles publiée par le serveur',
@@ -352,19 +361,28 @@ const config = {
     },
     {
       id: 'poste61850', label: 'Poste 61850 (MMS)', protocol: 'iec61850', enabled: true,
-      params: { host: '127.0.0.1', port: 102, mode: 'mms', pollMs: 1000 },
+      params: { host: '127.0.0.1', port: ied.port, mode: 'mms', iedName: 'IED1',
+                timeoutMs: 3000 },
       points: [
-        { id: 'courant', label: 'Courant phase A', unit: 'A', kind: 'float', periodMs: 1000,
+        { id: 'courant', label: 'Courant phase A', unit: 'A', kind: 'float', periodMs: 200,
           params: { ref: 'LD0/MMXU1.A.phsA.cVal.mag.f', fc: 'MX', gain: 1, offset: 0 } },
+        { id: 'pos', label: 'Position disjoncteur', unit: '', kind: 'word', periodMs: 200,
+          params: { ref: 'LD0/XCBR1.Pos.stVal', fc: 'ST', gain: 1, offset: 0 } },
+        { id: 'absent', label: 'Objet inconnu', unit: '', kind: 'float', periodMs: 200,
+          params: { ref: 'LD0/MMXU9.Zz.stVal', fc: 'ST', gain: 1, offset: 0 } },
       ],
     },
     {
       id: 'rapports', label: 'Rapports BRCB', protocol: 'iec61850', enabled: true,
-      params: { host: '127.0.0.1', port: 102, mode: 'report', buffered: true,
-                rcbRef: 'IED1LD0/LLN0.BR.brcb01', trgOps: 'dchg', intgPd: 1000 },
+      params: { host: '127.0.0.1', port: ied.port, mode: 'report', buffered: true,
+                rcbRef: 'LD0/LLN0.BR.brcb01', iedName: 'IED1', trgOps: 'dchg',
+                intgPd: 0, timeoutMs: 3000 },
       points: [
-        { id: 'pos', label: 'Position disjoncteur', unit: '', kind: 'bit', periodMs: 1000,
-          params: { ref: 'LD0/XCBR1.Pos.stVal', fc: 'ST', gain: 1, offset: 0 } },
+        { id: 'pos', label: 'Position disjoncteur', unit: '', kind: 'word', periodMs: 200,
+          params: { ref: 'LD0/XCBR1.Pos.stVal', fc: 'ST', index: 0, gain: 1, offset: 0 } },
+        { id: 'courant', label: 'Courant rapporté', unit: 'A', kind: 'float', periodMs: 200,
+          params: { ref: 'LD0/MMXU1.A.phsA.cVal.mag.f', fc: 'MX', index: 1,
+                    gain: 1, offset: 0 } },
       ],
     },
     {
@@ -461,12 +479,12 @@ check('lien Modbus établi', stMap.banc && stMap.banc.state === 'up',
   stMap.banc ? stMap.banc.state + ' · ' + stMap.banc.detail : 'absent');
 check('lien IEC 60870-5-104 établi', stMap.poste && stMap.poste.state === 'up',
   stMap.poste ? stMap.poste.state + ' · ' + stMap.poste.detail : 'absent');
-check('IEC 61850 : lecture MMS annoncée non branchée',
-  stMap.poste61850 && stMap.poste61850.state === 'todo',
-  stMap.poste61850 ? stMap.poste61850.detail : 'absent');
-check('IEC 61850 : rapports BRCB/URCB annoncés non branchés',
-  stMap.rapports && stMap.rapports.state === 'todo',
-  stMap.rapports ? stMap.rapports.detail : 'absent');
+check('IEC 61850 : association MMS établie (COTP, session, présentation, ACSE)',
+  stMap.poste61850 && stMap.poste61850.state === 'up',
+  stMap.poste61850 ? stMap.poste61850.state + ' · ' + stMap.poste61850.detail : 'absent');
+check('IEC 61850 : bloc de rapport activé et flux reçu',
+  stMap.rapports && stMap.rapports.state === 'up',
+  stMap.rapports ? stMap.rapports.state + ' · ' + stMap.rapports.detail : 'absent');
 // GOOSE est implémenté : sur une interface inexistante il tombe en défaut
 // avec le motif, et non en « non branché ».
 check('IEC 61850 : GOOSE implémenté, échoue sur l’interface et le dit',
@@ -502,8 +520,8 @@ check('test de connexion du lien Modbus', test.status === 200 && test.json.ok ==
 
 const { got, metas } = await collect(
   ['@banc.reg0', '@banc.reg5', '@banc.flot', '@banc.bobine', '@banc.absent',
-   '@poste.mesure', '@poste.etat', '@poste61850.courant', '@rapports.pos',
-   '@goose.decl',
+   '@poste.mesure', '@poste.etat', '@poste61850.courant', '@poste61850.pos',
+   '@poste61850.absent', '@rapports.pos', '@rapports.courant', '@goose.decl',
    '@supervision.pression', '@supervision.compteur', '@supervision.marche',
    '@supervision.texte', '@uapoll.regime', '@uasecu.regime',
    '@commut.uptime', '@commut.octets', '@commut.signe', '@commut.chaine',
@@ -525,10 +543,20 @@ check('mesure IEC-104 reçue en spontané',
   'valeur ' + last('@poste.mesure'));
 check('état simple IEC-104 décodé (0/1)',
   [0, 1].includes(last('@poste.etat')), 'valeur ' + last('@poste.etat'));
-check('IEC 61850 : point MMS sans valeur (pilote non branché)',
-  got.get('@poste61850.courant').length === 0);
-check('IEC 61850 : point de rapport sans valeur (pilote non branché)',
-  got.get('@rapports.pos').length === 0);
+check('IEC 61850 : flottant lu par MMS (référence traduite en LN$FC$DO$DA)',
+  Math.abs(last('@poste61850.courant') - 50) < 1e-6,
+  'valeur ' + last('@poste61850.courant'));
+check('IEC 61850 : entier lu par MMS', last('@poste61850.pos') === 2,
+  'valeur ' + last('@poste61850.pos'));
+check('IEC 61850 : objet inconnu ne publie rien',
+  got.get('@poste61850.absent').length === 0);
+check('IEC 61850 : valeur reçue par rapport (indice 0 du jeu de données)',
+  last('@rapports.pos') === 2, 'valeur ' + last('@rapports.pos'));
+check('IEC 61850 : flottant reçu par rapport (indice 1)',
+  Math.abs(last('@rapports.courant') - 50) < 1e-6, 'valeur ' + last('@rapports.courant'));
+check('IEC 61850 : rapports reçus en flux (plusieurs notifications)',
+  got.get('@rapports.pos').length >= 2,
+  got.get('@rapports.pos').length + ' rapport(s) en 1,4 s');
 check('IEC 61850 : point GOOSE sans valeur si le lien n’ouvre pas',
   got.get('@goose.decl').length === 0);
 check('OPC UA : Double reçu par abonnement et mis à l’échelle',
@@ -589,6 +617,7 @@ modbus.server.close();
 iec.server.close();
 snmp.sock.close();
 if (ua.proc) ua.proc.kill();
+if (ied.proc) ied.proc.kill();
 
 console.log('');
 console.log(`${results.length - failed}/${results.length} vérifications réussies`);

@@ -183,6 +183,16 @@ inline std::vector<uint8_t> put_int(int64_t v) {
   return wrap(kInteger, body);
 }
 
+/** Corps d'un entier non signé, sans étiquette (pour un type applicatif). */
+inline std::vector<uint8_t> put_uint_body(uint64_t v) {
+  uint8_t buf[8];
+  int n = 0;
+  do { buf[n++] = static_cast<uint8_t>(v & 0xFF); v >>= 8; } while (v && n < 8);
+  std::vector<uint8_t> out;
+  for (int i = n - 1; i >= 0; --i) out.push_back(buf[i]);
+  return out;
+}
+
 inline std::vector<uint8_t> put_str(uint8_t tag, const std::string& s) {
   return wrap(tag, std::vector<uint8_t>(s.begin(), s.end()));
 }
