@@ -130,13 +130,6 @@ button { font-family: var(--sans); }
 .menu-panel button:hover:not(:disabled) { background: var(--panel-2); }
 .menu-panel button:disabled { color: var(--faint); cursor: default; }
 
-/* Actions liées au contenu de l'onglet actif */
-.tabActions {
-  display: flex; flex-wrap: wrap; gap: 6px;
-  margin-bottom: 12px;
-}
-.tabActions .btn { font-size: 12.5px; padding: 7px 11px; }
-
 .build-tag {
   font: 10.5px var(--mono);
   color: var(--faint);
@@ -254,8 +247,14 @@ button { font-family: var(--sans); }
 .iconbtn.on { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
 
 /* ---------- Badges de famille ---------- */
+/* Largeur commune, calée sur « ext.MB » (six caractères) : sans elle, les
+   adresses ne s'alignaient pas d'une ligne à l'autre — le regard doit pouvoir
+   descendre la colonne d'un trait. Les badges de protocole plus longs
+   (ext.61850, ext.CANopen) débordent seuls cette largeur : les rétrécir à six
+   caractères les rendrait illisibles. */
 .badge {
   display: inline-block; flex: none;
+  min-width: calc(6ch + 14px); text-align: center;
   font-family: var(--mono); font-size: 10px; font-weight: 700;
   padding: 2px 6px; border-radius: 5px;
   border: 1px solid var(--line);
@@ -313,20 +312,12 @@ button { font-family: var(--sans); }
 .chart-tools { flex: none; }
 
 /* ---------- Tableau numérique ---------- */
-/* Le tableau est une carte de la grille des graphiques : sa largeur se règle
-   en colonnes (poignée ↔), ce qui laisse la place à un graphique à côté.
-   Sans réglage, il occupe toute la largeur — la disposition d'origine. */
-.table-card { position: relative; min-width: 0; grid-column: 1 / -1; }
+/* Le tableau est une tuile de la mosaïque, exactement comme un graphique :
+   même placement libre, même poignée de dimensionnement. */
+.table-card { position: relative; min-width: 0; }
 .trows { padding: 0 2px 2px; }
-/* Hauteur libre (poignée) : le tableau défile en interne au lieu de pousser
-   les graphiques vers le bas. La poignée reste réservée aux écrans ≥ 700 px. */
-/* height, pas max-height : « max » ne sait que rétrécir. Avec elle, tirer la
-   poignée vers le bas ne faisait rien du tout — le tableau ne pouvait que
-   diminuer. */
-.table-card.has-th .trows { height: var(--table-h); overflow-y: auto; }
 .table-card.resizing { outline: 1px solid color-mix(in srgb, var(--accent) 60%, transparent); }
 .table-card.resizing .resize-grip { opacity: 1; }
-.table-grip { bottom: 4px; right: 4px; }
 #tableRows { padding: 2px 6px 8px; }
 .vrow {
   display: grid;
@@ -389,31 +380,37 @@ button { font-family: var(--sans); }
 .vrow.forced { box-shadow: inset 3px 0 0 var(--warn); }
 .vrow.forced .val { color: var(--warn); }
 
-/* ---------- Grille de graphiques ---------- */
-/* --col-min : largeur minimale d'une colonne, lue par chart.js pour connaître
-   le nombre de colonnes « naturelles » (0 = une seule colonne, mobile). */
-/* align-items: start — chaque carte garde SA hauteur. Par défaut une grille
-   étire ses éléments à la hauteur de leur rangée : le tableau réduit à la
-   poignée restait alors aussi haut que le graphique voisin, avec du vide sous
-   ses lignes, et la réduction semblait sans effet. */
-.charts-grid { display: grid; gap: 12px; grid-template-columns: 1fr;
-  align-items: start; --col-min: 0px; }
+/* ---------- Mosaïque (tableaux et graphiques) ---------- */
+/* Mosaïque : sur téléphone, une seule colonne et des tuiles empilées dans
+   l'ordre (y, x) du modèle — le placement libre n'a pas de sens sur 390 px de
+   large. Les douze colonnes et le placement explicite arrivent à 700 px
+   (cf. media query). */
+.charts-grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
 
 .chart-card { position: relative; display: flex; flex-direction: column; min-width: 0; }
 
-/* Poignée de redimensionnement (coin bas-droit, souris ou stylet) */
+/* Poignée de redimensionnement (coin bas-droit, souris ou stylet). Cible
+   volontairement large : à 18 px elle se ratait une fois sur deux. */
 .resize-grip {
   display: none;                      /* activée ≥ 700 px — cf. media query */
-  position: absolute; right: 2px; bottom: 2px;
-  width: 18px; height: 18px;
+  position: absolute; right: 0; bottom: 0;
+  width: 24px; height: 24px;
   cursor: nwse-resize; touch-action: none;
   border-bottom-right-radius: 12px;
-  opacity: .45;
+  opacity: .45; z-index: 3;
   background:
-    linear-gradient(135deg, transparent 46%, var(--faint) 46%, var(--faint) 58%, transparent 58%),
-    linear-gradient(135deg, transparent 68%, var(--faint) 68%, var(--faint) 80%, transparent 80%);
+    linear-gradient(135deg, transparent 52%, var(--faint) 52%, var(--faint) 62%, transparent 62%),
+    linear-gradient(135deg, transparent 71%, var(--faint) 71%, var(--faint) 81%, transparent 81%);
 }
 .resize-grip:hover { opacity: 1; }
+
+/* Rectangle d'atterrissage pendant un déplacement : il occupe DANS la grille
+   la place exacte que prendra la tuile lâchée. */
+.tile-ghost {
+  border: 2px dashed color-mix(in srgb, var(--accent) 70%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 12px; pointer-events: none;
+}
 .chart-card.resizing { outline: 1px solid color-mix(in srgb, var(--accent) 60%, transparent); }
 .chart-card.resizing .resize-grip { opacity: 1; }
 .chart-card.fs .resize-grip { display: none; }
@@ -438,10 +435,11 @@ button { font-family: var(--sans); }
   border: 1px solid var(--line); border-radius: 8px;
   height: 34px; padding: 0 6px;
 }
-.chart-body { position: relative; height: clamp(220px, 32vh, 420px); padding: 0 4px; }
-.chart-card.size-L .chart-body { height: clamp(300px, 48vh, 640px); }
-.chart-card.size-XL { grid-column: 1 / -1; }
-.chart-card.size-XL .chart-body { height: clamp(340px, 56vh, 780px); }
+/* Téléphone : la mosaïque est repliée en une colonne, mais la hauteur choisie
+   sur un poste de travail est conservée — traduite en pixels depuis le nombre
+   de rangées de la tuile, plutôt que perdue au profit d'une taille unique. */
+.chart-body { position: relative; padding: 0 4px;
+  height: clamp(200px, calc(var(--th, 9) * 42px - 104px), 62vh); }
 
 /* Plein écran par graphique */
 .chart-card.fs {
@@ -600,20 +598,6 @@ body.dnd-over-pane #panes {
   border-radius: 12px;
 }
 .vrow[draggable="true"] { cursor: grab; }
-
-/* Repère d'insertion pendant le rangement des graphiques */
-.chart-card { position: relative; }
-.chart-card.drop-before::before,
-.chart-card.drop-after::after {
-  content: '';
-  position: absolute; top: 6px; bottom: 6px; width: 3px;
-  background: var(--accent);
-  border-radius: 2px;
-  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 70%, transparent);
-  z-index: 20;
-}
-.chart-card.drop-before::before { left: -7px; }
-.chart-card.drop-after::after { right: -7px; }
 
 /* Même repère, à l'horizontale, pour le rangement des lignes du tableau */
 .vrow { position: relative; }
@@ -961,17 +945,37 @@ body.dnd-over-pane #panes {
 @media (min-width: 700px) {
   body { font-size: 14.5px; }
   .wrap { padding: 12px 20px 64px; }
-  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); --col-min: 380px; }
   .modal-back { place-items: center; padding: 20px; }
   .modal { border-radius: 16px; }
   .chip-addr { max-width: 240px; }
 
-  /* Dimensionnement libre à la poignée — réservé aux écrans multi-colonnes ;
-     sur mobile la grille reste en une colonne avec les hauteurs M/L/XL. */
+  /* ---------- Mosaïque : placement et taille libres ----------
+     Douze colonnes fractionnaires et des rangées de hauteur fixe. Chaque tuile
+     dit où elle va (--tx, --ty) et ce qu'elle prend (--tw, --th) : la
+     disposition se transpose telle quelle d'un écran à l'autre, ce que des
+     colonnes « naturelles » de largeur fixe ne savaient pas faire. */
+  .charts-grid {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-auto-rows: 30px;
+    align-items: stretch;
+  }
+  .charts-grid > .card, .tile-ghost {
+    grid-column: var(--tx, 1) / span var(--tw, 6);
+    grid-row: var(--ty, 1) / span var(--th, 9);
+  }
+  /* La tuile remplit sa case : le corps du graphique et les lignes du tableau
+     se partagent ce qui reste sous l'en-tête. Sans cela, la hauteur tirée à la
+     poignée n'aurait aucun effet visible sur le contenu. */
+  .charts-grid > .card { height: 100%; overflow: hidden; }
+  .charts-grid > .table-card { display: flex; flex-direction: column; }
+  .charts-grid > .table-card .trows { flex: 1 1 0; min-height: 0; overflow-y: auto; }
+  .charts-grid > .chart-card .chart-body { flex: 1 1 0; height: auto; min-height: 60px; }
+  .charts-grid > .chart-card .chart-legend { flex: 0 0 auto; max-height: 38%; overflow-y: auto; }
+
   .resize-grip { display: block; }
-  .chart-card.has-custom-h .chart-body { height: var(--custom-h); }
-  .chart-card.has-span { grid-column: span var(--col-span); }
-  .table-card.has-span { grid-column: span var(--col-span); }
+  /* La poignée ⠿ déplace la tuile : le curseur doit le dire. */
+  .charts-grid > .card > :first-child .drag-handle,
+  .charts-grid > .card .chart-head .drag-handle { cursor: grab; }
 }
 
 /* Barre supérieure sur une seule ligne : uniquement quand tout tient */
@@ -985,13 +989,11 @@ body.dnd-over-pane #panes {
   body.cfg-hidden .topbar { grid-template-columns: minmax(180px, 1fr) auto; grid-template-areas: "tabs icons"; }
 }
 body.cfg-hidden .searchrow { display: none; }
-body.cfg-hidden .tabActions { display: none; }
-@media (min-width: 1700px) {
-  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); --col-min: 500px; }
-}
-@media (min-width: 2300px) {
-  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(620px, 1fr)); --col-min: 620px; }
-}
+/* Grands écrans : les colonnes s'élargissent d'elles-mêmes (elles sont
+   fractionnaires) ; seules les rangées gagnent en hauteur, pour que la même
+   disposition ne s'écrase pas verticalement sur un 32 pouces. */
+@media (min-width: 1700px) { .charts-grid { grid-auto-rows: 33px; } }
+@media (min-width: 2300px) { .charts-grid { grid-auto-rows: 36px; } }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
@@ -1109,12 +1111,13 @@ body.cfg-hidden .tabActions { display: none; }
 
     <div class="topIcons">
       <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" title="Figer ou reprendre d’un coup tous les graphiques de l’onglet actif">⏸ Figer</button>
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">52f62f5 · #89</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">d3ac564 · #91</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
         <button id="skinBtn" type="button" title="Apparence : logo de l’installation et couleurs de l’interface — réglages partagés par tous les postes quand la page est servie par le contrôleur">Apparence — logo et couleurs…</button>
+        <button id="layoutsBtn" type="button" title="Configurations : enregistrer, télécharger (JSON/CSV), charger, copier la disposition de cet onglet">Configurations…</button>
         <button id="logBtn" type="button" title="Journal de données : enregistrer tous les échantillons des variables de l’onglet actif (dans le navigateur ou sur le contrôleur), puis les télécharger en CSV/JSON">Journal de données…<i id="logInd" class="recdot hide"></i></button>
         <button id="helpBtn" type="button" title="Récapitulatif des commandes et des gestes (utile sur écran tactile, où les infobulles n’apparaissent pas)">Aide — commandes et gestes…</button>
         <button id="netBtn" type="button" title="Liens réseau : déclarer des équipements Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen, SNMP ou OPC UA et choisir les variables à lire">Liens réseau…</button>
@@ -1142,12 +1145,6 @@ body.cfg-hidden .tabActions { display: none; }
       <div id="suggestBox" class="suggest hide"></div>
     </div>
   </header>
-
-  <div class="tabActions">
-    <button id="addTableBtn" class="btn" type="button" title="Créer un tableau numérique vide dans cet onglet ; il devient la destination d’ajout. Plusieurs tableaux peuvent cohabiter avec les graphiques — tableau, graphique, tableau…">+ Tableau</button>
-    <button id="addChartBtn" class="btn" type="button" title="Créer un graphique vide dans cet onglet ; il devient la destination d’ajout">+ Graphique</button>
-    <button id="layoutsBtn" class="btn" type="button" title="Configurations : enregistrer, télécharger (JSON/CSV), charger, copier la configuration de cet onglet">Configs</button>
-  </div>
 
   <section id="emptyState" class="empty hide">
     <h2>Aucune variable dans cet onglet</h2>
@@ -1241,7 +1238,7 @@ body.cfg-hidden .tabActions { display: none; }
     { addr: 'MB520',     label: 'Consigne opérateur (registre 520)',      kind: 'word', unit: '', sim: { type: 'steps', values: [800, 1000, 1200, 1500], period: 35 } },
     { addr: 'MB1000',    label: 'Compteur trames bus',                    kind: 'word', unit: '', sim: { type: 'counter', rate: 87 } },
 
-    // --- Signaux modèles Simulink (C API) ---------------------------
+    // --- Signaux de modèles Matlab (C API) --------------------------
     { addr: 'Regulation.consigne.vitesse',   label: 'Consigne de vitesse',        kind: 'float', unit: 'tr/min', sim: { type: 'steps', values: [1480, 1500, 1500, 1520, 1550], period: 40 } },
     { addr: 'Regulation.mesure.vitesse',     label: 'Vitesse mesurée',            kind: 'float', unit: 'tr/min', sim: { type: 'sine', base: 1500, amp: 22, period: 17, noise: 4 } },
     { addr: 'Regulation.sortie.commande',    label: 'Commande actionneur',        kind: 'float', unit: '%',      sim: { type: 'sine', base: 54, amp: 18, period: 23, noise: 1.5 } },
@@ -1292,7 +1289,7 @@ body.cfg-hidden .tabActions { display: none; }
    * l'adresse, c'est l'ORIGINE de la donnée :
    *   PLC       entrées, sorties, bits mémoire et variables système (I/Q/M/S) ;
    *   MB        registres de bus, par le canal interne du contrôleur ;
-   *   Simulink  signaux des modèles, via la C API ;
+   *   Matlab    signaux des modèles, via la C API ;
    *   ext.…     point lu à l'EXTÉRIEUR par un client du serveur de diagnostic,
    *             suffixé du protocole (ext.MB, ext.61850, ext.OPCUA…).
    *
@@ -1306,7 +1303,7 @@ body.cfg-hidden .tabActions { display: none; }
     const f = meta.family;
     if (BADGE_PLC[f]) return 'PLC';
     if (f === 'MB') return 'MB';
-    if (f === 'CAPI') return 'Simulink';
+    if (f === 'CAPI') return 'Matlab';
     if (f !== 'NET') return f || '';
     // Point réseau : le protocole du lien fournit le suffixe.
     let proto = meta.protocol;
@@ -1322,7 +1319,7 @@ body.cfg-hidden .tabActions { display: none; }
   const NET_ID = '[A-Za-z][A-Za-z0-9_-]{0,23}';
 
   const HELP = "Formats acceptés : I1.2.3.4, Q14.15, M1.14, S0.4 (bits), " +
-               "MB414 (mot de bus), Modele.sous_systeme.signal (C API Simulink, " +
+               "MB414 (mot de bus), Modele.sous_systeme.signal (C API Matlab, " +
                "premier champ = nom du modèle), @lien.point (point lu sur un " +
                "lien réseau).";
 
@@ -2833,6 +2830,289 @@ body.cfg-hidden .tabActions { display: none; }
 
 </script>
 <script>
+/* Diagweb — mosaïque : placement et dimensionnement LIBRES des tuiles.
+ *
+ * Une « tuile » est une carte de l'espace de travail : un tableau numérique ou
+ * un graphique. Elle occupe un rectangle de la grille, décrit par quatre
+ * entiers — `x` (colonne), `y` (rangée), `w` (largeur en colonnes), `h`
+ * (hauteur en rangées) — sur **12 colonnes** et des rangées de hauteur fixe.
+ *
+ * Pourquoi une grille explicite : la version précédente laissait la grille CSS
+ * placer les cartes toute seule (`auto-fit`), avec une largeur exprimée en
+ * « colonnes naturelles » dont le nombre changeait avec la fenêtre. On ne
+ * pouvait donc que **ranger** les cartes les unes après les autres, jamais en
+ * poser une à un endroit choisi, et la même carte n'avait pas la même largeur
+ * d'un écran à l'autre. Ici, `x/y/w/h` disent exactement où va la tuile, et
+ * douze colonnes fractionnaires font que la disposition se transpose telle
+ * quelle d'un écran à l'autre.
+ *
+ * Deux règles de comportement, celles qu'on attend d'un tableau de bord :
+ *   1. **poussée** — une tuile posée sur une autre la repousse vers le bas,
+ *      jamais sur le côté (le côté ferait valser toute la ligne) ;
+ *   2. **gravité** — les tuiles remontent tant qu'il y a de la place au-dessus,
+ *      donc pas de trou involontaire après un déplacement ou une suppression.
+ *
+ * Sous 700 px (téléphone), la mosaïque s'efface : la grille repasse à une
+ * colonne et les tuiles s'empilent dans l'ordre (y, x). Le modèle, lui, est
+ * conservé — la disposition d'un poste de travail se retrouve intacte au
+ * retour sur grand écran.
+ */
+(function () {
+  "use strict";
+  const DW = (window.DW = window.DW || {});
+
+  const COLS = 12;          // largeur de la mosaïque, en colonnes
+  const ROW_H = 30;         // hauteur d'une rangée (px) — doit suivre le CSS
+  const GAP = 12;           // gouttière (px) — idem
+  const MIN_W = 2, MIN_H = 3, MAX_H = 60;
+
+  /** Taille de départ d'une tuile neuve, par nature. */
+  const DEFAUTS = {
+    chart: { w: 6, h: 9 },   // deux graphiques par rangée sur un grand écran
+    table: { w: 12, h: 7 },  // un tableau prend toute la largeur par défaut
+  };
+
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const kindOf = (t) => (t && t.entries ? 'table' : 'chart');
+
+  /** La mosaïque est-elle active ? (désactivée sur téléphone) */
+  function actif() {
+    try { return window.matchMedia('(min-width: 700px)').matches; }
+    catch (e) { return true; }
+  }
+
+  /** Deux rectangles se chevauchent-ils ? */
+  function hit(a, b) {
+    return a.x < b.x + b.w && b.x < a.x + a.w &&
+           a.y < b.y + b.h && b.y < a.y + a.h;
+  }
+
+  /** Ramène une tuile dans les bornes de la mosaïque. */
+  function borner(t) {
+    const d = DEFAUTS[kindOf(t)];
+    t.w = clamp(Math.round(Number(t.w) || d.w), MIN_W, COLS);
+    t.h = clamp(Math.round(Number(t.h) || d.h), MIN_H, MAX_H);
+    t.x = clamp(Math.round(Number(t.x) || 0), 0, COLS - t.w);
+    t.y = Math.max(0, Math.round(Number(t.y) || 0));
+    return t;
+  }
+
+  /**
+   * Écarte les chevauchements en poussant vers le BAS. `tenue` est la tuile
+   * que l'utilisateur a sous la main : elle ne bouge jamais, ce sont les
+   * autres qui lui font place — sans quoi la tuile fuirait le curseur.
+   */
+  function ecarter(tuiles, tenue) {
+    for (let passe = 0; passe < 200; passe++) {
+      const ordre = [...tuiles].sort((a, b) => a.y - b.y || a.x - b.x);
+      let bouge = false;
+      for (let i = 0; i < ordre.length; i++) {
+        for (let j = i + 1; j < ordre.length; j++) {
+          const a = ordre[i], b = ordre[j];
+          if (!hit(a, b)) continue;
+          const victime = (b === tenue) ? a : b;
+          const autre = (victime === b) ? a : b;
+          victime.y = autre.y + autre.h;
+          bouge = true;
+        }
+      }
+      if (!bouge) return;
+    }
+  }
+
+  /** Gravité : chaque tuile remonte tant que la place est libre au-dessus. */
+  function tasser(tuiles) {
+    const ordre = [...tuiles].sort((a, b) => a.y - b.y || a.x - b.x);
+    for (const t of ordre) {
+      while (t.y > 0) {
+        const essai = { x: t.x, y: t.y - 1, w: t.w, h: t.h };
+        if (ordre.some((o) => o !== t && hit(o, essai))) break;
+        t.y--;
+      }
+    }
+  }
+
+  /** Bornes + poussée + gravité : l'état d'équilibre de la mosaïque. */
+  function normaliser(tuiles, tenue) {
+    for (const t of tuiles) borner(t);
+    ecarter(tuiles, tenue || null);
+    tasser(tuiles);
+    return tuiles;
+  }
+
+  /** Première place libre pour une tuile de w×h (balayage haut → bas). */
+  function placeLibre(tuiles, w, h) {
+    for (let y = 0; y < 400; y++) {
+      for (let x = 0; x <= COLS - w; x++) {
+        const essai = { x, y, w, h };
+        if (!tuiles.some((o) => hit(o, essai))) return { x, y };
+      }
+    }
+    return { x: 0, y: 0 };
+  }
+
+  /** Géométrie de la grille à l'écran : largeur de colonne, hauteur de rangée. */
+  function metrique(grid) {
+    const rect = grid.getBoundingClientRect();
+    const cs = getComputedStyle(grid);
+    const gap = parseFloat(cs.columnGap) || GAP;
+    const gapY = parseFloat(cs.rowGap) || GAP;
+    const rowH = parseFloat(cs.gridAutoRows) || ROW_H;
+    return { rect, gap, gapY, rowH, colW: (rect.width - gap * (COLS - 1)) / COLS };
+  }
+
+  /**
+   * Cellule visée par un point de l'écran. `arrondi` vaut 'proche' pendant un
+   * déplacement (la tuile se cale sur la cellule la plus proche) et 'bas'
+   * pendant un redimensionnement (on ne veut pas que le bord recule d'une
+   * cellule dès qu'on repasse le milieu).
+   */
+  function cellule(grid, cx, cy, arrondi) {
+    const m = metrique(grid);
+    const f = arrondi === 'bas' ? Math.floor : Math.round;
+    return {
+      x: clamp(f((cx - m.rect.left) / (m.colW + m.gap)), 0, COLS - 1),
+      y: Math.max(0, f((cy - m.rect.top) / (m.rowH + m.gapY))),
+    };
+  }
+
+  /** Applique la géométrie d'une tuile à sa carte (variables CSS). */
+  function poser(t) {
+    const el = t.cardEl;
+    if (!el) return;
+    el.style.setProperty('--tx', String(t.x + 1));
+    el.style.setProperty('--ty', String(t.y + 1));
+    el.style.setProperty('--tw', String(t.w));
+    el.style.setProperty('--th', String(t.h));
+  }
+
+  /**
+   * Ordre du DOM aligné sur (y, x) : c'est lui qui donne l'empilement sur
+   * téléphone et l'ordre de tabulation. **Seuls les nœuds mal placés bougent** :
+   * réinsérer une carte déjà bien placée annulerait la capture du pointeur en
+   * cours (le redimensionnement décrochait à la première cellule franchie) et
+   * ferait clignoter les canevas.
+   */
+  function rangerDom(grid, tuiles) {
+    const ordre = [...tuiles].sort((a, b) => a.y - b.y || a.x - b.x)
+      .map((t) => t.cardEl).filter((el) => el && el.parentElement === grid);
+    let apres = null;
+    for (let i = ordre.length - 1; i >= 0; i--) {
+      const el = ordre[i];
+      if (el.nextElementSibling !== apres) grid.insertBefore(el, apres);
+      apres = el;
+    }
+  }
+
+  /**
+   * Range la mosaïque et l'applique à l'écran.
+   * `opts.dom === false` pendant un geste : seules les variables CSS changent,
+   * l'ordre du DOM est resynchronisé à la fin.
+   */
+  function agencer(grid, tuiles, tenue, opts) {
+    if (!grid) return tuiles;
+    normaliser(tuiles, tenue);
+    for (const t of tuiles) poser(t);
+    if (!opts || opts.dom !== false) rangerDom(grid, tuiles);
+    return tuiles;
+  }
+
+  // ------------------------------------------------------------- fantôme
+  /**
+   * Rectangle d'atterrissage montré pendant un déplacement. Il vit DANS la
+   * grille, placé comme une tuile : ce qu'on voit est exactement la place que
+   * la tuile prendra — pas une approximation dessinée par-dessus.
+   */
+  let ghostEl = null;
+  function fantome(grid, t) {
+    if (!grid) return;
+    if (!ghostEl) {
+      ghostEl = document.createElement('div');
+      ghostEl.className = 'tile-ghost';
+      ghostEl.setAttribute('aria-hidden', 'true');
+    }
+    ghostEl.style.setProperty('--tx', String(t.x + 1));
+    ghostEl.style.setProperty('--ty', String(t.y + 1));
+    ghostEl.style.setProperty('--tw', String(t.w));
+    ghostEl.style.setProperty('--th', String(t.h));
+    if (ghostEl.parentElement !== grid) grid.appendChild(ghostEl);
+  }
+  function fantomeOff() {
+    if (ghostEl && ghostEl.parentElement) ghostEl.remove();
+  }
+
+  // -------------------------------------------------- poignée ◢ (taille)
+  /**
+   * Poignée bas-droite : largeur ET hauteur, par cellules entières. Le
+   * réagencement est appliqué à chaque cellule franchie — on voit la place
+   * que les voisines cèdent pendant qu'on tire, pas seulement à la fin.
+   *
+   * @param tuile   objet portant x/y/w/h et cardEl
+   * @param ctx     {grid(), tiles(), onChange(), onLive()}
+   */
+  function poigneeTaille(tuile, ctx) {
+    const grip = tuile.cardEl && tuile.cardEl.querySelector('.resize-grip');
+    if (!grip) return;
+    let g = null;
+
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.button > 0 || !actif()) return;
+      const grid = ctx.grid();
+      if (!grid) return;
+      g = { id: e.pointerId, x: e.clientX, y: e.clientY,
+            w: tuile.w, h: tuile.h, m: metrique(grid) };
+      try { grip.setPointerCapture(e.pointerId); } catch (err) { /* facultatif */ }
+      tuile.cardEl.classList.add('resizing');
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    grip.addEventListener('pointermove', (e) => {
+      if (!g || e.pointerId !== g.id) return;
+      const dw = Math.round((e.clientX - g.x) / (g.m.colW + g.m.gap));
+      const dh = Math.round((e.clientY - g.y) / (g.m.rowH + g.m.gapY));
+      const w = clamp(g.w + dw, MIN_W, COLS - tuile.x);
+      const h = clamp(g.h + dh, MIN_H, MAX_H);
+      if (w === tuile.w && h === tuile.h) return;
+      tuile.w = w; tuile.h = h;
+      // dom:false — l'ordre du DOM est figé le temps du geste, sinon la carte
+      // serait réinsérée sous la main et la capture du pointeur perdue.
+      agencer(ctx.grid(), ctx.tiles(), tuile, { dom: false });
+      if (ctx.onLive) ctx.onLive();
+      e.preventDefault();
+    });
+
+    const fin = (e) => {
+      if (!g || (e && e.pointerId !== g.id)) return;
+      g = null;
+      tuile.cardEl.classList.remove('resizing');
+      agencer(ctx.grid(), ctx.tiles(), tuile);   // remise en ordre du DOM
+      if (ctx.onChange) ctx.onChange();
+    };
+    grip.addEventListener('pointerup', fin);
+    grip.addEventListener('pointercancel', fin);
+
+    // Double-clic : retour à la taille de départ de cette nature de tuile.
+    grip.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      const d = DEFAUTS[kindOf(tuile)];
+      tuile.w = d.w; tuile.h = d.h;
+      agencer(ctx.grid(), ctx.tiles(), tuile);
+      if (ctx.onLive) ctx.onLive();
+      if (ctx.onChange) ctx.onChange();
+    });
+  }
+
+  DW.mosaic = {
+    COLS, ROW_H, GAP, MIN_W, MIN_H, MAX_H, DEFAUTS,
+    actif, hit, borner, normaliser, tasser, placeLibre,
+    metrique, cellule, poser, agencer, rangerDom, fantome, fantomeOff, poigneeTaille,
+    defaut(kind) { return Object.assign({}, DEFAUTS[kind] || DEFAUTS.chart); },
+  };
+})();
+
+</script>
+<script>
 /* Diagweb — moteur de graphiques temps réel (canvas).
  *
  * Multi-échelles : courbes regroupées par unité (ou isolées via « échelle
@@ -2862,23 +3142,9 @@ body.cfg-hidden .tabActions { display: none; }
   const MAX_WINDOW_S = 300;
   const SHRINK_DELAY_S = 2;      // hystérésis de rétraction des échelles
   const SHRINK_OCCUPANCY = 0.55; // rétraction si les données occupent < 55 %
-  const HEIGHT_MODES = ['M', 'L', 'XL'];
-  // Dimensionnement libre à la poignée (bureau uniquement — voir app.css :
-  // sous le point de rupture mobile la grille reste en une colonne).
-  const MIN_CUSTOM_H = 150;
-  const MAX_CUSTOM_H = 2000;
-  const MAX_COL_SPAN = 6;
-
-  function sanitizeH(h) {
-    h = parseInt(h, 10);
-    if (!isFinite(h) || h <= 0) return null;
-    return clamp(h, MIN_CUSTOM_H, MAX_CUSTOM_H);
-  }
-  function sanitizeSpan(n) {
-    n = parseInt(n, 10);
-    if (!isFinite(n) || n <= 1) return null;
-    return clamp(n, 2, MAX_COL_SPAN);
-  }
+  // Anciennes hauteurs préréglées : ne subsistent que pour relire les
+  // dispositions enregistrées avant la mosaïque (voir DW.mosaic).
+  const HAUTEURS_V2 = { M: 9, L: 12, XL: 15 };
 
   // ---------- Formatage ------------------------------------------------
   DW.fmtVal = function (v, meta) {
@@ -2974,24 +3240,6 @@ body.cfg-hidden .tabActions { display: none; }
 
   const MAX_AXES = 4;
 
-  /**
-   * Géométrie d'une grille de cartes : nombre de colonnes « naturelles »,
-   * largeur de colonne et gouttière. Le compte est recalculé depuis
-   * `--col-min` (et non depuis le template résolu) pour rester indépendant des
-   * largeurs déjà imposées par les cartes élargies. Partagé par les graphiques
-   * et par le tableau numérique, qui vit dans la même grille.
-   */
-  DW.gridMetrics = function (grid) {
-    if (!grid || !grid.classList || !grid.classList.contains('charts-grid')) return null;
-    const cs = getComputedStyle(grid);
-    const gap = parseFloat(cs.columnGap) || 0;
-    const min = parseFloat(cs.getPropertyValue('--col-min')) || 0;
-    const w = grid.clientWidth;
-    if (!(w > 0)) return null;
-    const count = min > 0 ? Math.max(1, Math.floor((w + gap) / (min + gap))) : 1;
-    return { count, colW: (w - gap * (count - 1)) / count, gap };
-  };
-
   // ---------- Popover partagé (légende & menu ⋮) ----------------------
   let popEl = null, popOwner = null, popAnchor = null;
   // Bascule : un appui sur l'ancre du menu ouvert le ferme sans le rouvrir.
@@ -3084,9 +3332,13 @@ body.cfg-hidden .tabActions { display: none; }
       this.pinT = null;            // curseur épinglé (temps absolu)
       this.cursor = null;          // curseur transitoire {x} (survol souris)
       this.series = [];            // {addr, meta, colorIdx, axisMode, visible, periodMs, offsetY}
-      this.heightMode = HEIGHT_MODES.includes(opts.heightMode) ? opts.heightMode : 'M';
-      this.customH = sanitizeH(opts.customH);      // hauteur libre (px), null = préréglage
-      this.colSpan = sanitizeSpan(opts.colSpan);   // largeur en colonnes de grille, null = auto
+      // Tuile de la mosaïque : colonne, rangée, largeur, hauteur (cf. mosaic.js).
+      // C'est le seul modèle de taille — plus de préréglage M/L/XL en parallèle,
+      // qui donnait deux vérités pour une même carte.
+      const d = DW.mosaic.defaut('chart');
+      this.x = opts.x; this.y = opts.y;
+      this.w = opts.w || d.w;
+      this.h = opts.h || (opts.heightMode ? HAUTEURS_V2[opts.heightMode] : 0) || d.h;
       this.fullscreen = false;
       this.moveSeries = null;      // adresse en cours de décalage (mode explicite)
       this.axisState = new Map();  // clé de groupe -> état d'échelle
@@ -3100,11 +3352,15 @@ body.cfg-hidden .tabActions { display: none; }
 
       this.root = document.createElement('section');
       this.root.className = 'card chart-card';
+      // Nom commun aux deux natures de tuile (tableau et graphique) : la
+      // mosaïque n'a pas à savoir laquelle elle manipule.
+      this.cardEl = this.root;
       this.root.innerHTML =
         '<header class="chart-head">' +
           '<span class="drag-handle" draggable="true" ' +
-            'title="Glisser ce graphique (avec sa configuration) vers un onglet, une autre fenêtre, ' +
-            'ou sur un autre graphique pour le ranger">⠿</span>' +
+            'title="Déplacer ce graphique : le glisser où l’on veut dans la page (il se pose ' +
+            'à l’emplacement montré et écarte ce qui gêne), sur un onglet, ou dans une autre ' +
+            'fenêtre du navigateur">⠿</span>' +
           '<input class="chart-title" maxlength="48" aria-label="Titre du graphique" ' +
             'title="Nom du graphique — cliquez pour le modifier ; il sert aussi de destination d’ajout">' +
           '<div class="chart-tools">' +
@@ -3159,7 +3415,6 @@ body.cfg-hidden .tabActions { display: none; }
         this.winSel.appendChild(o);
       }
       this.syncWinSel();
-      this.applyHeightMode();
 
       this.root.querySelector('.hint-name').textContent = this.titleEl.value;
 
@@ -3187,18 +3442,22 @@ body.cfg-hidden .tabActions { display: none; }
       handle.addEventListener('dragstart', (e) => {
         if (!DW.dnd) return;
         e.dataTransfer.setDragImage(this.root, 40, 20);
-        DW.dnd.startDrag(e, { kind: 'chart', chartId: this.id, chart: this.serialize() },
+        DW.dnd.startDrag(e, { kind: 'chart', chartId: this.id, chart: this.serialize(),
+                              w: this.w, h: this.h },
           () => this.app.removeChart(this));
       });
 
       this._escHandler = (e) => { if (e.key === 'Escape' && this.fullscreen) this.setFullscreen(false); };
       document.addEventListener('keydown', this._escHandler);
-      // La largeur voulue est mémorisée ; l'appliquée suit la place disponible.
-      this._resizeHandler = () => { if (this.colSpan != null) this.applyHeightMode(); };
-      window.addEventListener('resize', this._resizeHandler);
 
       this.bindCanvasGestures();
-      this.bindResizeGrip();
+      // Poignée ◢ : largeur ET hauteur, en cellules de la mosaïque, partagée
+      // avec les tableaux numériques — même carte, même geste.
+      DW.mosaic.poigneeTaille(this, {
+        grid: () => this.root.parentElement,
+        tiles: () => this.app.tilesOfCard(this.root),
+        onChange: () => this.app.onChange(),
+      });
     }
 
     get title() { return this.titleEl.value.trim() || 'Graphique'; }
@@ -3237,90 +3496,16 @@ body.cfg-hidden .tabActions { display: none; }
     }
 
     // ---------- Taille & plein écran ------------------------------------
-    applyHeightMode() {
-      this.root.classList.toggle('size-L', this.heightMode === 'L');
-      this.root.classList.toggle('size-XL', this.heightMode === 'XL');
-      // Taille libre : appliquée par variables CSS, neutralisées sous le
-      // point de rupture mobile (la grille y reste en une colonne).
-      this.root.classList.toggle('has-custom-h', this.customH != null);
-      this.root.classList.toggle('has-span', this.colSpan != null);
-      if (this.customH != null) this.root.style.setProperty('--custom-h', this.customH + 'px');
-      else this.root.style.removeProperty('--custom-h');
-      if (this.colSpan != null) {
-        // Jamais plus large que la grille : une fenêtre rétrécie ne doit pas
-        // forcer des colonnes supplémentaires (la largeur voulue est conservée).
-        const m = this.gridMetrics();
-        this.root.style.setProperty('--col-span',
-          String(m ? Math.min(this.colSpan, m.count) : this.colSpan));
-      } else {
-        this.root.style.removeProperty('--col-span');
-      }
-    }
-    cycleHeight() {
-      const i = HEIGHT_MODES.indexOf(this.heightMode);
-      this.heightMode = HEIGHT_MODES[(i + 1) % HEIGHT_MODES.length];
-      this.customH = null;   // le préréglage reprend la main sur la taille libre
-      this.applyHeightMode();
-      this.app.onChange();
-    }
-    /** Retour à la taille automatique (préréglage M/L/XL). */
+    /** Retour à la taille de départ d'un graphique (mosaïque). */
     resetSize() {
-      if (this.customH == null && this.colSpan == null) return;
-      this.customH = null;
-      this.colSpan = null;
-      this.applyHeightMode();
+      const d = DW.mosaic.defaut('chart');
+      if (this.w === d.w && this.h === d.h) return;
+      this.w = d.w; this.h = d.h;
+      this.app.relayout(this.root);
       this.app.onChange();
-      this.app.toast('Taille automatique rétablie.');
+      this.app.toast('Taille de départ rétablie.');
     }
 
-    /**
-     * Géométrie de la grille : nombre de colonnes « naturelles », largeur de
-     * colonne et gouttière. Le compte est recalculé depuis `--col-min` (et non
-     * depuis le template résolu) pour rester indépendant des largeurs déjà
-     * imposées par les graphiques élargis.
-     */
-    gridMetrics() { return DW.gridMetrics(this.root.parentElement); }
-
-    /** Poignée bas-droite : redimensionnement libre à la souris (ou au doigt). */
-    bindResizeGrip() {
-      const grip = this.root.querySelector('.resize-grip');
-      let g = null;
-      grip.addEventListener('pointerdown', (e) => {
-        if (this.fullscreen || e.button > 0) return;
-        const m = this.gridMetrics();
-        g = {
-          id: e.pointerId,
-          x: e.clientX, y: e.clientY,
-          h: this.root.querySelector('.chart-body').clientHeight,
-          span: this.colSpan || 1,
-          w: this.root.getBoundingClientRect().width,
-          m,
-        };
-        try { grip.setPointerCapture(e.pointerId); } catch (err) { /* capture facultative */ }
-        this.root.classList.add('resizing');
-        e.preventDefault();
-      });
-      grip.addEventListener('pointermove', (e) => {
-        if (!g || e.pointerId !== g.id) return;
-        this.customH = sanitizeH(Math.round(g.h + (e.clientY - g.y)));
-        if (g.m && g.m.count > 1) {
-          const unit = g.m.colW + g.m.gap;
-          const span = Math.round((g.w + (e.clientX - g.x) + g.m.gap) / unit);
-          this.colSpan = sanitizeSpan(clamp(span, 1, Math.min(g.m.count, MAX_COL_SPAN)));
-        }
-        this.applyHeightMode();
-        e.preventDefault();
-      });
-      const end = (e) => {
-        if (!g || (e && e.pointerId !== g.id)) return;
-        g = null;
-        this.root.classList.remove('resizing');
-        this.app.onChange();
-      };
-      grip.addEventListener('pointerup', end);
-      grip.addEventListener('pointercancel', end);
-      grip.addEventListener('dblclick', (e) => { e.preventDefault(); this.resetSize(); });
-    }
     setFullscreen(on) {
       this.fullscreen = on;
       this.root.classList.toggle('fs', on);
@@ -3333,14 +3518,9 @@ body.cfg-hidden .tabActions { display: none; }
           'Créer une copie avec les mêmes courbes, couleurs, échelles et fenêtre de temps, juste après celui-ci');
         mk('Échelles automatiques', () => this.resetAxes(), null,
           'Remettre toutes les échelles de ce graphique en cadrage automatique (annule les réglages manuels 🔒)');
-        const next = HEIGHT_MODES[(HEIGHT_MODES.indexOf(this.heightMode) + 1) % HEIGHT_MODES.length];
-        mk('Taille : ' + this.heightMode + ' → ' + next +
-           (next === 'XL' ? ' (pleine largeur)' : ''), () => this.cycleHeight(), null,
-          'Hauteur du graphique : M (normale), L (grande), XL (grande et pleine largeur de la grille)');
-        if (this.customH != null || this.colSpan != null) {
-          mk('Taille automatique', () => this.resetSize(), null,
-            'Annuler le dimensionnement fait à la poignée (coin bas-droit) et revenir au préréglage M/L/XL');
-        }
+        mk('Taille de départ', () => this.resetSize(), null,
+          'Annuler le dimensionnement fait à la poignée ◢ et revenir à la taille de départ ' +
+          'd’un graphique (une demi-largeur)');
         mk(this.fullscreen ? 'Quitter le plein écran' : 'Plein écran', () =>
           this.setFullscreen(!this.fullscreen), null,
           'Afficher ce graphique seul sur tout l’écran (sortie par Échap)');
@@ -4265,9 +4445,7 @@ body.cfg-hidden .tabActions { display: none; }
       return {
         title: this.title,
         windowS: Math.round(this.windowS * 10) / 10,
-        heightMode: this.heightMode !== 'M' ? this.heightMode : undefined,
-        customH: this.customH || undefined,
-        colSpan: this.colSpan || undefined,
+        x: this.x, y: this.y, w: this.w, h: this.h,
         series: this.series.map((s) => ({
           addr: s.addr,
           name: s.name || undefined,
@@ -4673,6 +4851,10 @@ body.cfg-hidden .tabActions { display: none; }
       chart: payload.chart,
       table: payload.table,
       title: payload.title,
+      // Taille de la tuile : elle voyage avec elle, pour que le rectangle
+      // d'atterrissage montre la vraie place prise, ici comme dans une autre
+      // fenêtre.
+      w: payload.w, h: payload.h,
     });
   }
 
@@ -4700,13 +4882,21 @@ body.cfg-hidden .tabActions { display: none; }
    */
   function startDrag(e, payload, onMoved) {
     const dragId = 'd' + Math.random().toString(36).slice(2, 10);
+    // Où la tuile a-t-elle été saisie ? Sans ce décalage, elle sauterait sous
+    // le curseur au lieu de suivre la main.
+    const carte = e.target.closest && e.target.closest('.chart-card, .table-card');
+    const r = carte && carte.getBoundingClientRect();
+    // Un dragstart synthétique (test) n'a pas de coordonnées : sans garde, le
+    // décalage vaudrait NaN et le point de chute partirait à l'infini.
+    const off = (r && isFinite(e.clientX) && isFinite(e.clientY))
+      ? { x: e.clientX - r.left, y: e.clientY - r.top } : { x: 0, y: 0 };
     const text = envelope(payload, dragId);
     try {
       e.dataTransfer.setData(MIME, text);
       e.dataTransfer.setData('text/plain', text);   // repli inter-fenêtres
       e.dataTransfer.effectAllowed = 'copyMove';
     } catch (err) { return; }
-    dragging = { dragId, onMoved, payload };
+    dragging = { dragId, onMoved, payload, off };
     // L'attente de l'accusé est armée dès maintenant : entre deux fenêtres,
     // la cible traite le dépôt AVANT que « dragend » ne survienne ici.
     const timer = setTimeout(() => pending.delete(dragId), ACK_MS);
@@ -4735,24 +4925,37 @@ body.cfg-hidden .tabActions { display: none; }
   // -------------------------------------------------------------- réception
   function clearHighlight() {
     document.querySelectorAll('.tab.dnd-over').forEach((el) => el.classList.remove('dnd-over'));
-    document.querySelectorAll('.chart-card.drop-before, .chart-card.drop-after, ' +
-                              '.table-card.drop-before, .table-card.drop-after')
-      .forEach((el) => el.classList.remove('drop-before', 'drop-after'));
+    if (DW.mosaic) DW.mosaic.fantomeOff();
     document.body.classList.remove('dnd-over-pane');
   }
 
   /**
-   * Point d'insertion visé : la carte survolée et le côté (avant / après).
-   * Permet de ranger les graphiques dans l'ordre voulu.
+   * Point de chute visé : la CELLULE de la mosaïque sous le curseur. C'est ce
+   * qui rend le placement libre — la tuile se pose là où on la lâche, elle ne
+   * s'insère plus « avant » ou « après » une autre.
+   *
+   * Le décalage saisi au départ (où l'on a pris la tuile) est retranché : on
+   * pose le coin haut-gauche de la tuile, pas le curseur.
    */
   function placeAt(e) {
-    // Le tableau numérique vit dans la même grille que les graphiques : il est
-    // un point d'insertion comme eux, sans quoi rien ne pourrait se ranger à
-    // sa gauche.
-    const card = e.target.closest && e.target.closest('.chart-card, .table-card');
-    if (!card) return null;
-    const r = card.getBoundingClientRect();
-    return { anchorEl: card, after: (e.clientX - r.left) > r.width / 2 };
+    const grid = e.target.closest && e.target.closest('.charts-grid');
+    if (!grid || !DW.mosaic || !DW.mosaic.actif()) return null;
+    const off = (dragging && dragging.off) || { x: 0, y: 0 };
+    const cell = DW.mosaic.cellule(grid, e.clientX - off.x, e.clientY - off.y, 'proche');
+    const card = e.target.closest('.chart-card, .table-card');
+    return { grid, cell, overEl: card || null };
+  }
+
+  /**
+   * Taille de la tuile en cours de déplacement. Venue d'une AUTRE fenêtre, la
+   * charge utile n'est pas lisible pendant le survol (le navigateur ne la
+   * livre qu'au dépôt) : on montre alors la taille de départ de cette nature
+   * de tuile, ce qui reste honnête sur la place qu'elle prendra.
+   */
+  function tailleTuile() {
+    const p = dragging && dragging.payload;
+    const d = DW.mosaic.defaut(p && p.kind === 'table' ? 'table' : 'chart');
+    return { w: (p && p.w) || d.w, h: (p && p.h) || d.h };
   }
 
   function hasWidget(dt) {
@@ -4769,8 +4972,14 @@ body.cfg-hidden .tabActions { display: none; }
     const tabEl = e.target.closest && e.target.closest('.tab');
     if (tabEl) { tabEl.classList.add('dnd-over'); return; }
     const place = placeAt(e);
-    if (place) place.anchorEl.classList.add(place.after ? 'drop-after' : 'drop-before');
-    else document.body.classList.add('dnd-over-pane');
+    if (place) {
+      // Rectangle d'atterrissage : la place EXACTE que prendra la tuile.
+      const t = tailleTuile();
+      DW.mosaic.fantome(place.grid,
+        { x: Math.min(place.cell.x, DW.mosaic.COLS - t.w), y: place.cell.y, w: t.w, h: t.h });
+    } else {
+      document.body.classList.add('dnd-over-pane');
+    }
   }
 
   function onDrop(e) {
@@ -6527,11 +6736,13 @@ body.cfg-hidden .tabActions { display: none; }
     onChange,
     toast,
     removeChart(chart) {
+      let hote = null;
       for (const tab of state.tabs) {
         const i = tab.charts.indexOf(chart);
-        if (i >= 0) { tab.charts.splice(i, 1); break; }
+        if (i >= 0) { tab.charts.splice(i, 1); hote = tab; break; }
       }
       chart.destroy();
+      if (hote) DW.mosaic.agencer(hote.chartsGridEl, tilesOf(hote));
       refreshTargets();
       onChange();
     },
@@ -6541,7 +6752,50 @@ body.cfg-hidden .tabActions { display: none; }
     otherTabs: () => state.tabs.filter((t) => t !== state.active),
     moveChartToTab,
     duplicateChart,
+    relayout,
+    /** Toutes les tuiles de l'onglet auquel appartient cette carte. */
+    tilesOfCard(el) {
+      const tab = state.tabs.find((t) => t.chartsGridEl === el.parentElement) || state.active;
+      return tilesOf(tab);
+    },
   };
+
+  // ---------- Mosaïque : les tuiles d'un onglet ------------------------
+  /**
+   * Tableaux et graphiques sont la MÊME chose pour la mise en page : des
+   * tuiles rectangulaires. C'est ce qui permet de les mélanger librement —
+   * un graphique à gauche, un tableau à droite, un autre graphique dessous.
+   */
+  function tilesOf(tab) {
+    return tab ? [...tab.tables, ...tab.charts] : [];
+  }
+
+  /**
+   * Réagence la mosaïque de l'onglet actif (ou de celui qui contient `el`).
+   * `tenue` est la tuile que l'utilisateur manipule : elle ne bouge pas.
+   */
+  function relayout(el, tenue) {
+    const tab = (el && state.tabs.find((t) => t.chartsGridEl === el.parentElement)) || state.active;
+    if (!tab) return;
+    DW.mosaic.agencer(tab.chartsGridEl, tilesOf(tab), tenue || null);
+  }
+
+  /**
+   * Pose une tuile neuve. Sans emplacement demandé, elle va à la première
+   * place libre ; avec un emplacement (copie posée sous son original, tuile
+   * lâchée à un endroit précis), elle le GARDE et ce sont les voisines qui
+   * s'écartent — sinon la copie irait se ranger en fin de mosaïque, loin de
+   * l'endroit où on la cherche du regard.
+   */
+  function placerNouvelle(tab, tuile) {
+    const voulu = tuile.x != null && tuile.y != null;
+    if (!voulu) {
+      const autres = tilesOf(tab).filter((t) => t !== tuile);
+      const p = DW.mosaic.placeLibre(autres, tuile.w, tuile.h);
+      tuile.x = p.x; tuile.y = p.y;
+    }
+    DW.mosaic.agencer(tab.chartsGridEl, tilesOf(tab), voulu ? tuile : null);
+  }
 
   // ---------- Onglets --------------------------------------------------
   function createTab(name, data, logOpts) {
@@ -6679,8 +6933,6 @@ body.cfg-hidden .tabActions { display: none; }
   // graphique, tableau, graphique, et donner à chacun sa largeur et sa
   // hauteur. Un tableau regroupe ce qui se lit ensemble ; deux tableaux
   // séparent deux sujets, ce qu'une seule liste ne sait pas faire.
-  const TABLE_MIN_H = 90;
-  const TABLE_MAX_H = 1400;
 
   /** Crée un tableau dans l'onglet et l'ajoute à la grille. */
   function createTable(tab, opts) {
@@ -6691,8 +6943,9 @@ body.cfg-hidden .tabActions { display: none; }
     card.innerHTML =
       '<h3>' +
         '<span class="drag-handle" draggable="true" ' +
-          'title="Glisser ce tableau (avec ses variables) vers un onglet, une autre ' +
-          'fenêtre, ou sur une autre carte pour le ranger dans la grille">⠿</span>' +
+          'title="Déplacer ce tableau : le glisser où l’on veut dans la page (il se pose ' +
+          'à l’emplacement montré et écarte ce qui gêne), sur un onglet, ou dans une autre ' +
+          'fenêtre du navigateur">⠿</span>' +
         '<input class="table-title" maxlength="32" aria-label="Nom du tableau" ' +
           'title="Nom du tableau — cliquez pour le modifier ; il sert aussi de ' +
           'destination d’ajout dans la barre du haut">' +
@@ -6705,11 +6958,11 @@ body.cfg-hidden .tabActions { display: none; }
           'vers un autre onglet ou une nouvelle fenêtre, fermer">⋮</button>' +
       '</h3>' +
       '<div class="trows"></div>' +
-      '<span class="resize-grip table-grip" role="separator" ' +
+      '<span class="resize-grip" role="separator" ' +
         'aria-label="Redimensionner le tableau" ' +
-        'title="Glisser pour redimensionner le tableau : ↕ hauteur (défilement interne), ' +
-        '↔ largeur en nombre de colonnes de la grille — double-clic pour revenir à la ' +
-        'taille automatique"></span>';
+        'title="Glisser pour redimensionner librement le tableau : ↔ largeur et ↕ hauteur, ' +
+        'par cellules de la mosaïque ; les tuiles voisines s’écartent. Double-clic pour ' +
+        'revenir à la taille de départ."></span>';
 
     const tbl = {
       id: 'tb' + tab.tableSeq,
@@ -6717,7 +6970,10 @@ body.cfg-hidden .tabActions { display: none; }
       name: opts.name || (tab.tables.length ? 'Tableau ' + (tab.tables.length + 1)
                                             : 'Valeurs numériques'),
       entries: [],
-      h: opts.h, cols: opts.cols,
+      // Tuile de la mosaïque (cf. mosaic.js) : colonne, rangée, largeur, hauteur.
+      x: opts.x, y: opts.y,
+      w: opts.w || DW.mosaic.defaut('table').w,
+      h: opts.h || DW.mosaic.defaut('table').h,
       cardEl: card,
       rowsEl: card.querySelector('.trows'),
       countEl: card.querySelector('.tcount'),
@@ -6733,7 +6989,8 @@ body.cfg-hidden .tabActions { display: none; }
     card.querySelector('.drag-handle').addEventListener('dragstart', (e) => {
       if (!DW.dnd || !tbl.entries.length) { e.preventDefault(); return; }
       DW.dnd.startDrag(e, { kind: 'table', tabId: tab.id, tableId: tbl.id,
-                            title: tbl.name, table: serializeTable(tbl) }, () => {
+                            title: tbl.name, table: serializeTable(tbl),
+                            w: tbl.w, h: tbl.h }, () => {
         for (const entry of [...tbl.entries]) removeFromTable(tbl, entry.addr);
       });
     });
@@ -6747,7 +7004,7 @@ body.cfg-hidden .tabActions { display: none; }
     bindCible(card, tbl);
     bindTableResize(tbl);
     bindTableReorder(tbl);
-    applyTableSize(tbl);
+    placerNouvelle(tab, tbl);
     renderTable(tbl);
     refreshTargets();
     return tbl;
@@ -6761,13 +7018,12 @@ body.cfg-hidden .tabActions { display: none; }
       mk('Vider le tableau', () => {
         for (const e of [...tbl.entries]) removeFromTable(tbl, e.addr);
       }, null, 'Retirer toutes les variables sans supprimer le tableau');
-      if (tbl.h != null || tbl.cols != null) {
-        mk('Taille automatique', () => {
-          tbl.h = undefined; tbl.cols = undefined;
-          applyTableSize(tbl);
-          onChange();
-        }, null, 'Annuler le dimensionnement fait à la poignée');
-      }
+      mk('Taille de départ', () => {
+        const d = DW.mosaic.defaut('table');
+        tbl.w = d.w; tbl.h = d.h;
+        relayout(tbl.cardEl);
+        onChange();
+      }, null, 'Annuler le dimensionnement fait à la poignée ◢ et reprendre toute la largeur');
       mk('Dupliquer ce tableau', () => duplicateTable(tbl), null,
         'Créer une copie avec les mêmes variables, juste après celui-ci');
       // Déplacements : indispensables au tact, où le glisser-déposer HTML5
@@ -6794,6 +7050,9 @@ body.cfg-hidden .tabActions { display: none; }
     tbl.cardEl.remove();
     const i = tab.tables.indexOf(tbl);
     if (i >= 0) tab.tables.splice(i, 1);
+    // La place libérée est reprise : la gravité de la mosaïque remonte ce qui
+    // était dessous, plutôt que de laisser un trou.
+    DW.mosaic.agencer(tab.chartsGridEl, tilesOf(tab));
     refreshTargets();
     updateEmptyState();
     onChange();
@@ -6813,15 +7072,16 @@ body.cfg-hidden .tabActions { display: none; }
     onChange();
   }
 
-  /** Duplique un tableau (mêmes variables) juste après lui. */
+  /** Duplique un tableau (mêmes variables, même taille), posé juste dessous. */
   function duplicateTable(tbl) {
     const copie = serializeTable(tbl);
-    const neuf = createTable(tbl.tab, { name: tbl.name + ' (copie)', h: tbl.h, cols: tbl.cols });
+    const neuf = createTable(tbl.tab, { name: tbl.name + ' (copie)', w: tbl.w, h: tbl.h,
+                                        x: tbl.x, y: tbl.y + tbl.h });
     for (const e of copie) {
       const p = DW.parseAddr(e.addr);
       if (p.ok) addToTable(neuf, p.addr, e.periodMs, e.name);
     }
-    tbl.cardEl.after(neuf.cardEl);
+    relayout();
     setCible(neuf);
     onChange();
     toast('« ' + neuf.name + ' » créé.');
@@ -7058,79 +7318,12 @@ body.cfg-hidden .tabActions { display: none; }
     updateEmptyState();
   }
 
-  /** Applique la taille libre d'un tableau (hauteur et largeur) ou l'annule. */
-  function applyTableSize(tbl) {
-    const card = tbl.cardEl;
-    if (!card) return;
-    if (tbl.h) {
-      card.classList.add('has-th');
-      card.style.setProperty('--table-h', tbl.h + 'px');
-    } else {
-      card.classList.remove('has-th');
-      card.style.removeProperty('--table-h');
-    }
-    // Sans largeur choisie, le tableau prend toute la grille — la disposition
-    // d'origine, et celle des configurations enregistrées avant cette version.
-    // Même mécanisme que les graphiques : la classe laisse la feuille de style
-    // décider (sur mobile, la grille reste à une colonne).
-    if (tbl.cols) {
-      card.classList.add('has-span');
-      card.style.setProperty('--col-span', tbl.cols);
-    } else {
-      card.classList.remove('has-span');
-      card.style.removeProperty('--col-span');
-    }
-  }
-
+  /** Poignée ◢ d'un tableau : exactement la même que celle d'un graphique. */
   function bindTableResize(tbl) {
-    const tab = tbl.tab;
-    const grip = tbl.cardEl.querySelector('.table-grip');
-    const rows = tbl.rowsEl;
-    let g = null;
-    grip.addEventListener('pointerdown', (e) => {
-      if (e.button > 0) return;
-      const m = DW.gridMetrics(tab.chartsGridEl);
-      g = {
-        id: e.pointerId, y: e.clientY, x: e.clientX,
-        h: rows.getBoundingClientRect().height,
-        w: tbl.cardEl.getBoundingClientRect().width,
-        cols: tbl.cols || (m ? m.count : 1),
-        m,
-      };
-      try { grip.setPointerCapture(e.pointerId); } catch (err) { /* capture facultative */ }
-      tbl.cardEl.classList.add('resizing');
-      e.preventDefault();
-    });
-    grip.addEventListener('pointermove', (e) => {
-      if (!g || e.pointerId !== g.id) return;
-      const h = Math.round(g.h + (e.clientY - g.y));
-      tbl.h = Math.max(TABLE_MIN_H, Math.min(TABLE_MAX_H, h));
-      // ↔ : largeur en colonnes de la grille, comme pour un graphique. En
-      // deçà de toute la largeur, les graphiques viennent se ranger à côté.
-      if (g.m && g.m.count > 1) {
-        const unit = g.m.colW + g.m.gap;
-        const span = Math.round((g.w + (e.clientX - g.x) + g.m.gap) / unit);
-        tbl.cols = Math.max(1, Math.min(g.m.count, span));
-      }
-      applyTableSize(tbl);
-      e.preventDefault();
-    });
-    const end = (e) => {
-      if (!g || (e && e.pointerId !== g.id)) return;
-      g = null;
-      tbl.cardEl.classList.remove('resizing');
-      onChange();
-    };
-    grip.addEventListener('pointerup', end);
-    grip.addEventListener('pointercancel', end);
-    grip.addEventListener('dblclick', (e) => {
-      e.preventDefault();
-      if (tbl.h == null && tbl.cols == null) return;
-      tbl.h = undefined;
-      tbl.cols = undefined;
-      applyTableSize(tbl);
-      onChange();
-      toast('Taille automatique du tableau rétablie (pleine largeur).');
+    DW.mosaic.poigneeTaille(tbl, {
+      grid: () => tbl.tab.chartsGridEl,
+      tiles: () => tilesOf(tbl.tab),
+      onChange,
     });
   }
 
@@ -7202,14 +7395,13 @@ body.cfg-hidden .tabActions { display: none; }
     const chart = new DW.Chart(appApi, {
       title: opts.title || 'Graphique ' + tab.chartSeq,
       windowS: opts.windowS,
-      heightMode: opts.heightMode,
-      customH: opts.customH,
-      colSpan: opts.colSpan,
+      heightMode: opts.heightMode,          // dispositions v2 : converti en rangées
+      x: opts.x, y: opts.y, w: opts.w, h: opts.h,
     });
     tab.charts.push(chart);
     tab.chartsGridEl.appendChild(chart.root);
     bindCible(chart.root, chart);
-    chart.applyHeightMode();   // la largeur en colonnes dépend de la grille d'accueil
+    placerNouvelle(tab, chart);
     if (tab === state.active) refreshTargets();
     onChange();
     return chart;
@@ -7383,7 +7575,7 @@ body.cfg-hidden .tabActions { display: none; }
     ['all', 'Toutes'],
     ['PLC', 'PLC'],
     ['MB', 'Modbus'],
-    ['CAPI', 'Simulink'],
+    ['CAPI', 'Matlab'],
     ['NET', 'Réseau'],
   ];
   function matchFilter(family) {
@@ -7435,7 +7627,7 @@ body.cfg-hidden .tabActions { display: none; }
     const q = $('searchInput').value.trim().toLowerCase();
     box.innerHTML = '';
 
-    // Filtres par type de variable (PLC / Modbus / Simulink)
+    // Filtres par type de variable (PLC / Modbus / Matlab)
     const bar = document.createElement('div');
     bar.className = 'sug-filters';
     for (const [key, label] of FAM_FILTERS) {
@@ -7505,33 +7697,28 @@ body.cfg-hidden .tabActions { display: none; }
     return tbl.entries.map((e) => ({ addr: e.addr, periodMs: e.periodMs, name: e.name }));
   }
 
-  /** Rang d'une carte dans la grille : c'est lui qui fait l'alternance. */
-  function gridPos(tab, el) {
-    return [...tab.chartsGridEl.children].indexOf(el);
-  }
-
   /**
-   * Format v2 : PLUSIEURS tableaux, chacun avec son nom, sa taille et son rang
-   * dans la grille. Le format v1 (un seul tableau, champs « table », « tableH »,
-   * « tableCols », « tableAfter ») reste lu — voir applyConfigToActive.
+   * Format v3 : chaque tuile porte sa place et sa taille dans la mosaïque
+   * (`x`, `y`, `w`, `h`), en colonnes et en rangées — indépendantes de la
+   * largeur de l'écran, donc transposables d'un poste à l'autre. Les formats
+   * v1 et v2 (rang « pos » dans la grille, hauteur en pixels, largeur en
+   * colonnes « naturelles ») restent lus et convertis — voir applyConfigToActive.
    */
   function serializeConfig(tab) {
+    const tuile = (t) => ({ x: t.x, y: t.y, w: t.w, h: t.h });
     return {
-      version: 2,
-      tables: tab.tables.map((t) => ({
-        name: t.name, h: t.h || undefined, cols: t.cols || undefined,
-        pos: gridPos(tab, t.cardEl),
-        entries: serializeTable(t),
-      })),
-      charts: tab.charts.map((c) => Object.assign(c.serialize(),
-        { pos: gridPos(tab, c.root) })),
+      version: 3,
+      tables: tab.tables.map((t) => Object.assign({ name: t.name },
+        tuile(t), { entries: serializeTable(t) })),
+      charts: tab.charts.map((c) => c.serialize()),
     };
   }
 
   // ---------- Déplacement de widgets (onglets, fenêtres) ---------------
   /**
    * Crée un graphique depuis une configuration sérialisée, dans `tab`.
-   * `place` ({anchorEl, after}) permet de l'insérer à un rang précis.
+   * `place` ({cell:{x,y}}) permet de le poser à un endroit précis de la
+   * mosaïque — celui que l'utilisateur a visé en lâchant la tuile.
    */
   function addChartFromConfig(cfg, tab, place) {
     const target = tab || state.active;
@@ -7541,9 +7728,13 @@ body.cfg-hidden .tabActions { display: none; }
     }
     // On ne bascule pas d'onglet : en multi-écran, l'utilisateur range des
     // widgets sans quitter ce qu'il regarde (un message indique la cible).
+    const cell = place && place.cell;
     const chart = createChart({
       title: cfg.title, windowS: cfg.windowS, heightMode: cfg.heightMode,
-      customH: cfg.customH, colSpan: cfg.colSpan,
+      w: cfg.w, h: cfg.h,
+      // Sans point de chute désigné, la tuile va à la première place libre :
+      // c'est placerNouvelle qui décide (x/y laissés vides).
+      x: cell ? cell.x : undefined, y: cell ? cell.y : undefined,
     }, target);
     if (chart) {
       for (const s of cfg.series || []) {
@@ -7556,32 +7747,20 @@ body.cfg-hidden .tabActions { display: none; }
           });
         }
       }
-      if (place && place.anchorEl) placeChart(chart, target, place);
     }
     return chart;
   }
 
-  /** Range un graphique avant / après une carte de la même grille. */
-  function placeChart(chart, tab, place) {
-    const anchor = place.anchorEl;
-    if (!anchor || anchor === chart.root || !tab.chartsGridEl.contains(anchor)) return;
-    const i = tab.charts.indexOf(chart);
-    if (i >= 0) tab.charts.splice(i, 1);
-    const at = tab.charts.findIndex((c) => c.root === anchor);
-    const insert = at < 0 ? tab.charts.length : at + (place.after ? 1 : 0);
-    tab.charts.splice(insert, 0, chart);
-    if (place.after) anchor.after(chart.root);
-    else anchor.before(chart.root);
-    refreshTargets();
-    onChange();
-  }
-
-  /** Dépose la carte d'un tableau avant ou après une autre carte de la grille. */
-  function placeTable(tbl, place) {
-    const anchor = place.anchorEl;
-    const card = tbl.cardEl;
-    if (!anchor || anchor === card || !tbl.tab.chartsGridEl.contains(anchor)) return;
-    if (place.after) anchor.after(card); else anchor.before(card);
+  /**
+   * Pose une tuile à la cellule visée. La tuile tenue ne bouge pas : ce sont
+   * les voisines qui s'écartent puis se tassent. C'est ce qui fait le
+   * placement libre — poser un graphique à gauche d'un tableau, par exemple.
+   */
+  function placeTile(tuile, tab, place) {
+    if (!place || !place.cell) return;
+    tuile.x = place.cell.x;
+    tuile.y = place.cell.y;
+    DW.mosaic.agencer(tab.chartsGridEl, tilesOf(tab), tuile);
     onChange();
   }
 
@@ -7590,7 +7769,9 @@ body.cfg-hidden .tabActions { display: none; }
     const tab = state.tabs.find((t) => t.charts.includes(chart)) || state.active;
     const cfg = chart.serialize();
     cfg.title = cfg.title + ' (copie)';
-    const copy = addChartFromConfig(cfg, tab, { anchorEl: chart.root, after: true });
+    // La copie se pose juste sous l'original, à la même largeur : c'est là
+    // qu'on la cherche du regard.
+    const copy = addChartFromConfig(cfg, tab, { cell: { x: chart.x, y: chart.y + chart.h } });
     if (copy) toast('« ' + cfg.title +' » créé.');
     return copy;
   }
@@ -7618,14 +7799,14 @@ body.cfg-hidden .tabActions { display: none; }
     // pas un déplacement de ses variables.
     if (o.kind === 'table' && sameWindow && place && o.tabId === target.id) {
       const tbl = target.tables.find((t) => t.id === o.tableId);
-      if (tbl) { placeTable(tbl, place); return 'reordered'; }
+      if (tbl) { placeTile(tbl, target, place); return 'reordered'; }
     }
     if (o.kind === 'chart' && o.chart) {
       // Graphique déjà présent dans cet onglet : simple réorganisation
       if (sameWindow && o.chartId) {
         const existing = target.charts.find((c) => c.id === o.chartId);
         if (existing) {
-          if (place) placeChart(existing, target, place);
+          if (place) placeTile(existing, target, place);
           return 'reordered';
         }
       }
@@ -7633,19 +7814,21 @@ body.cfg-hidden .tabActions { display: none; }
     } else if (o.kind === 'table' && o.table) {
       // Un tableau déposé ailleurs arrive comme un NOUVEAU tableau : c'est le
       // regroupement qui fait sens, pas la fusion avec un tableau existant.
-      const tbl = createTable(target, { name: o.title });
+      const cell = place && place.cell;
+      const tbl = createTable(target, { name: o.title, w: o.w, h: o.h,
+                                        x: cell ? cell.x : undefined,
+                                        y: cell ? cell.y : undefined });
       let n = 0;
       for (const e of o.table) {
         const p = DW.parseAddr(e.addr);
         if (p.ok && addToTable(tbl, p.addr, e.periodMs, e.name).ok) n++;
       }
       if (!n) { removeTable(tbl); toast('Ces variables sont déjà présentes.', 'err'); return false; }
-      if (place) placeTable(tbl, place);
     } else if (o.kind === 'vars' && o.table) {
       // Variable seule : elle va dans le tableau visé s'il y en a un sous le
       // curseur, sinon dans le premier de l'onglet.
-      const vise = place && place.anchorEl &&
-        target.tables.find((t) => t.cardEl === place.anchorEl);
+      const vise = place && place.overEl &&
+        target.tables.find((t) => t.cardEl === place.overEl);
       const tbl = vise || defaultTable(target);
       let n = 0;
       for (const e of o.table) {
@@ -7680,10 +7863,11 @@ body.cfg-hidden .tabActions { display: none; }
     clearTab(tab);
     data = data || {};
 
-    // Format v1 : un seul tableau, décrit par « table » et ses trois réglages.
-    // Il est traduit en v2 plutôt que traité à part : une seule route dans le
-    // code, et les dispositions enregistrées avant cette version s'ouvrent à
-    // l'identique.
+    // Formats v1 et v2 : les cartes n'avaient qu'un RANG dans la grille
+    // (« pos »), une hauteur en pixels et une largeur en « colonnes
+    // naturelles » dont le nombre dépendait de l'écran. Ils sont convertis en
+    // tuiles de la mosaïque plutôt que traités à part : une seule route dans
+    // le code, et les dispositions enregistrées avant s'ouvrent telles quelles.
     let tables;
     if (Array.isArray(data.tables)) {
       tables = data.tables;
@@ -7697,15 +7881,13 @@ body.cfg-hidden .tabActions { display: none; }
         entries: anciennes,
       }] : [];
     }
+    const ancien = !(data.version >= 3);
 
-    const cartes = [];        // {pos, el} — l'ordre final dans la grille
+    const cartes = [];        // {pos, tuile} — pour convertir l'ancien rang
     for (const t of tables) {
       if (!t) continue;
-      const tbl = createTable(tab, {
-        name: t.name,
-        h: (isFinite(t.h) && t.h > 0) ? t.h : undefined,
-        cols: (isFinite(t.cols) && t.cols > 0) ? Math.min(8, Math.round(t.cols)) : undefined,
-      });
+      const g = ancien ? migrerTuile(t, 'table') : t;
+      const tbl = createTable(tab, { name: t.name, x: g.x, y: g.y, w: g.w, h: g.h });
       for (const entry of t.entries || []) {
         // Rétro-compatibilité : entrée sous forme de chaîne (format initial)
         const addr = typeof entry === 'string' ? entry : entry.addr;
@@ -7714,14 +7896,14 @@ body.cfg-hidden .tabActions { display: none; }
         const p = DW.parseAddr(addr);
         if (p.ok) addToTable(tbl, p.addr, periodMs, name);
       }
-      applyTableSize(tbl);
-      cartes.push({ pos: isFinite(t.pos) ? t.pos : cartes.length, el: tbl.cardEl });
+      cartes.push({ pos: isFinite(t.pos) ? t.pos : cartes.length, tuile: tbl });
     }
 
     for (const c of data.charts || []) {
+      const g = ancien ? migrerTuile(c, 'chart') : c;
       const chart = createChart({
         title: c.title, windowS: c.windowS, heightMode: c.heightMode,
-        customH: c.customH, colSpan: c.colSpan,
+        x: g.x, y: g.y, w: g.w, h: g.h,
       });
       if (!chart) break;
       for (const s of c.series || []) {
@@ -7734,17 +7916,51 @@ body.cfg-hidden .tabActions { display: none; }
           });
         }
       }
-      cartes.push({ pos: isFinite(c.pos) ? c.pos : cartes.length, el: chart.root });
+      cartes.push({ pos: isFinite(c.pos) ? c.pos : cartes.length, tuile: chart });
     }
 
-    // Rangement final : c'est lui qui restitue l'alternance voulue —
-    // tableau, graphique, tableau, graphique.
-    cartes.sort((a, b) => a.pos - b.pos);
-    for (const c of cartes) tab.chartsGridEl.appendChild(c.el);
+    // Anciennes dispositions : le rang « pos » était un ordre de flux, la
+    // grille plaçant les cartes de gauche à droite puis à la ligne. On rejoue
+    // exactement ce flux — chaque tuile à la première place libre, dans
+    // l'ordre — plutôt que de tout empiler : deux demi-largeurs qui étaient
+    // côte à côte le restent.
+    if (ancien) {
+      cartes.sort((a, b) => a.pos - b.pos);
+      const posees = [];
+      for (const c of cartes) {
+        const p = DW.mosaic.placeLibre(posees, c.tuile.w, c.tuile.h);
+        c.tuile.x = p.x; c.tuile.y = p.y;
+        posees.push(c.tuile);
+      }
+    }
+    DW.mosaic.agencer(tab.chartsGridEl, tilesOf(tab));
 
     refreshTargets();
     updateEmptyState();
     onChange();
+  }
+
+  /**
+   * Traduit une carte d'une disposition v1/v2 en tuile de la mosaïque.
+   * L'ancienne largeur était un nombre de colonnes « naturelles » (~4 sur un
+   * écran de bureau) : elle vaut trois colonnes de douze. L'ancienne hauteur
+   * était en pixels sur le CONTENU ; on lui rajoute l'en-tête et la légende
+   * avant de la convertir en rangées.
+   */
+  function migrerTuile(c, kind) {
+    const d = DW.mosaic.defaut(kind);
+    const cols = Number(c.cols || c.colSpan);
+    const px = Number(kind === 'table' ? c.h : c.customH);
+    const chrome = kind === 'table' ? 44 : 104;
+    const g = { x: 0, y: 0, w: d.w, h: d.h };
+    if (isFinite(cols) && cols > 0) g.w = Math.max(2, Math.min(12, Math.round(cols * 3)));
+    if (isFinite(px) && px > 0) {
+      g.h = Math.max(DW.mosaic.MIN_H,
+                     Math.round((px + chrome + DW.mosaic.GAP) / (DW.mosaic.ROW_H + DW.mosaic.GAP)));
+    } else if (kind === 'chart' && c.heightMode) {
+      g.h = { M: 9, L: 12, XL: 15 }[c.heightMode] || d.h;
+    }
+    return g;
   }
 
   // ---------- Journalisation des données ------------------------------
@@ -8004,12 +8220,19 @@ body.cfg-hidden .tabActions { display: none; }
   }
 
   // ---------- Disposition de démonstration ----------------------------
+  // Elle est en format v3 : le tableau à gauche, les deux graphiques empilés à
+  // sa droite. C'est la disposition qu'on ne pouvait pas obtenir avant, et
+  // c'est celle qu'on veut montrer d'entrée.
   const DEMO = {
-    version: 1,
-    table: ['I1.2.3.4', 'Q14.15', 'S0.4', 'MB414', 'Elec.tension_bus', 'Supervision.temps_cycle'],
+    version: 3,
+    tables: [{
+      name: 'Valeurs numériques', x: 0, y: 0, w: 5, h: 18,
+      entries: ['I1.2.3.4', 'Q14.15', 'S0.4', 'MB414', 'Elec.tension_bus',
+                'Supervision.temps_cycle'],
+    }],
     charts: [
       {
-        title: 'Régulation vitesse', windowS: 60,
+        title: 'Régulation vitesse', windowS: 60, x: 5, y: 0, w: 7, h: 9,
         series: [
           { addr: 'Regulation.mesure.vitesse' },
           { addr: 'Regulation.consigne.vitesse' },
@@ -8017,7 +8240,7 @@ body.cfg-hidden .tabActions { display: none; }
         ],
       },
       {
-        title: 'Thermique & pression', windowS: 120,
+        title: 'Thermique & pression', windowS: 120, x: 5, y: 9, w: 7, h: 9,
         series: [
           { addr: 'Thermique.temperature_eau' },
           { addr: 'Hydraulique.pression_huile' },
@@ -8604,19 +8827,25 @@ body.cfg-hidden .tabActions { display: none; }
     });
 
     $('addBtn').addEventListener('click', () => addVariable());
-    $('targetSel').addEventListener('change', majCible);
-    $('addTableBtn').addEventListener('click', () => {
-      const tbl = createTable(state.active, {});
-      setCible(tbl);
-      onChange();
-      toast('Tableau « ' + tbl.name + ' » créé — il est la destination d’ajout.');
-    });
-    $('addChartBtn').addEventListener('click', () => {
-      const c = createChart();
-      if (c) {
-        setCible(c);
-        toast('« ' + c.title + ' » ajouté — c’est la cible d’ajout actuelle.');
+    // Créer une tuile se fait DANS la liste des destinations : « → Nouveau
+    // tableau » et « → Nouveau graphique » la créent aussitôt et la visent.
+    // Deux boutons de plus dans une barre pour la même chose n'apportaient
+    // rien, et éloignaient l'action de l'endroit où l'on choisit sa cible.
+    $('targetSel').addEventListener('change', () => {
+      const v = $('targetSel').value;
+      if (v === 'newtable') {
+        const tbl = createTable(state.active, {});
+        setCible(tbl);
+        onChange();
+        toast('Tableau « ' + tbl.name + ' » créé — il est la destination d’ajout.');
+        return;
       }
+      if (v === 'new') {
+        const c = createChart();
+        if (c) { setCible(c); toast('« ' + c.title + ' » créé — c’est la destination d’ajout.'); }
+        return;
+      }
+      majCible();
     });
     $('layoutsBtn').addEventListener('click', openLayoutsModal);
     $('logBtn').addEventListener('click', openLogModal);
@@ -8659,10 +8888,10 @@ body.cfg-hidden .tabActions { display: none; }
           '(survol à la souris).</p>' +
           S('Ajouter des variables') +
           L([
-            ['Bouton ＋', 'Sur le tableau et sur chaque graphique : ouvre le catalogue complet dans une grande fenêtre — filtres par famille, recherche, et <b>sélection multiple</b>. La destination est celle du bouton, il n’y a rien à choisir.'],
-            ['Barre de recherche', 'Le chemin rapide, au clavier. Adresse : <b>I1.2.3.4</b>, <b>Q14.15</b>, <b>M1.14</b>, <b>S0.4</b> (bits), <b>MB414</b> (mot de bus), <b>Modele.signal</b> (C API). Les suggestions se filtrent à la frappe ; les boutons Toutes / PLC / Modbus / Simulink / Réseau restreignent la liste.'],
-            ['Étiquettes', 'Elles disent d’où vient la valeur : <b>PLC</b> (entrées, sorties, bits mémoire, système), <b>MB</b> (registre de bus par le canal interne), <b>Simulink</b> (signal de modèle, C API), <b>ext.…</b> (point lu à l’extérieur par le serveur de diagnostic : ext.MB, ext.61850, ext.OPCUA, ext.SNMP…). MB et ext.MB, ce n’est pas le même chemin ni la même latence.'],
-            ['Destination', 'Tableau numérique, un graphique existant, ou un nouveau graphique. <b>Un clic sur une carte</b> (tableau ou graphique, hors ses boutons) la désigne : elle prend un liseré et devient la destination, sans dérouler la liste.'],
+            ['Bouton ＋', 'Sur chaque tuile : ouvre le catalogue complet dans une grande fenêtre — filtres par famille, recherche, et <b>sélection multiple</b>. La destination est celle du bouton, il n’y a rien à choisir.'],
+            ['Barre de recherche', 'Le chemin rapide, au clavier. Adresse : <b>I1.2.3.4</b>, <b>Q14.15</b>, <b>M1.14</b>, <b>S0.4</b> (bits), <b>MB414</b> (mot de bus), <b>Modele.signal</b> (C API). Les suggestions se filtrent à la frappe ; les boutons Toutes / PLC / Modbus / Matlab / Réseau restreignent la liste.'],
+            ['Étiquettes', 'Elles disent d’où vient la valeur : <b>PLC</b> (entrées, sorties, bits mémoire, système), <b>MB</b> (registre de bus par le canal interne), <b>Matlab</b> (signal de modèle, C API), <b>ext.…</b> (point lu à l’extérieur par le serveur de diagnostic : ext.MB, ext.61850, ext.OPCUA, ext.SNMP…). MB et ext.MB, ce n’est pas le même chemin ni la même latence.'],
+            ['Destination', 'La liste des destinations porte chaque tableau et chaque graphique de l’onglet, plus <b>→ Nouveau tableau</b> et <b>→ Nouveau graphique</b> : les choisir crée la tuile aussitôt et la vise. <b>Un clic sur une tuile</b> (hors ses boutons) la désigne aussi : elle prend un liseré et devient la destination, sans dérouler la liste.'],
             ['Période', 'Rafraîchissement propre à la variable, 10 ms par défaut.'],
             ['Forcer une valeur', 'Suffixe <b>= valeur</b> dans la barre : <b>Q0.3 = 1</b>, <b>MB400 = 12500</b> impose la valeur côté serveur (diagnostic). La ligne du tableau est surlignée ; ⏻ relâche. Les points réseau (@lien.point) restent en lecture seule.'],
           ]) +
@@ -8682,15 +8911,16 @@ body.cfg-hidden .tabActions { display: none; }
           ]) +
           S('Organiser') +
           L([
-            ['Poignée ⠿', 'Glisser un graphique ou le tableau vers un onglet, une autre fenêtre, ou sur un autre graphique pour le ranger.'],
+            ['Poignée ⠿ — déplacer', 'Glisser une tuile <b>où l’on veut dans la page</b> : un rectangle montre l’emplacement où elle se posera, et les tuiles gênées s’écartent vers le bas. La même poignée l’emmène sur un <b>onglet</b> ou dans une <b>autre fenêtre</b> du navigateur.'],
             ['Ligne du tableau', 'Se glisse <b>dans le tableau</b> pour changer son rang (un repère montre où elle se posera), ou vers un autre onglet ou une autre fenêtre.'],
-            ['Plusieurs tableaux', '<b>+ Tableau</b> crée un tableau de plus dans l’onglet. Un tableau est une carte comme un graphique : on peut donc alterner <b>tableau, graphique, tableau, graphique</b>, en glissant leur poignée ⠿ sur une autre carte pour les ranger. Chaque tableau a son nom (cliquez-le), son bouton ＋ et son menu ⋮.'],
-            ['Poignée ◢ (coin bas-droit)', 'Redimensionner une carte à la souris : ↕ hauteur libre (<b>vers le bas pour agrandir</b>, vers le haut pour réduire, avec défilement interne), ↔ largeur en nombre de colonnes. Le réduire en largeur laisse la place à une autre carte <b>à côté</b>. Double-clic pour revenir à la taille automatique.'],
+            ['Mosaïque', 'L’espace de travail est une mosaïque de <b>douze colonnes</b> : chaque tuile — tableau ou graphique — occupe le rectangle qu’on lui donne, à l’endroit qu’on lui donne. Un graphique à gauche, un tableau à droite, un autre graphique dessous : tout est permis. Les tuiles <b>remontent</b> d’elles-mêmes quand la place se libère au-dessus, donc pas de trou involontaire. La disposition est en colonnes et en rangées, pas en pixels : elle se retrouve identique sur un autre écran.'],
+            ['Plusieurs tableaux', '<b>→ Nouveau tableau</b> dans la liste des destinations en crée un de plus. Un tableau est une tuile comme un graphique : même placement, même poignée. Chacun a son nom (cliquez-le), son bouton ＋ et son menu ⋮.'],
+            ['Poignée ◢ — redimensionner', 'Coin bas-droit : ↔ largeur et ↕ hauteur, librement, par cellules de la mosaïque. Le contenu suit la tuile (le tableau défile à l’intérieur, le graphique s’étire). Réduire une tuile en largeur laisse la place à une autre <b>à côté</b>. Double-clic : retour à la taille de départ.'],
             ['Renommer', 'Bouton ✎ sur une ligne du tableau, ou « Renommer la courbe… » dans le menu d’une pastille : un nom d’affichage remplace le libellé du catalogue (vide = valeur d’origine). Le nom appartient à la <b>variable</b> : il s’applique partout où elle figure — tous les tableaux, toutes les courbes, tous les onglets, et les autres fenêtres ouvertes.'],
-            ['Menu ⋮ d’un graphique', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
-            ['Menu ⋮ d’un tableau', 'Les mêmes gestes : ajouter des variables, vider, taille automatique, <b>dupliquer ce tableau</b>, <b>déplacer vers un onglet</b>, <b>ouvrir dans une nouvelle fenêtre</b>, fermer.'],
+            ['Menu ⋮ d’un graphique', 'Dupliquer, échelles automatiques, taille de départ, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
+            ['Menu ⋮ d’un tableau', 'Les mêmes gestes : ajouter des variables, vider, taille de départ, <b>dupliquer ce tableau</b>, <b>déplacer vers un onglet</b>, <b>ouvrir dans une nouvelle fenêtre</b>, fermer.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
-            ['Barre du haut', '<b>⏸ Figer</b> arrête d’un coup tous les graphiques de l’onglet actif. Le <b>journal de données</b> a rejoint le menu ☰, avec les autres fonctions qui ne dépendent pas de l’onglet.'],
+            ['Barre du haut', 'Elle ne porte que ce qui sert à chaque instant : les onglets, la saisie d’une variable avec sa destination, et <b>⏸ Figer</b>, qui arrête d’un coup tous les graphiques de l’onglet actif. <b>Journal de données</b> et <b>Configurations</b> sont dans le menu ☰, avec les autres fonctions qui ne dépendent pas de ce qui est affiché.'],
           ]) +
           S('Pages réseau (☰)') +
           L([
