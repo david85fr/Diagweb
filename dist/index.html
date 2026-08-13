@@ -281,9 +281,19 @@ button { font-family: var(--sans); }
   color: var(--muted); font-weight: 650;
 }
 .table-card h3 span { text-transform: none; letter-spacing: 0; color: var(--faint); font-weight: 500; margin-left: 6px; }
+/* Bouton « + » d'un tableau ou d'un graphique : ajoute des variables à CETTE
+   carte, sans passer par le sélecteur de destination de la barre du haut. */
+.card-add {
+  font-size: 17px; line-height: 1; font-weight: 600;
+  padding: 2px 8px; margin-left: 8px;
+}
+.table-card h3 .card-add { vertical-align: middle; }
 
 /* ---------- Tableau numérique ---------- */
-.table-card { margin-bottom: 12px; position: relative; }
+/* Le tableau est une carte de la grille des graphiques : sa largeur se règle
+   en colonnes (poignée ↔), ce qui laisse la place à un graphique à côté.
+   Sans réglage, il occupe toute la largeur — la disposition d'origine. */
+.table-card { position: relative; min-width: 0; grid-column: 1 / -1; }
 .trows { padding: 0 2px 2px; }
 /* Hauteur libre (poignée) : le tableau défile en interne au lieu de pousser
    les graphiques vers le bas. La poignée reste réservée aux écrans ≥ 700 px. */
@@ -729,6 +739,58 @@ body.dnd-over-pane #panes {
   margin-bottom: 10px;
 }
 .m-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---------- Sélecteur de variables (bouton « + ») ---------- */
+/* Grande fenêtre : on vient y VOIR le catalogue, pas deviner une adresse. */
+.modal.vpick { max-width: 900px; display: flex; flex-direction: column; max-height: 88vh; }
+.vp-bar { display: flex; gap: 8px; margin: 8px 0 6px; }
+.vp-q {
+  flex: 1; min-width: 0;
+  font: 15px var(--sans); color: var(--ink);
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 9px; padding: 9px 11px;
+}
+.vp-period {
+  font: 13px var(--sans); color: var(--ink);
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 9px; padding: 0 8px;
+}
+.vp-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.vp-list {
+  flex: 1; min-height: 200px; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: 10px;
+  padding: 4px; margin-bottom: 10px;
+}
+.vp-row {
+  display: grid; width: 100%;
+  grid-template-columns: 18px auto minmax(0, 1.1fr) minmax(0, 1.4fr) auto;
+  gap: 10px; align-items: center; text-align: left;
+  font: inherit; color: var(--ink);
+  background: none; border: 0; border-radius: 8px;
+  padding: 7px 8px; cursor: pointer;
+}
+.vp-row:hover { background: var(--panel-2); }
+.vp-check {
+  width: 15px; height: 15px; border-radius: 4px;
+  border: 1.5px solid var(--line); background: var(--panel-2);
+}
+.vp-row.on .vp-check {
+  background: var(--accent); border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--panel);
+}
+.vp-addr { font-family: var(--mono); font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vp-label, .vp-unit { color: var(--muted); font-size: 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Déjà présente à la destination : ajoutable quand même (le refus est dit),
+   mais signalée pour éviter le doublon involontaire. */
+.vp-row.dup .vp-addr { color: var(--muted); }
+.vp-count { flex: 1; align-self: center; font-size: 12px; color: var(--muted); }
+.btn.primary[disabled] { opacity: .45; cursor: default; }
+@media (max-width: 640px) {
+  .vp-row { grid-template-columns: 18px auto 1fr; }
+  .vp-label, .vp-unit { display: none; }
+}
 .acc-row { margin-top: 4px; }
 .acc-btn.on {
   color: #04201d;
@@ -859,6 +921,7 @@ body.dnd-over-pane #panes {
   .resize-grip { display: block; }
   .chart-card.has-custom-h .chart-body { height: var(--custom-h); }
   .chart-card.has-span { grid-column: span var(--col-span); }
+  .table-card.has-span { grid-column: span var(--col-span); }
 }
 
 /* Barre supérieure sur une seule ligne : uniquement quand tout tient */
@@ -914,7 +977,7 @@ body.cfg-hidden .tabActions { display: none; }
     </div>
 
     <div class="topIcons">
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">65edf01 · #76</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">4ad2d6d · #78</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
@@ -1086,6 +1149,39 @@ body.cfg-hidden .tabActions { display: none; }
     NET:  { label: 'Point réseau (lien)',   kind: 'float' },
   };
   DW.FAMILIES = FAMILIES;
+
+  /**
+   * Étiquette affichée d'une variable : d'où vient la valeur, en un coup d'œil.
+   *
+   * Ce que l'utilisateur a besoin de distinguer, ce n'est pas la lettre de
+   * l'adresse, c'est l'ORIGINE de la donnée :
+   *   PLC       entrées, sorties, bits mémoire et variables système (I/Q/M/S) ;
+   *   MB        registres de bus, par le canal interne du contrôleur ;
+   *   Simulink  signaux des modèles, via la C API ;
+   *   ext.…     point lu à l'EXTÉRIEUR par un client du serveur de diagnostic,
+   *             suffixé du protocole (ext.MB, ext.61850, ext.OPCUA…).
+   *
+   * La distinction MB / ext.MB est la plus importante des cinq : le même
+   * registre, vu par le contrôleur ou vu par un client Modbus, n'a ni le même
+   * chemin, ni la même latence, ni les mêmes causes de panne.
+   */
+  const BADGE_PLC = { I: true, Q: true, M: true, S: true };
+  DW.famBadge = function (meta) {
+    if (!meta) return '';
+    const f = meta.family;
+    if (BADGE_PLC[f]) return 'PLC';
+    if (f === 'MB') return 'MB';
+    if (f === 'CAPI') return 'Simulink';
+    if (f !== 'NET') return f || '';
+    // Point réseau : le protocole du lien fournit le suffixe.
+    let proto = meta.protocol;
+    if (!proto && DW.protocols && meta.addr) {
+      const m = DW.protocols.meta(meta.addr);
+      proto = m && m.protocol;
+    }
+    const desc = proto && DW.PROTO_INDEX ? DW.PROTO_INDEX.get(proto) : null;
+    return (desc && desc.badge) || 'ext.';
+  };
 
   // Identifiant d'un lien ou d'un point réseau (voir web/js/protocols.js)
   const NET_ID = '[A-Za-z][A-Za-z0-9_-]{0,23}';
@@ -1301,6 +1397,7 @@ body.cfg-hidden .tabActions { display: none; }
       label: 'Modbus TCP',
       transport: 'TCP/IP',
       state: 'live',
+      badge: 'ext.MB',
       help: 'Lecture cyclique de registres et de bits sur un équipement Modbus TCP. ' +
             'Les registres consécutifs sont regroupés en une seule requête.',
       linkFields: [
@@ -1320,6 +1417,7 @@ body.cfg-hidden .tabActions { display: none; }
       label: 'Modbus RTU (série)',
       transport: 'Liaison série',
       state: 'live',
+      badge: 'ext.MB',
       help: 'Même adressage que Modbus TCP, sur une liaison série RS-485/RS-232 ' +
             '(trame RTU avec contrôle CRC-16).',
       linkFields: [
@@ -1345,6 +1443,7 @@ body.cfg-hidden .tabActions { display: none; }
       label: 'IEC 60870-5-104',
       transport: 'TCP/IP',
       state: 'live',
+      badge: 'ext.104',
       help: 'Client (maître) télécontrôle : le serveur de diagnostic se connecte, ' +
             'lance une interrogation générale puis reçoit les données spontanées.',
       linkFields: [
@@ -1380,6 +1479,7 @@ body.cfg-hidden .tabActions { display: none; }
       label: 'IEC 61850',
       transport: 'Ethernet niveau 2 (GOOSE, SV) · ISO sur TCP (MMS)',
       state: 'live',
+      badge: 'ext.61850',
       help: 'Quatre mécanismes cohabitent dans la norme, tous implémentés. GOOSE et ' +
             'Sampled Values sont des trames Ethernet diffusées, écoutées en niveau 2. ' +
             'La lecture MMS et les rapports (BRCB, URCB) passent par la pile ISO sur ' +
@@ -1499,6 +1599,7 @@ body.cfg-hidden .tabActions { display: none; }
       label: 'Bus CAN (trames brutes)',
       transport: 'SocketCAN (Linux)',
       state: 'live',
+      badge: 'ext.CAN',
       help: 'Écoute strictement passive d’une interface CAN du contrôleur : un point ' +
             'est un champ de bits extrait d’un identifiant de trame donné. Le serveur ' +
             'n’émet jamais sur le bus dans ce mode.',
@@ -1520,6 +1621,7 @@ body.cfg-hidden .tabActions { display: none; }
       label: 'J1939 (CAN, PGN mono-trame)',
       transport: 'SocketCAN (Linux)',
       state: 'live',
+      badge: 'ext.J1939',
       help: 'Décodage J1939 au-dessus de CAN : l’identifiant 29 bits est découpé en ' +
             'priorité, PGN et adresse source ; un point est un SPN extrait d’un PGN. ' +
             'Les PGN de plus de 8 octets (DM1, par exemple) sont réassemblés par le ' +
@@ -1560,6 +1662,7 @@ body.cfg-hidden .tabActions { display: none; }
       label: 'CANopen',
       transport: 'SocketCAN (Linux)',
       state: 'live',
+      badge: 'ext.CANopen',
       help: 'Deux modes : écoute des TPDO déjà émis par le nœud (sans rien demander), ' +
             'ou lecture à la demande d’une entrée du dictionnaire d’objets par SDO — ' +
             'ce second mode est le seul où le serveur émet sur le bus. À savoir : un ' +
@@ -1599,6 +1702,7 @@ body.cfg-hidden .tabActions { display: none; }
       label: 'SNMP',
       transport: 'UDP (port 161)',
       state: 'live',
+      badge: 'ext.SNMP',
       help: 'Gestionnaire SNMP en lecture seule : interrogation cyclique d’OID par ' +
             'GetRequest. Les trois versions sont lues — v1, v2c et v3 (USM : ' +
             'authentification MD5, SHA-1 ou SHA-256, chiffrement DES ou AES-128). ' +
@@ -1674,6 +1778,7 @@ body.cfg-hidden .tabActions { display: none; }
       label: 'OPC UA (IEC 62541)',
       transport: 'UA-TCP binaire (opc.tcp, port 4840)',
       state: 'live',
+      badge: 'ext.OPCUA',
       help: 'Client OPC UA d’un serveur de supervision ou d’un équipement : lecture ' +
             'de nœuds désignés par leur NodeId, par abonnement (MonitoredItems) ou ' +
             'par interrogation cyclique (Read). S’appuie sur open62541. Lecture seule ' +
@@ -2734,6 +2839,24 @@ body.cfg-hidden .tabActions { display: none; }
 
   const MAX_AXES = 4;
 
+  /**
+   * Géométrie d'une grille de cartes : nombre de colonnes « naturelles »,
+   * largeur de colonne et gouttière. Le compte est recalculé depuis
+   * `--col-min` (et non depuis le template résolu) pour rester indépendant des
+   * largeurs déjà imposées par les cartes élargies. Partagé par les graphiques
+   * et par le tableau numérique, qui vit dans la même grille.
+   */
+  DW.gridMetrics = function (grid) {
+    if (!grid || !grid.classList || !grid.classList.contains('charts-grid')) return null;
+    const cs = getComputedStyle(grid);
+    const gap = parseFloat(cs.columnGap) || 0;
+    const min = parseFloat(cs.getPropertyValue('--col-min')) || 0;
+    const w = grid.clientWidth;
+    if (!(w > 0)) return null;
+    const count = min > 0 ? Math.max(1, Math.floor((w + gap) / (min + gap))) : 1;
+    return { count, colW: (w - gap * (count - 1)) / count, gap };
+  };
+
   // ---------- Popover partagé (légende & menu ⋮) ----------------------
   let popEl = null, popOwner = null, popAnchor = null;
   // Bascule : un appui sur l'ancre du menu ouvert le ferme sans le rouvrir.
@@ -2843,6 +2966,9 @@ body.cfg-hidden .tabActions { display: none; }
           '<input class="chart-title" maxlength="48" aria-label="Titre du graphique" ' +
             'title="Nom du graphique — cliquez pour le modifier ; il sert aussi de destination d’ajout">' +
           '<div class="chart-tools">' +
+            '<button class="iconbtn card-add" type="button" ' +
+              'title="Ajouter des courbes à ce graphique : ouvre le catalogue complet, ' +
+              'avec filtres et sélection multiple">+</button>' +
             '<select class="chart-window" aria-label="Fenêtre de temps" ' +
               'title="Durée affichée — modifiable aussi par pincement ou molette sur le tracé"></select>' +
             '<button class="iconbtn chart-pause" type="button" ' +
@@ -2906,6 +3032,9 @@ body.cfg-hidden .tabActions { display: none; }
       });
       this.pauseBtn.addEventListener('click', () => this.setPaused(this.viewEnd === null));
       this.liveBtn.addEventListener('click', () => this.goLive());
+      this.root.querySelector('.card-add').addEventListener('click', () => {
+        if (DW.openVarPicker) DW.openVarPicker({ kind: 'chart', chart: this });
+      });
       this.root.querySelector('.chart-more').addEventListener('click', (e) =>
         this.openChartMenu(e.currentTarget));
       this.moveEl.querySelector('button').addEventListener('click', () => this.endMoveMode());
@@ -3008,17 +3137,7 @@ body.cfg-hidden .tabActions { display: none; }
      * depuis le template résolu) pour rester indépendant des largeurs déjà
      * imposées par les graphiques élargis.
      */
-    gridMetrics() {
-      const grid = this.root.parentElement;
-      if (!grid || !grid.classList.contains('charts-grid')) return null;
-      const cs = getComputedStyle(grid);
-      const gap = parseFloat(cs.columnGap) || 0;
-      const min = parseFloat(cs.getPropertyValue('--col-min')) || 0;
-      const w = grid.clientWidth;
-      if (!(w > 0)) return null;
-      const count = min > 0 ? Math.max(1, Math.floor((w + gap) / (min + gap))) : 1;
-      return { count, colW: (w - gap * (count - 1)) / count, gap };
-    }
+    gridMetrics() { return DW.gridMetrics(this.root.parentElement); }
 
     /** Poignée bas-droite : redimensionnement libre à la souris (ou au doigt). */
     bindResizeGrip() {
@@ -4383,6 +4502,7 @@ body.cfg-hidden .tabActions { display: none; }
       dragId, origin: winId,
       kind: payload.kind,
       chartId: payload.chartId,
+      tabId: payload.tabId,
       chart: payload.chart,
       table: payload.table,
       title: payload.title,
@@ -4448,7 +4568,8 @@ body.cfg-hidden .tabActions { display: none; }
   // -------------------------------------------------------------- réception
   function clearHighlight() {
     document.querySelectorAll('.tab.dnd-over').forEach((el) => el.classList.remove('dnd-over'));
-    document.querySelectorAll('.chart-card.drop-before, .chart-card.drop-after')
+    document.querySelectorAll('.chart-card.drop-before, .chart-card.drop-after, ' +
+                              '.table-card.drop-before, .table-card.drop-after')
       .forEach((el) => el.classList.remove('drop-before', 'drop-after'));
     document.body.classList.remove('dnd-over-pane');
   }
@@ -4458,7 +4579,10 @@ body.cfg-hidden .tabActions { display: none; }
    * Permet de ranger les graphiques dans l'ordre voulu.
    */
   function placeAt(e) {
-    const card = e.target.closest && e.target.closest('.chart-card');
+    // Le tableau numérique vit dans la même grille que les graphiques : il est
+    // un point d'insertion comme eux, sans quoi rien ne pourrait se ranger à
+    // sa gauche.
+    const card = e.target.closest && e.target.closest('.chart-card, .table-card');
     if (!card) return null;
     const r = card.getBoundingClientRect();
     return { anchorEl: card, after: (e.clientX - r.left) > r.width / 2 };
@@ -5154,9 +5278,11 @@ body.cfg-hidden .tabActions { display: none; }
   const state = { tabs: [], active: null, tabSeq: 0 };
 
   /** Intitulé complet d'une famille d'adresses, pour les infobulles. */
-  function famTitle(family) {
+  /** Infobulle d'une étiquette de famille : ce qu'elle désigne, et son sigle. */
+  function famTitle(family, meta) {
     const f = DW.FAMILIES[family];
-    return f ? f.label + ' (' + family + ')' : family;
+    const sigle = meta ? DW.famBadge(meta) : family;
+    return f ? f.label + ' (' + sigle + ')' : sigle;
   }
 
   const FILTER_TITLES = {
@@ -5218,20 +5344,29 @@ body.cfg-hidden .tabActions { display: none; }
     state.tabSeq++;
     const pane = document.createElement('div');
     pane.className = 'tabpane';
+    // Le tableau vit DANS la grille des graphiques : c'est ce qui permet de
+    // lui donner moins que toute la largeur et de poser un graphique à côté,
+    // à sa gauche comme à sa droite (poignée ↔, puis glisser sa poignée ⠿ sur
+    // une carte pour changer son rang).
     pane.innerHTML =
+      '<div class="charts-grid">' +
       '<section class="card table-card hide">' +
         '<h3 title="Valeurs instantanées des variables suivies dans cet onglet">' +
           '<span class="drag-handle" draggable="true" ' +
           'title="Glisser le tableau entier (avec ses variables) vers un onglet ou une autre fenêtre">⠿</span>' +
           'Valeurs numériques <span class="tcount" ' +
-          'title="Nombre de variables dans ce tableau"></span></h3>' +
+          'title="Nombre de variables dans ce tableau"></span>' +
+          '<button class="iconbtn card-add" type="button" ' +
+            'title="Ajouter des variables à ce tableau : ouvre le catalogue complet, ' +
+            'avec filtres et sélection multiple">+</button></h3>' +
         '<div class="trows"></div>' +
         '<span class="resize-grip table-grip" role="separator" ' +
           'aria-label="Redimensionner le tableau" ' +
-          'title="Glisser ↕ pour fixer la hauteur du tableau (défilement interne) — ' +
-          'double-clic pour revenir à la hauteur automatique"></span>' +
+          'title="Glisser pour redimensionner le tableau : ↕ hauteur (défilement interne), ' +
+          '↔ largeur en nombre de colonnes de la grille — double-clic pour revenir à la ' +
+          'taille automatique"></span>' +
       '</section>' +
-      '<div class="charts-grid"></div>';
+      '</div>';
     $('panes').appendChild(pane);
 
     const tab = {
@@ -5253,9 +5388,12 @@ body.cfg-hidden .tabActions { display: none; }
     // Le tableau numérique entier (avec ses variables) est déplaçable
     pane.querySelector('.table-card .drag-handle').addEventListener('dragstart', (e) => {
       if (!DW.dnd || !tab.table.length) { e.preventDefault(); return; }
-      DW.dnd.startDrag(e, { kind: 'table', table: serializeTable(tab) }, () => {
+      DW.dnd.startDrag(e, { kind: 'table', tabId: tab.id, table: serializeTable(tab) }, () => {
         for (const entry of [...tab.table]) removeFromTable(tab, entry.addr);
       });
+    });
+    pane.querySelector('.table-card .card-add').addEventListener('click', () => {
+      openVarPicker({ kind: 'table', tab });
     });
     bindTableResize(tab);
     bindTableReorder(tab);
@@ -5537,7 +5675,8 @@ body.cfg-hidden .tabActions { display: none; }
       });
       row.addEventListener('dragend', () => { rangement = null; });
       row.innerHTML =
-        '<span class="badge fam-' + e.meta.family + '">' + e.meta.family + '</span>' +
+        '<span class="badge fam-' + e.meta.family + '">' +
+          DW.escapeHtml(DW.famBadge(e.meta)) + '</span>' +
         '<div class="v-id"><span class="v-addr"></span><span class="v-label"></span></div>' +
         '<div class="v-val"><button class="v-forced hide" type="button" ' +
           'title="Valeur forcée — cliquer pour relâcher">⏻</button>' +
@@ -5557,7 +5696,7 @@ body.cfg-hidden .tabActions { display: none; }
         ' · glissez cette ligne pour la ranger dans le tableau, ' +
         'ou vers un onglet ou une autre fenêtre';
       const badge = row.querySelector('.badge');
-      badge.title = famTitle(e.meta.family);
+      badge.title = famTitle(e.meta.family, e.meta);
       row.querySelector('.v-val').title = 'Valeur instantanée' +
         (e.meta.kind === 'bit' ? ' (0 ou 1)' : '') +
         (e.meta.family === 'MB' ? ' — décimal et hexadécimal' : '') +
@@ -5582,7 +5721,7 @@ body.cfg-hidden .tabActions { display: none; }
   const TABLE_MIN_H = 90;
   const TABLE_MAX_H = 1400;
 
-  /** Applique la hauteur libre du tableau (défilement interne) ou l'annule. */
+  /** Applique la taille libre du tableau (hauteur et largeur) ou l'annule. */
   function applyTableSize(tab) {
     const card = tab.tableCardEl;
     if (!card) return;
@@ -5593,6 +5732,17 @@ body.cfg-hidden .tabActions { display: none; }
       card.classList.remove('has-th');
       card.style.removeProperty('--table-h');
     }
+    // Sans largeur choisie, le tableau prend toute la grille — la disposition
+    // d'origine, et celle des configurations enregistrées avant cette version.
+    // Même mécanisme que les graphiques : la classe laisse la feuille de style
+    // décider (sur mobile, la grille reste à une colonne).
+    if (tab.tableCols) {
+      card.classList.add('has-span');
+      card.style.setProperty('--col-span', tab.tableCols);
+    } else {
+      card.classList.remove('has-span');
+      card.style.removeProperty('--col-span');
+    }
   }
 
   function bindTableResize(tab) {
@@ -5601,7 +5751,14 @@ body.cfg-hidden .tabActions { display: none; }
     let g = null;
     grip.addEventListener('pointerdown', (e) => {
       if (e.button > 0) return;
-      g = { id: e.pointerId, y: e.clientY, h: rows.getBoundingClientRect().height };
+      const m = DW.gridMetrics(tab.chartsGridEl);
+      g = {
+        id: e.pointerId, y: e.clientY, x: e.clientX,
+        h: rows.getBoundingClientRect().height,
+        w: tab.tableCardEl.getBoundingClientRect().width,
+        cols: tab.tableCols || (m ? m.count : 1),
+        m,
+      };
       try { grip.setPointerCapture(e.pointerId); } catch (err) { /* capture facultative */ }
       tab.tableCardEl.classList.add('resizing');
       e.preventDefault();
@@ -5610,6 +5767,13 @@ body.cfg-hidden .tabActions { display: none; }
       if (!g || e.pointerId !== g.id) return;
       const h = Math.round(g.h + (e.clientY - g.y));
       tab.tableH = Math.max(TABLE_MIN_H, Math.min(TABLE_MAX_H, h));
+      // ↔ : largeur en colonnes de la grille, comme pour un graphique. En
+      // deçà de toute la largeur, les graphiques viennent se ranger à côté.
+      if (g.m && g.m.count > 1) {
+        const unit = g.m.colW + g.m.gap;
+        const span = Math.round((g.w + (e.clientX - g.x) + g.m.gap) / unit);
+        tab.tableCols = Math.max(1, Math.min(g.m.count, span));
+      }
       applyTableSize(tab);
       e.preventDefault();
     });
@@ -5623,11 +5787,12 @@ body.cfg-hidden .tabActions { display: none; }
     grip.addEventListener('pointercancel', end);
     grip.addEventListener('dblclick', (e) => {
       e.preventDefault();
-      if (tab.tableH == null) return;
+      if (tab.tableH == null && tab.tableCols == null) return;
       tab.tableH = undefined;
+      tab.tableCols = undefined;
       applyTableSize(tab);
       onChange();
-      toast('Hauteur automatique du tableau rétablie.');
+      toast('Taille automatique du tableau rétablie (pleine largeur).');
     });
   }
 
@@ -5836,12 +6001,13 @@ body.cfg-hidden .tabActions { display: none; }
     b.type = 'button';
     b.className = 'sug';
     b.innerHTML =
-      '<span class="badge fam-' + entry.family + '">' + entry.family + '</span>' +
+      '<span class="badge fam-' + entry.family + '">' +
+        DW.escapeHtml(DW.famBadge(entry)) + '</span>' +
       '<span class="sug-addr"></span><span class="sug-label"></span><span class="sug-unit"></span>';
     b.querySelector('.sug-addr').textContent = entry.addr;
     b.querySelector('.sug-label').textContent = entry.label || '';
     b.querySelector('.sug-unit').textContent = entry.unit || '';
-    b.querySelector('.badge').title = famTitle(entry.family);
+    b.querySelector('.badge').title = famTitle(entry.family, entry);
     b.title = entry.addr + ' — ' + (entry.label || '') +
       (entry.unit ? ' (' + entry.unit + ')' : '') + ' · appuyez pour ajouter';
     // pointerdown pour devancer le blur de l'input
@@ -5947,6 +6113,8 @@ body.cfg-hidden .tabActions { display: none; }
       version: 1,
       table: serializeTable(tab),
       tableH: tab.tableH || undefined,
+      tableCols: tab.tableCols || undefined,
+      tableAfter: tab.tableAfter || undefined,
       charts: tab.charts.map((c) => c.serialize()),
     };
   }
@@ -5999,6 +6167,32 @@ body.cfg-hidden .tabActions { display: none; }
     onChange();
   }
 
+  /**
+   * Range la carte du tableau dans la grille : `tab.tableAfter` est le nombre
+   * de graphiques placés AVANT lui (0 = en tête, comme avant l'existence de ce
+   * réglage). C'est ce qui permet d'avoir un graphique à sa gauche.
+   */
+  function applyTablePlace(tab) {
+    const grid = tab.chartsGridEl, card = tab.tableCardEl;
+    if (!grid || !card) return;
+    const cartes = [...grid.children].filter((el) => el !== card);
+    const n = Math.max(0, Math.min(cartes.length, tab.tableAfter || 0));
+    if (n >= cartes.length) grid.appendChild(card);
+    else grid.insertBefore(card, cartes[n]);
+  }
+
+  /** Dépose la carte du tableau avant ou après une autre carte de la grille. */
+  function placeTable(tab, place) {
+    const anchor = place.anchorEl;
+    const card = tab.tableCardEl;
+    if (!anchor || anchor === card || !tab.chartsGridEl.contains(anchor)) return;
+    if (place.after) anchor.after(card); else anchor.before(card);
+    // Tous les autres enfants de la grille sont des graphiques : ceux qui
+    // précèdent la carte donnent directement son rang.
+    tab.tableAfter = [...tab.chartsGridEl.children].indexOf(card) || undefined;
+    onChange();
+  }
+
   /** Duplique un graphique (courbes, échelles, couleurs) juste après lui. */
   function duplicateChart(chart) {
     const tab = state.tabs.find((t) => t.charts.includes(chart)) || state.active;
@@ -6046,6 +6240,13 @@ body.cfg-hidden .tabActions { display: none; }
    */
   function receiveWidget(o, tab, place, sameWindow) {
     const target = tab || state.active;
+    // Tableau de CET onglet lâché sur une carte : simple rangement dans la
+    // grille (un graphique passe alors à sa gauche ou à sa droite), surtout
+    // pas un déplacement de ses variables.
+    if (o.kind === 'table' && sameWindow && place && o.tabId === target.id) {
+      placeTable(target, place);
+      return 'reordered';
+    }
     if (o.kind === 'chart' && o.chart) {
       // Graphique déjà présent dans cet onglet : simple réorganisation
       if (sameWindow && o.chartId) {
@@ -6085,6 +6286,12 @@ body.cfg-hidden .tabActions { display: none; }
     const tab = state.active;
     clearTab(tab);
     tab.tableH = (data && isFinite(data.tableH) && data.tableH > 0) ? data.tableH : undefined;
+    tab.tableCols = (data && isFinite(data.tableCols) && data.tableCols > 0)
+      ? Math.min(8, Math.round(data.tableCols)) : undefined;
+    // Rang du tableau dans la grille : nombre de graphiques placés AVANT lui
+    // (0 = en tête, comme avant l'existence de ce réglage).
+    tab.tableAfter = (data && isFinite(data.tableAfter) && data.tableAfter > 0)
+      ? Math.round(data.tableAfter) : undefined;
     applyTableSize(tab);
     for (const entry of data.table || []) {
       // Rétro-compatibilité : entrée sous forme de chaîne (format initial)
@@ -6111,6 +6318,7 @@ body.cfg-hidden .tabActions { display: none; }
         }
       }
     }
+    applyTablePlace(tab);      // rang du tableau parmi les graphiques
     refreshTargets();
     updateEmptyState();
     onChange();
@@ -6607,6 +6815,169 @@ body.cfg-hidden .tabActions { display: none; }
     } catch (e) { return false; }
   }
 
+  // ---------- Sélecteur de variables (bouton « + ») --------------------
+  /**
+   * Grande fenêtre d'ajout, ouverte par le « + » d'un tableau ou d'un
+   * graphique. La barre de recherche du haut reste le chemin rapide, au
+   * clavier ; celle-ci est le chemin confortable : on voit le catalogue, on
+   * filtre, et on ajoute PLUSIEURS variables d'un coup — la destination étant
+   * déjà connue, puisqu'on est parti de son bouton.
+   *
+   * @param dest {kind:'table', tab} ou {kind:'chart', chart}
+   */
+  function openVarPicker(dest) {
+    const root = $('modalRoot');
+    root.innerHTML = '';
+    const nom = dest.kind === 'table' ? 'Tableau numérique' : dest.chart.title;
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    back.innerHTML =
+      '<div class="modal wide vpick" role="dialog" aria-label="Ajouter des variables">' +
+        '<header class="m-head"><h3></h3>' +
+          '<button class="iconbtn m-close" type="button" title="Fermer sans ajouter">✕</button>' +
+        '</header>' +
+        '<div class="vp-bar">' +
+          '<input class="vp-q" type="search" placeholder="Filtrer par adresse ou libellé…" ' +
+            'title="Filtrer le catalogue ; une adresse hors catalogue peut aussi être saisie ici">' +
+          '<select class="vp-period" title="Période de rafraîchissement des variables ajoutées"></select>' +
+        '</div>' +
+        '<div class="vp-filters" role="group" aria-label="Familles"></div>' +
+        '<div class="vp-list" role="listbox" aria-multiselectable="true"></div>' +
+        '<footer class="m-actions">' +
+          '<span class="vp-count" title="Nombre de variables cochées"></span>' +
+          '<button class="btn vp-cancel" type="button" title="Fermer sans rien ajouter">Annuler</button>' +
+          '<button class="btn primary vp-ok" type="button" ' +
+            'title="Ajouter les variables cochées à cette destination">Ajouter</button>' +
+        '</footer>' +
+      '</div>';
+    back.querySelector('h3').textContent = 'Ajouter des variables → ' + nom;
+
+    const q = back.querySelector('.vp-q');
+    const list = back.querySelector('.vp-list');
+    const countEl = back.querySelector('.vp-count');
+    const perSel = back.querySelector('.vp-period');
+    for (const o of $('periodSel').options) {
+      const c = document.createElement('option');
+      c.value = o.value; c.textContent = o.textContent;
+      perSel.appendChild(c);
+    }
+    perSel.value = $('periodSel').value;
+
+    const choix = new Set();
+    let filtre = 'all';
+
+    const dejaLa = (addr) => (dest.kind === 'table'
+      ? inTable(dest.tab, addr)
+      : dest.chart.series.some((s) => s.addr === addr));
+
+    const majCompte = () => {
+      countEl.textContent = choix.size
+        ? choix.size + ' variable' + (choix.size > 1 ? 's' : '') + ' cochée' + (choix.size > 1 ? 's' : '')
+        : 'Aucune variable cochée';
+      back.querySelector('.vp-ok').disabled = choix.size === 0;
+    };
+
+    const dessiner = () => {
+      const filtres = back.querySelector('.vp-filters');
+      filtres.innerHTML = '';
+      for (const [key, label] of FAM_FILTERS) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'fbtn' + (filtre === key ? ' on' : '');
+        b.textContent = label;
+        b.title = FILTER_TITLES[key];
+        b.addEventListener('click', () => { filtre = key; dessiner(); });
+        filtres.appendChild(b);
+      }
+
+      const texte = q.value.trim().toLowerCase();
+      const garde = (e) => {
+        if (filtre !== 'all' && !(filtre === 'PLC'
+          ? ['I', 'Q', 'M', 'S'].includes(e.family) : e.family === filtre)) return false;
+        if (!texte) return true;
+        return e.addr.toLowerCase().includes(texte) ||
+               (e.label || '').toLowerCase().includes(texte);
+      };
+      const pool = suggestPool().filter(garde);
+
+      list.innerHTML = '';
+      // Adresse valide absente du catalogue : proposée telle quelle, comme
+      // dans la barre de recherche — le catalogue n'est pas exhaustif.
+      if (texte) {
+        const p = DW.parseAddr(q.value.trim());
+        if (p.ok && !pool.some((e) => e.addr.toUpperCase() === p.addr.toUpperCase())) {
+          pool.unshift({ addr: p.addr, family: p.family,
+                         label: DW.FAMILIES[p.family].label + ' — hors catalogue', unit: '' });
+        }
+      }
+      if (!pool.length) {
+        const vide = document.createElement('p');
+        vide.className = 'm-note';
+        vide.textContent = 'Aucune variable ne correspond.';
+        list.appendChild(vide);
+      }
+      for (const e of pool.slice(0, 400)) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'vp-row' + (choix.has(e.addr) ? ' on' : '') + (dejaLa(e.addr) ? ' dup' : '');
+        b.setAttribute('role', 'option');
+        b.setAttribute('aria-selected', choix.has(e.addr) ? 'true' : 'false');
+        b.innerHTML =
+          '<span class="vp-check" aria-hidden="true"></span>' +
+          '<span class="badge fam-' + e.family + '">' +
+            DW.escapeHtml(DW.famBadge(e)) + '</span>' +
+          '<span class="vp-addr"></span><span class="vp-label"></span>' +
+          '<span class="vp-unit"></span>';
+        b.querySelector('.vp-addr').textContent = e.addr;
+        b.querySelector('.vp-label').textContent =
+          (e.label || '') + (dejaLa(e.addr) ? ' · déjà présente' : '');
+        b.querySelector('.vp-unit').textContent = e.unit || '';
+        b.querySelector('.badge').title = famTitle(e.family, e);
+        b.title = e.addr + ' — ' + (e.label || '') + (e.unit ? ' (' + e.unit + ')' : '') +
+          ' · cocher pour l’ajouter à « ' + nom + ' »';
+        b.addEventListener('click', () => {
+          if (choix.has(e.addr)) choix.delete(e.addr); else choix.add(e.addr);
+          b.classList.toggle('on', choix.has(e.addr));
+          b.setAttribute('aria-selected', choix.has(e.addr) ? 'true' : 'false');
+          majCompte();
+        });
+        list.appendChild(b);
+      }
+      majCompte();
+    };
+
+    const ajouter = () => {
+      const periodMs = parseInt(perSel.value, 10) || CFG.defaultPeriodMs;
+      let ok = 0;
+      const refus = [];
+      for (const addr of choix) {
+        const net = DW.protocols ? DW.protocols.periodOf(addr) : null;
+        const r = dest.kind === 'table'
+          ? addToTable(addr, net || periodMs)
+          : dest.chart.addSeries(addr, { periodMs: net || periodMs });
+        if (r && r.ok) ok++; else refus.push(addr + ' : ' + ((r && r.error) || 'refusée'));
+      }
+      root.innerHTML = '';
+      onChange();
+      refreshTargets();
+      if (ok) toast(ok + ' variable' + (ok > 1 ? 's' : '') + ' → ' + nom);
+      // Un refus n'est jamais silencieux : une variable qu'on croit ajoutée et
+      // qui manque se cherche longtemps.
+      if (refus.length) toast(refus.join(' · '), 'err');
+    };
+
+    q.addEventListener('input', dessiner);
+    q.addEventListener('keydown', (e) => { if (e.key === 'Enter') ajouter(); });
+    back.querySelector('.vp-ok').addEventListener('click', ajouter);
+    back.querySelector('.vp-cancel').addEventListener('click', () => { root.innerHTML = ''; });
+    back.querySelector('.m-close').addEventListener('click', () => { root.innerHTML = ''; });
+    back.addEventListener('pointerdown', (e) => { if (e.target === back) root.innerHTML = ''; });
+    root.appendChild(back);
+    dessiner();
+    q.focus();
+  }
+  DW.openVarPicker = openVarPicker;
+
   function showTextModal(title, text) {
     const root = $('modalRoot');
     root.innerHTML = '';
@@ -6720,7 +7091,9 @@ body.cfg-hidden .tabActions { display: none; }
           '(survol à la souris).</p>' +
           S('Ajouter des variables') +
           L([
-            ['Barre de recherche', 'Adresse : <b>I1.2.3.4</b>, <b>Q14.15</b>, <b>M1.14</b>, <b>S0.4</b> (bits), <b>MB414</b> (mot de bus), <b>Modele.signal</b> (C API). Les suggestions se filtrent à la frappe ; les boutons Toutes / PLC / Modbus / Simulink / Réseau restreignent la liste.'],
+            ['Bouton ＋', 'Sur le tableau et sur chaque graphique : ouvre le catalogue complet dans une grande fenêtre — filtres par famille, recherche, et <b>sélection multiple</b>. La destination est celle du bouton, il n’y a rien à choisir.'],
+            ['Barre de recherche', 'Le chemin rapide, au clavier. Adresse : <b>I1.2.3.4</b>, <b>Q14.15</b>, <b>M1.14</b>, <b>S0.4</b> (bits), <b>MB414</b> (mot de bus), <b>Modele.signal</b> (C API). Les suggestions se filtrent à la frappe ; les boutons Toutes / PLC / Modbus / Simulink / Réseau restreignent la liste.'],
+            ['Étiquettes', 'Elles disent d’où vient la valeur : <b>PLC</b> (entrées, sorties, bits mémoire, système), <b>MB</b> (registre de bus par le canal interne), <b>Simulink</b> (signal de modèle, C API), <b>ext.…</b> (point lu à l’extérieur par le serveur de diagnostic : ext.MB, ext.61850, ext.OPCUA, ext.SNMP…). MB et ext.MB, ce n’est pas le même chemin ni la même latence.'],
             ['Destination', 'Tableau numérique, un graphique existant, ou un nouveau graphique.'],
             ['Période', 'Rafraîchissement propre à la variable, 10 ms par défaut.'],
             ['Forcer une valeur', 'Suffixe <b>= valeur</b> dans la barre : <b>Q0.3 = 1</b>, <b>MB400 = 12500</b> impose la valeur côté serveur (diagnostic). La ligne du tableau est surlignée ; ⏻ relâche. Les points réseau (@lien.point) restent en lecture seule.'],
@@ -6743,7 +7116,7 @@ body.cfg-hidden .tabActions { display: none; }
           L([
             ['Poignée ⠿', 'Glisser un graphique ou le tableau vers un onglet, une autre fenêtre, ou sur un autre graphique pour le ranger.'],
             ['Ligne du tableau', 'Se glisse <b>dans le tableau</b> pour changer son rang (un repère montre où elle se posera), ou vers un autre onglet ou une autre fenêtre.'],
-            ['Poignée ◢ (coin bas-droit)', 'Redimensionner un graphique à la souris : ↕ hauteur libre, ↔ largeur en nombre de colonnes. Sur le tableau numérique : ↕ fixe sa hauteur (défilement interne). Double-clic pour revenir à la taille automatique.'],
+            ['Poignée ◢ (coin bas-droit)', 'Redimensionner une carte à la souris : ↕ hauteur libre, ↔ largeur en nombre de colonnes. Le <b>tableau numérique</b> se règle de la même façon : le réduire en largeur laisse la place à un graphique <b>à côté</b> (glisser sa poignée ⠿ sur une carte le range à gauche ou à droite). Double-clic pour revenir à la taille automatique.'],
             ['Renommer', 'Bouton ✎ sur une ligne du tableau, ou « Renommer la courbe… » dans le menu d’une pastille : un nom d’affichage remplace le libellé du catalogue (vide = valeur d’origine). Le nom appartient à la <b>variable</b> : il s’applique partout où elle figure — tous les tableaux, toutes les courbes, tous les onglets, et les autres fenêtres ouvertes.'],
             ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
