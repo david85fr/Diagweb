@@ -505,6 +505,25 @@ body.has-fs { overflow: hidden; }
 }
 .popmenu button:hover { background: var(--panel-2); }
 .popmenu button.danger { color: var(--crit); }
+.pop-title {
+  font-size: 12px; color: var(--muted);
+  padding: 4px 10px 2px;
+}
+/* Bornes d'une échelle : saisie exacte, à la souris comme au doigt */
+.pop-range { display: grid; gap: 6px; padding: 4px 10px 8px; }
+.pop-range label { display: grid; grid-template-columns: 34px 1fr; gap: 8px; align-items: center;
+  font-size: 12px; color: var(--muted); }
+.pop-range input[type="number"] {
+  font: inherit; font-size: 13px; font-family: var(--mono);
+  color: var(--ink); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; width: 100%;
+}
+.pop-range .pop-check { grid-template-columns: auto 1fr; }
+.pop-range .pop-check span { font-size: 12px; }
+.pop-range .ax-ok { justify-self: end; }
+/* Cible du menu d'une règle d'axe : peinte dans le canvas, donc sans élément
+   propre — celui-ci n'existe que pour ancrer le menu au bon endroit. */
+.axis-anchor { position: absolute; pointer-events: none; }
 
 /* ---------- Glisser-déposer de widgets ---------- */
 .drag-handle {
@@ -886,7 +905,7 @@ body.cfg-hidden .tabActions { display: none; }
     </div>
 
     <div class="topIcons">
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">2f8a0a4 · #74</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">65edf01 · #76</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
@@ -2827,7 +2846,9 @@ body.cfg-hidden .tabActions { display: none; }
           '<canvas aria-label="Courbes du graphique" ' +
             'title="Glisser ↔ : remonter le temps · glisser ↕ : déplacer l’échelle · ' +
             'pincer ou molette : zoom · appui bref : curseur de mesure · double-appui : retour au direct. ' +
-            'Sur une règle d’axe : glisser ou molette pour son échelle, double-appui pour la remettre en automatique."></canvas>' +
+            'Sur une règle d’axe (curseur ↕ sur les bords) : clic pour saisir les bornes exactes ' +
+            '— une échelle ou toutes — glisser ou molette pour la régler à la volée, ' +
+            'double-clic pour revenir à l’automatique."></canvas>' +
           '<div class="chart-tip hide"></div>' +
           '<button class="chart-live hide" type="button" ' +
             'title="Revenir au temps réel (la vue est figée dans l’historique)">▶ Direct</button>' +
@@ -3075,6 +3096,113 @@ body.cfg-hidden .tabActions { display: none; }
       for (const st of this.axisState.values()) { st.mode = 'auto'; st.snap = true; }
     }
 
+    // ---------- Échelles verticales : réglage explicite -------------------
+    /**
+     * Ancre pour le menu d'une règle d'axe. Le popover se positionne sur un
+     * élément ; une règle n'en est pas un — elle est peinte dans le canvas. On
+     * en pose donc une, de taille nulle, à l'endroit visé.
+     */
+    axisAnchor(band) {
+      if (!this._axisAnchorEl) {
+        this._axisAnchorEl = document.createElement('span');
+        this._axisAnchorEl.className = 'axis-anchor';
+        this.canvas.parentNode.appendChild(this._axisAnchorEl);
+      }
+      const el = this._axisAnchorEl;
+      // Le canvas n'est pas collé au bord de son parent (marge intérieure) :
+      // sans son décalage, le menu se poserait à côté de la règle visée.
+      el.style.left = (this.canvas.offsetLeft + band.x0) + 'px';
+      el.style.top = this.canvas.offsetTop + 'px';
+      el.style.width = (band.x1 - band.x0) + 'px';
+      el.style.height = this.canvas.clientHeight + 'px';
+      return el;
+    }
+
+    /** Libellé d'une échelle : son unité, ou les courbes qui la partagent. */
+    axisTitle(key) {
+      const series = this.series.filter((s) => this.axisKey(s) === key);
+      if (!series.length) return 'Échelle';
+      const unit = series[0].meta.unit;
+      if (key.startsWith('solo:')) return (series[0].name || series[0].addr) + (unit ? ' (' + unit + ')' : '');
+      return unit ? 'Échelle « ' + unit + ' »' : 'Échelle sans unité';
+    }
+
+    /** Applique des bornes à une échelle, ou à toutes (réglage groupé). */
+    setAxisRange(key, min, max, toutes) {
+      const r = sanitizeRange(min, max);
+      const cles = toutes ? [...this.axisState.keys()] : [key];
+      for (const k of cles) {
+        const st = this.axisState.get(k);
+        if (!st) continue;
+        st.mode = 'manual';
+        st.cur = { min: r.min, max: r.max };
+      }
+      this.app.onChange();
+    }
+
+    /**
+     * Menu d'une échelle verticale : bornes exactes, retour à l'automatique,
+     * et le même réglage appliqué à toutes les échelles du graphique.
+     *
+     * Le glisser et la molette sur la règle font déjà le réglage à la volée ;
+     * ils ne se voient pas et ne permettent pas de saisir une valeur. Ce menu
+     * est le chemin explicite, à la souris comme au doigt.
+     */
+    openAxisMenu(key, anchorEl) {
+      const st = this.axisState.get(key);
+      if (!st) return;
+      openPopover('axis:' + this.id + ':' + key, anchorEl, (mk, add) => {
+        const t = document.createElement('div');
+        t.className = 'pop-title';
+        t.textContent = this.axisTitle(key);
+        add(t);
+
+        const form = document.createElement('div');
+        form.className = 'pop-range';
+        form.innerHTML =
+          '<label>Max<input type="number" step="any" class="ax-max" ' +
+            'title="Valeur en haut de l’axe"></label>' +
+          '<label>Min<input type="number" step="any" class="ax-min" ' +
+            'title="Valeur en bas de l’axe"></label>' +
+          '<label class="pop-check"><input type="checkbox" class="ax-all" ' +
+            'title="Donner ces mêmes bornes à toutes les échelles de ce graphique">' +
+            '<span>Toutes les échelles</span></label>' +
+          '<button type="button" class="btn sm ax-ok" ' +
+            'title="Appliquer ces bornes (l’axe passe en réglage manuel 🔒)">Appliquer</button>';
+        const fMin = form.querySelector('.ax-min');
+        const fMax = form.querySelector('.ax-max');
+        // Quatre chiffres significatifs : de quoi retoucher sans recopier
+        // les décimales d'un cadrage automatique.
+        fMin.value = Number(st.cur.min.toPrecision(4));
+        fMax.value = Number(st.cur.max.toPrecision(4));
+        const appliquer = () => {
+          const lo = parseFloat(fMin.value), hi = parseFloat(fMax.value);
+          if (!isFinite(lo) || !isFinite(hi)) {
+            this.app.toast('Bornes non numériques : réglage ignoré.', 'err');
+            return;
+          }
+          this.setAxisRange(key, Math.min(lo, hi), Math.max(lo, hi),
+                            form.querySelector('.ax-all').checked);
+          closePopover();
+        };
+        form.querySelector('.ax-ok').addEventListener('click', appliquer);
+        form.addEventListener('keydown', (e) => { if (e.key === 'Enter') appliquer(); });
+        // Un appui dans le formulaire ne doit pas être pris pour un geste
+        // sur le canvas, ni refermer le menu.
+        form.addEventListener('pointerdown', (e) => e.stopPropagation());
+        add(form);
+
+        mk('Échelle automatique', () => {
+          st.mode = 'auto'; st.snap = true;
+          this.app.onChange();
+        }, null, 'Recadrer cette échelle sur les valeurs reçues (annule le réglage manuel 🔒)');
+        mk('Toutes les échelles en automatique', () => {
+          this.resetAxes();
+          this.app.onChange();
+        }, null, 'Remettre en cadrage automatique toutes les échelles de ce graphique');
+      });
+    }
+
     // ---------- Mode décalage d'une courbe ------------------------------
     startMoveMode(s) {
       this.moveSeries = s.addr;
@@ -3137,8 +3265,12 @@ body.cfg-hidden .tabActions { display: none; }
 
       cv.addEventListener('pointermove', (e) => {
         if (e.pointerType === 'mouse' && e.buttons === 0) {
-          if (!this.bandAt(e.offsetX)) this.cursor = { x: e.offsetX };
-          else this.cursor = null;
+          const surRegle = !!this.bandAt(e.offsetX);
+          this.cursor = surRegle ? null : { x: e.offsetX };
+          // Le curseur est le seul indice qu'une règle se règle à la souris :
+          // trois centimètres de canvas peint ne se distinguent en rien du
+          // reste sans cela.
+          cv.style.cursor = surRegle ? 'ns-resize' : '';
           return;
         }
         const p = this._ptrs.get(e.pointerId);
@@ -3219,6 +3351,11 @@ body.cfg-hidden .tabActions { display: none; }
             if (isDouble && this._lastTapBand === band.key) {
               const st = this.axisState.get(band.key);
               if (st) { st.mode = 'auto'; st.snap = true; }
+            } else {
+              // Appui bref sur une règle : le menu de l'échelle, seul chemin
+              // où l'on peut saisir des bornes exactes — à la souris comme au
+              // doigt, contrairement au glisser et à la molette.
+              this.openAxisMenu(band.key, this.axisAnchor(band));
             }
             this._lastTapBand = band.key;
           } else if (isDouble && this._lastTapBand === null) {
@@ -3366,10 +3503,10 @@ body.cfg-hidden .tabActions { display: none; }
       const commit = () => {
         if (done) return;
         done = true;
-        const v = input.value.trim();
-        s.name = v || undefined;
+        // Le nom appartient à la variable : l'application le répercute dans
+        // tous les tableaux et toutes les courbes de la page.
+        this.app.renameVariable(s.addr, input.value);
         this.rebuildLegend();
-        this.app.onChange();
       };
       input.addEventListener('blur', commit);
       input.addEventListener('keydown', (e) => {
@@ -3421,6 +3558,11 @@ body.cfg-hidden .tabActions { display: none; }
           this.rebuildLegend();
           this.app.onChange();
         }, null, 'Retirer la courbe du tracé sans la supprimer (elle reste abonnée)');
+        mk('Bornes de l’échelle…', () => {
+          const key = this.axisKey(s);
+          this.openAxisMenu(key, chip);
+        }, null, 'Saisir le minimum et le maximum de l’axe de cette courbe, ' +
+          'ou les donner à toutes les échelles du graphique');
         mk((s.axisMode === 'solo' ? '✓ ' : '') + 'Échelle dédiée', () => {
           s.axisMode = s.axisMode === 'solo' ? 'auto' : 'solo';
           this.app.onChange();
@@ -4210,9 +4352,20 @@ body.cfg-hidden .tabActions { display: none; }
   if (bc) {
     bc.addEventListener('message', (ev) => {
       const m = ev.data;
-      if (!m || m.type !== 'widget-accepted') return;
-      completeMove(m.dragId);
+      if (!m) return;
+      if (m.type === 'widget-accepted') completeMove(m.dragId);
+      // Un nom d'affichage appartient à la variable : il vaut dans toutes les
+      // fenêtres ouvertes sur le même contrôleur, pas seulement celle où il a
+      // été saisi (organisation multi-écran).
+      else if (m.type === 'variable-renamed' && m.origin !== winId && api && api.applyRename) {
+        api.applyRename(m.addr, m.name);
+      }
     });
+  }
+
+  /** Annonce un renommage aux autres fenêtres de la même origine. */
+  function shareRename(addr, name) {
+    if (bc) bc.postMessage({ type: 'variable-renamed', origin: winId, addr, name });
   }
 
   function envelope(payload, dragId) {
@@ -4395,6 +4548,7 @@ body.cfg-hidden .tabActions { display: none; }
     winId,
     startDrag,
     endDrag,
+    shareRename,
     openInNewWindow,
     consumeOpenParam,
     describe,
@@ -5043,6 +5197,7 @@ body.cfg-hidden .tabActions { display: none; }
       onChange();
     },
     refreshTargets,
+    renameVariable,
     /** Onglets autres que l'actif (menus « Déplacer vers »). */
     otherTabs: () => state.tabs.filter((t) => t !== state.active),
     moveChartToTab,
@@ -5218,6 +5373,37 @@ body.cfg-hidden .tabActions { display: none; }
   /** Libellé affiché d'une variable : nom d'affichage choisi, sinon libellé du catalogue. */
   function displayLabel(e) { return e.name || e.meta.label; }
 
+  /**
+   * Un nom d'affichage appartient à la VARIABLE, pas à l'endroit où on la
+   * regarde : renommer « MB414 » en « Pression collecteur » dans un tableau
+   * doit la nommer ainsi partout dans la page — autres tableaux, courbes,
+   * légendes, tous onglets confondus. Deux noms pour une même adresse, c'est
+   * la porte ouverte à lire une courbe pour une autre.
+   *
+   * L'adresse, elle, ne change jamais : c'est toujours elle qui identifie.
+   */
+  function renameVariable(addr, name, distant) {
+    const nom = (name || '').trim() || undefined;
+    for (const tab of state.tabs) {
+      let touche = false;
+      for (const e of tab.table) {
+        if (e.addr === addr && e.name !== nom) { e.name = nom; touche = true; }
+      }
+      if (touche) renderTable(tab);
+      for (const chart of tab.charts) {
+        let legende = false;
+        for (const s of chart.series) {
+          if (s.addr === addr && s.name !== nom) { s.name = nom; legende = true; }
+        }
+        if (legende) chart.rebuildLegend();
+      }
+    }
+    refreshTargets();
+    onChange();
+    // Les autres fenêtres ouvertes sur le même contrôleur suivent (multi-écran).
+    if (!distant && DW.dnd && DW.dnd.shareRename) DW.dnd.shareRename(addr, nom);
+  }
+
   /** Renommage en place du nom d'affichage d'une variable du tableau. */
   function renameTableEntry(tab, e, labelEl) {
     if (labelEl.querySelector('input')) return;
@@ -5235,11 +5421,8 @@ body.cfg-hidden .tabActions { display: none; }
     const commit = () => {
       if (done) return;
       done = true;
-      const v = input.value.trim();
-      e.name = v || undefined;
-      renderTable(tab);
-      refreshTargets();
-      onChange();
+      renameVariable(e.addr, input.value);
+      renderTable(tab);        // la ligne éditée retrouve son affichage normal
     };
     input.addEventListener('blur', commit);
     input.addEventListener('keydown', (ev) => {
@@ -6552,7 +6735,7 @@ body.cfg-hidden .tabActions { display: none; }
             ['Poignée ⠿', 'Glisser un graphique ou le tableau vers un onglet, une autre fenêtre, ou sur un autre graphique pour le ranger.'],
             ['Ligne du tableau', 'Se glisse <b>dans le tableau</b> pour changer son rang (un repère montre où elle se posera), ou vers un autre onglet ou une autre fenêtre.'],
             ['Poignée ◢ (coin bas-droit)', 'Redimensionner un graphique à la souris : ↕ hauteur libre, ↔ largeur en nombre de colonnes. Sur le tableau numérique : ↕ fixe sa hauteur (défilement interne). Double-clic pour revenir à la taille automatique.'],
-            ['Renommer', 'Bouton ✎ sur une ligne du tableau, ou « Renommer la courbe… » dans le menu d’une pastille : un nom d’affichage remplace le libellé du catalogue (vide = valeur d’origine).'],
+            ['Renommer', 'Bouton ✎ sur une ligne du tableau, ou « Renommer la courbe… » dans le menu d’une pastille : un nom d’affichage remplace le libellé du catalogue (vide = valeur d’origine). Le nom appartient à la <b>variable</b> : il s’applique partout où elle figure — tous les tableaux, toutes les courbes, tous les onglets, et les autres fenêtres ouvertes.'],
             ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
           ]) +
@@ -6567,6 +6750,7 @@ body.cfg-hidden .tabActions { display: none; }
           L([
             ['Pastille de légende', 'Couleur (palette ou teinte libre), masquer, échelle dédiée, décalage vertical, retrait.'],
             ['Badge Én', 'Numéro de l’échelle utilisée ; 🔒 signale un réglage manuel.'],
+            ['Échelles verticales', 'Clic sur une <b>règle d’axe</b> (les graduations, curseur ↕) : saisir le minimum et le maximum exacts, pour cette échelle seule ou pour <b>toutes</b> celles du graphique. Glisser ou molette sur la règle : réglage à la volée ; double-clic : retour à l’automatique. Même réglage depuis le menu d’une pastille (« Bornes de l’échelle… »).'],
           ]) +
         '</div>';
       back.querySelector('.m-close').addEventListener('click', () => { root.innerHTML = ''; });
@@ -6662,6 +6846,7 @@ body.cfg-hidden .tabActions { display: none; }
       activeTab: () => state.active,
       tabFromElement: (el) => el._tab || state.active,
       isSameTarget: (tab, payload) => tab === state.active && payload.kind !== 'chart',
+      applyRename: (addr, name) => renameVariable(addr, name, true),
       toast,
     });
 
