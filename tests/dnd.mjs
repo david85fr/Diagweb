@@ -54,6 +54,40 @@ async function dragOntoCard(page, srcSel, dstSel, right) {
   await page.evaluate(() => document.dispatchEvent(new Event('dragend', { bubbles: true })));
 }
 
+/** Glisse une ligne du tableau sur une autre (rangement dans le tableau). */
+async function dragRowWithin(page, srcSel, dstSel, below) {
+  const store = await page.evaluate((sel) => {
+    const el = document.querySelector(sel); const s = {};
+    const dt = { types: [], setData(t, v) { s[t] = v; this.types.push(t); },
+      getData(t) { return s[t] || ''; }, setDragImage() {}, effectAllowed: '', dropEffect: '' };
+    const ev = new Event('dragstart', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', { value: dt });
+    el.dispatchEvent(ev);
+    return s;
+  }, srcSel);
+  const marque = await page.evaluate(({ sel, store, below }) => {
+    const el = document.querySelector(sel);
+    const r = el.getBoundingClientRect();
+    const dt = { types: Object.keys(store), getData(t) { return store[t] || ''; },
+      setData() {}, dropEffect: '', effectAllowed: '' };
+    const point = { clientX: r.left + r.width / 2,
+                    clientY: r.top + (below ? r.height * 0.8 : r.height * 0.2) };
+    const envoyer = (type) => {
+      const ev = new MouseEvent(type, { bubbles: true, cancelable: true, ...point });
+      Object.defineProperty(ev, 'dataTransfer', { value: dt });
+      el.dispatchEvent(ev);
+    };
+    envoyer('dragover');
+    // Le repère d'insertion doit être visible AVANT le dépôt : c'est lui qui
+    // dit à l'utilisateur où la ligne va se poser.
+    const vu = !!document.querySelector('.vrow.drop-before, .vrow.drop-after');
+    envoyer('drop');
+    return vu;
+  }, { sel: dstSel, store, below });
+  await page.evaluate(() => document.dispatchEvent(new Event('dragend', { bubbles: true })));
+  return marque;
+}
+
 /** Simule un glisser-déposer HTML5 en transportant réellement le DataTransfer. */
 async function dragTo(srcPage, srcSel, dstPage, dstSel) {
   // 1. dragstart sur la source, on capture ce que l'application y dépose
@@ -134,6 +168,18 @@ console.log(`Cible : ${URL}\n`);
   check('graphiques rangés dans l’ordre voulu (aucune copie)',
     ordre1.length === ordre0.length && ordre1[0] === ordre0[1] && ordre1[1] === ordre0[0],
     ordre1.join(' · '));
+
+  // 0 bis) Rangement des lignes du tableau numérique
+  const lignes = () => A.locator('.tabpane.on .vrow').evaluateAll(
+    (e) => e.map((x) => x.dataset.addr));
+  const l0 = await lignes();
+  const repere = await dragRowWithin(A, '.tabpane.on .vrow:nth-child(1)',
+    '.tabpane.on .vrow:nth-child(3)', true);
+  await A.waitForTimeout(400);
+  const l1 = await lignes();
+  check('lignes du tableau rangées par glisser-déposer (repère d’insertion)',
+    repere && l1.length === l0.length && l1[2] === l0[0] && l1[0] === l0[1],
+    l0.slice(0, 3).join(' · ') + '  →  ' + l1.slice(0, 3).join(' · '));
 
   // Un second onglet dans A
   await A.click('#tabAdd');

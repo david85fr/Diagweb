@@ -123,6 +123,7 @@
       });
     });
     bindTableResize(tab);
+    bindTableReorder(tab);
 
     state.tabs.push(tab);
     switchTab(tab);
@@ -287,6 +288,74 @@
     onChange();
   }
 
+  // ---------- Rangement des lignes du tableau -------------------------
+  // Ligne en cours de glissement, quand elle vient de CE navigateur : de quoi
+  // distinguer « ranger dans le tableau » de « déposer une variable venue
+  // d'ailleurs », qui reste l'affaire de dnd.js.
+  let rangement = null;
+
+  /** Déplace une variable devant ou derrière une autre, dans le même tableau. */
+  function moveTableEntry(tab, addr, refAddr, after) {
+    if (addr === refAddr) return;
+    const from = tab.table.findIndex((x) => x.addr === addr);
+    if (from < 0) return;
+    const [entry] = tab.table.splice(from, 1);
+    const ref = tab.table.findIndex((x) => x.addr === refAddr);
+    if (ref < 0) { tab.table.splice(from, 0, entry); return; }   // repère envolé
+    tab.table.splice(after ? ref + 1 : ref, 0, entry);
+    renderTable(tab);
+    onChange();
+  }
+
+  /**
+   * Glisser une ligne au-dessus d'une autre la range dans le tableau.
+   *
+   * L'événement est arrêté ici (`stopPropagation`) quand il s'agit bien d'un
+   * rangement interne : sans cela, le gestionnaire global de dnd.js
+   * interpréterait le dépôt comme l'arrivée d'une variable dans l'onglet. Une
+   * variable venue d'un AUTRE onglet ou d'une autre fenêtre, elle, n'est pas
+   * arrêtée : elle suit son chemin habituel.
+   */
+  function bindTableReorder(tab) {
+    const rows = tab.tableRowsEl;
+    const efface = () => rows.querySelectorAll('.vrow.drop-before, .vrow.drop-after')
+      .forEach((el) => el.classList.remove('drop-before', 'drop-after'));
+    const interne = () => !!rangement && rangement.tab === tab &&
+      tab.table.some((x) => x.addr === rangement.addr);
+    const viser = (ev) => {
+      const row = ev.target.closest && ev.target.closest('.vrow');
+      if (!row || !rows.contains(row)) return null;
+      const r = row.getBoundingClientRect();
+      return { row, after: (ev.clientY - r.top) > r.height / 2 };
+    };
+
+    rows.addEventListener('dragover', (ev) => {
+      if (!interne()) return;
+      const c = viser(ev);
+      if (!c) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      try { ev.dataTransfer.dropEffect = 'move'; } catch (err) { /* facultatif */ }
+      efface();
+      if (c.row.dataset.addr !== rangement.addr) {
+        c.row.classList.add(c.after ? 'drop-after' : 'drop-before');
+      }
+    });
+    rows.addEventListener('dragleave', (ev) => {
+      if (!rows.contains(ev.relatedTarget)) efface();
+    });
+    rows.addEventListener('drop', (ev) => {
+      if (!interne()) return;
+      const c = viser(ev);
+      if (!c) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      efface();
+      moveTableEntry(tab, rangement.addr, c.row.dataset.addr, c.after);
+      rangement = null;
+    });
+  }
+
   function renderTable(tab) {
     const rows = tab.tableRowsEl;
     rows.innerHTML = '';
@@ -294,13 +363,16 @@
       const row = document.createElement('div');
       row.className = 'vrow';
       row.dataset.addr = e.addr;
-      // Chaque variable peut être glissée seule vers un autre onglet/fenêtre
+      // Chaque variable peut être glissée seule : vers un autre onglet ou une
+      // autre fenêtre, ou simplement plus haut ou plus bas dans ce tableau.
       row.draggable = true;
       row.addEventListener('dragstart', (ev) => {
         if (!DW.dnd) { ev.preventDefault(); return; }
+        rangement = { tab, addr: e.addr };
         DW.dnd.startDrag(ev, { kind: 'vars', table: [{ addr: e.addr, periodMs: e.periodMs }] },
           () => removeFromTable(tab, e.addr));
       });
+      row.addEventListener('dragend', () => { rangement = null; });
       row.innerHTML =
         '<span class="badge fam-' + e.meta.family + '">' + e.meta.family + '</span>' +
         '<div class="v-id"><span class="v-addr"></span><span class="v-label"></span></div>' +
@@ -319,7 +391,8 @@
         (e.name ? ' (' + e.meta.label + ')' : '') +
         (e.meta.unit ? ' (' + e.meta.unit + ')' : '') +
         ' · rafraîchissement ' + (e.periodMs || CFG.defaultPeriodMs) + ' ms' +
-        ' · glissez cette ligne vers un onglet ou une autre fenêtre';
+        ' · glissez cette ligne pour la ranger dans le tableau, ' +
+        'ou vers un onglet ou une autre fenêtre';
       const badge = row.querySelector('.badge');
       badge.title = famTitle(e.meta.family);
       row.querySelector('.v-val').title = 'Valeur instantanée' +
@@ -1506,7 +1579,7 @@
           S('Organiser') +
           L([
             ['Poignée ⠿', 'Glisser un graphique ou le tableau vers un onglet, une autre fenêtre, ou sur un autre graphique pour le ranger.'],
-            ['Ligne du tableau', 'Se glisse seule vers un autre onglet ou une autre fenêtre.'],
+            ['Ligne du tableau', 'Se glisse <b>dans le tableau</b> pour changer son rang (un repère montre où elle se posera), ou vers un autre onglet ou une autre fenêtre.'],
             ['Poignée ◢ (coin bas-droit)', 'Redimensionner un graphique à la souris : ↕ hauteur libre, ↔ largeur en nombre de colonnes. Sur le tableau numérique : ↕ fixe sa hauteur (défilement interne). Double-clic pour revenir à la taille automatique.'],
             ['Renommer', 'Bouton ✎ sur une ligne du tableau, ou « Renommer la courbe… » dans le menu d’une pastille : un nom d’affichage remplace le libellé du catalogue (vide = valeur d’origine).'],
             ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],

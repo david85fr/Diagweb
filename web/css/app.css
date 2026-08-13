@@ -61,7 +61,9 @@ body {
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
 }
-.wrap { max-width: 2300px; margin: 0 auto; padding: 10px 12px 60px; }
+/* Pleine largeur : un écran large sert à voir plus de courbes à la fois, pas à
+   border la page de vide. La grille des graphiques s'élargit d'elle-même. */
+.wrap { width: 100%; padding: 10px 12px 60px; }
 .hide { display: none !important; }
 button { font-family: var(--sans); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -544,6 +546,20 @@ body.dnd-over-pane #panes {
 }
 .chart-card.drop-before::before { left: -7px; }
 .chart-card.drop-after::after { right: -7px; }
+
+/* Même repère, à l'horizontale, pour le rangement des lignes du tableau */
+.vrow { position: relative; }
+.vrow.drop-before::before,
+.vrow.drop-after::after {
+  content: '';
+  position: absolute; left: 4px; right: 4px; height: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 70%, transparent);
+  z-index: 20;
+}
+.vrow.drop-before::before { top: -2px; }
+.vrow.drop-after::after { bottom: -2px; }
 
 /* Nuancier du menu de courbe */
 .pop-swatches {
