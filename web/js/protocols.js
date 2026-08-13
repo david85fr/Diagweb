@@ -42,11 +42,25 @@
       'Équipement : la date que l’équipement attache lui-même à la donnée — la ' +
       'seule fidèle quand l’événement précède sa transmission. Fournie par ' +
       'IEC 60870-5-104 (types horodatés), IEC 61850 (GOOSE, Sampled Values, ' +
-      'rapports) et OPC UA en abonnement ; ailleurs, l’horloge du serveur est ' +
+      'rapports) et OPC UA en abonnement ; SNMP la tient d’un OID d’horodatage ' +
+      'de la MIB, s’il en existe un (champ « OID d’horodatage » du point) ; ' +
+      'ailleurs, l’horloge du serveur est ' +
       'utilisée de toute façon. Serveur : ignorer délibérément l’horodatage du ' +
       'protocole — à choisir quand l’horloge de l’équipement n’est pas de confiance.',
       { choices: [['source', 'De l’équipement si disponible'],
                   ['server', 'Du serveur (forcé)']] }),
+  ];
+
+  // Garde-fou associé, sur le LIEN : un horodatage de source ne vaut que si
+  // l'horloge qui le produit est réglée. Proposé partout où une date absolue
+  // peut venir de l'équipement.
+  const SKEW = [
+    F('clockSkewS', 'Écart d’horloge admis (s)', 'int', 10, false,
+      'Au-delà de cet écart entre l’horloge de l’équipement et celle du serveur, ' +
+      'l’horodatage de l’équipement est écarté et celui du serveur utilisé, avec ' +
+      'un message. Sans ce garde-fou, un équipement dont l’horloge est fausse de ' +
+      'deux heures placerait ses échantillons hors de toute fenêtre visible — ce ' +
+      'qui se lit comme une variable morte alors qu’elle remonte très bien.'),
   ];
 
   // Champs communs à l'extraction d'un signal dans une trame (CAN, J1939…)
@@ -152,13 +166,7 @@
         F('t1', 'Délai t1 (s)', 'int', 15, false, 'Délai d’attente d’un acquittement avant coupure.'),
         F('t2', 'Délai t2 (s)', 'int', 10, false, 'Délai avant envoi d’un acquittement de supervision.'),
         F('t3', 'Délai t3 (s)', 'int', 20, false, 'Délai d’inactivité avant envoi d’un test de liaison.'),
-        F('clockSkewS', 'Écart d’horloge admis (s)', 'int', 10, false,
-          'Au-delà de cet écart entre l’horloge de l’équipement et celle du serveur, ' +
-          'l’horodatage de l’équipement est écarté et celui du serveur utilisé, avec ' +
-          'un message. Sans ce garde-fou, un équipement dont l’horloge est fausse de ' +
-          'deux heures placerait ses échantillons hors de toute fenêtre visible — ce ' +
-          'qui se lit comme une variable morte alors qu’elle remonte très bien.'),
-      ],
+      ].concat(SKEW),
       pointFields: [
         F('ioa', 'Adresse d’objet (IOA)', 'int', 0, true,
           'Adresse d’objet d’information sur 3 octets (1 à 16777215).'),
@@ -248,13 +256,7 @@
         F('timeoutMs', 'Délai d’attente (ms)', 'int', 5000, false,
           'Temps maximal d’attente d’une réponse de l’IED avant de signaler le lien en ' +
           'défaut.', { when: { mode: ['mms', 'report'] } }),
-        F('clockSkewS', 'Écart d’horloge admis (s)', 'int', 10, false,
-          'Au-delà de cet écart entre l’horloge de l’équipement et celle du serveur, ' +
-          'l’horodatage de l’équipement est écarté et celui du serveur utilisé, avec ' +
-          'un message. Sans ce garde-fou, un équipement dont l’horloge est fausse de ' +
-          'deux heures placerait ses échantillons hors de toute fenêtre visible — ce ' +
-          'qui se lit comme une variable morte alors qu’elle remonte très bien.'),
-      ],
+      ].concat(SKEW),
       pointFields: [
         // --- GOOSE ---
         F('field', 'Donnée', 'enum', 'data', false,
@@ -401,18 +403,23 @@
       transport: 'UDP (port 161)',
       state: 'live',
       help: 'Gestionnaire SNMP en lecture seule : interrogation cyclique d’OID par ' +
-            'GetRequest. v1 et v2c sont implémentées ; v3 (USM) se configure mais ' +
-            'n’est pas encore lue — un lien en v3 s’annonce « non branché » plutôt ' +
-            'que de retomber en silence sur une version non chiffrée. Aucune ' +
+            'GetRequest. Les trois versions sont lues — v1, v2c et v3 (USM : ' +
+            'authentification MD5, SHA-1 ou SHA-256, chiffrement DES ou AES-128). ' +
+            'Les phrases secrètes de v3 ne sont jamais dans la configuration : ' +
+            'elle ne porte qu’une référence, résolue dans l’environnement du ' +
+            'serveur. Un serveur compilé sans Net-SNMP sert encore v1 et v2c, et ' +
+            'annonce v3 « non branché » plutôt que de retomber en clair. Aucune ' +
             'écriture (SetRequest) n’est possible.',
       linkFields: [
         F('host', 'Hôte', 'text', '', true, 'Adresse IP ou nom réseau de l’agent SNMP.'),
         F('port', 'Port', 'int', 161, false, 'Port UDP de l’agent (161 par défaut).'),
         F('version', 'Version', 'enum', 'v2c', true,
           'v1 : la plus ancienne, sans Counter64 ni exception par variable. v2c : le ' +
-          'choix courant, communauté en clair. v3 : sécurisée (authentification et ' +
-          'chiffrement) — configurable, lecture pas encore implémentée.',
-          { choices: [['v1', 'v1'], ['v2c', 'v2c'], ['v3', 'v3 (non branché)']] }),
+          'choix courant, mais communauté EN CLAIR sur le réseau. v3 : authentification ' +
+          'et chiffrement (modèle USM) — le seul choix raisonnable sur un réseau exposé. ' +
+          'v3 demande un serveur compilé avec Net-SNMP ; sans lui, le lien refuse de ' +
+          's’ouvrir plutôt que de retomber en clair.',
+          { choices: [['v1', 'v1'], ['v2c', 'v2c'], ['v3', 'v3 (sécurisée)']] }),
         F('community', 'Communauté', 'text', 'public', false,
           'Communauté de lecture, transmise EN CLAIR sur le réseau par v1 et v2c : ' +
           'ne pas y mettre un secret qui compte, et préférer v3 sur un réseau exposé.',
@@ -433,9 +440,11 @@
           'Chiffrement de la charge utile.',
           { choices: [['DES', 'DES-CBC'], ['AES', 'AES-128-CFB']], when: { version: ['v3'] } }),
         F('secretRef', 'Référence des secrets', 'text', '', false,
-          'Nom sous lequel les phrases secrètes d’authentification et de chiffrement sont ' +
-          'rangées dans le magasin de secrets du contrôleur — une désignation, jamais le ' +
-          'secret lui-même : cette configuration s’exporte en clair.',
+          'Nom désignant les phrases secrètes — jamais les phrases elles-mêmes : cette ' +
+          'configuration est lisible par tout poste connecté et s’exporte en clair. Le ' +
+          'serveur lit DIAGWEB_SECRET_<RÉFÉRENCE>_AUTH et …_PRIV dans son environnement ' +
+          '(à défaut DIAGWEB_SECRET_<RÉFÉRENCE> pour les deux), que systemd sait ' +
+          'alimenter depuis son magasin de secrets sans rien écrire sur disque.',
           { when: { version: ['v3'] } }),
         F('timeoutMs', 'Délai d’attente (ms)', 'int', 1500, false,
           'Temps maximal d’attente d’une réponse. UDP perd des datagrammes sans le dire : ' +
@@ -443,12 +452,24 @@
         F('maxVars', 'Groupement (variables)', 'int', 16, false,
           'Nombre maximal d’OID demandés dans une même requête ; 1 pour les interroger ' +
           'séparément. Trop élevé, l’agent répond « tooBig ».'),
-      ],
+      ].concat(SKEW),
       pointFields: [
         F('oid', 'OID', 'text', '1.3.6.1.2.1.1.3.0', true,
           'Identifiant d’objet en notation pointée. Un scalaire se termine par « .0 » ' +
           '(ex. 1.3.6.1.2.1.1.3.0 = temps depuis le démarrage) ; une entrée de table ' +
           'porte son index (ex. 1.3.6.1.2.1.2.2.1.10.2 = octets reçus sur l’interface 2).'),
+        F('tsOid', 'OID d’horodatage', 'text', '', false,
+          'SNMP ne transporte AUCUNE date : ni la requête ni la réponse n’en portent. ' +
+          'Certaines MIB en exposent une dans un objet voisin — indiquer ici son OID le ' +
+          'fait lire dans la même requête, donc au même instant que la valeur. Laisser ' +
+          'vide si la MIB n’en propose pas : l’horloge du serveur sera utilisée.'),
+        F('tsType', 'Type de l’horodatage', 'enum', 'dateAndTime', false,
+          'Sans effet si aucun OID d’horodatage n’est indiqué. DateAndTime (RFC 2579) : ' +
+          'date absolue, éventuellement avec son fuseau — la seule vraiment fiable. ' +
+          'TimeTicks : centièmes de seconde depuis le démarrage de l’agent, ramenés en ' +
+          'absolu par approximation.',
+          { choices: [['dateAndTime', 'DateAndTime (absolue)'],
+                      ['timeTicks', 'TimeTicks (depuis le démarrage)']] }),
       ].concat(SCALE).concat(HORODATAGE),
     },
     {
@@ -502,13 +523,7 @@
           { when: { mode: ['subscribe'] } }),
         F('sessionTimeoutS', 'Expiration de session (s)', 'int', 60, false,
           'Durée au-delà de laquelle le serveur ferme une session restée sans échange.'),
-        F('clockSkewS', 'Écart d’horloge admis (s)', 'int', 10, false,
-          'Au-delà de cet écart entre l’horloge de l’équipement et celle du serveur, ' +
-          'l’horodatage de l’équipement est écarté et celui du serveur utilisé, avec ' +
-          'un message. Sans ce garde-fou, un équipement dont l’horloge est fausse de ' +
-          'deux heures placerait ses échantillons hors de toute fenêtre visible — ce ' +
-          'qui se lit comme une variable morte alors qu’elle remonte très bien.'),
-      ],
+      ].concat(SKEW),
       pointFields: [
         F('nodeId', 'NodeId', 'text', 'ns=2;s=', true,
           'Identifiant du nœud à lire, forme ns=<espace>;<type>=<valeur> — par exemple ' +

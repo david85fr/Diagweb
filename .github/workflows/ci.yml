@@ -40,6 +40,19 @@ jobs:
           path: server/build/_deps
           key: open62541-v1.5.6-${{ runner.os }}
 
+      # Net-SNMP : la bibliothèque pour compiler le pilote v3 (USM), et l'agent
+      # snmpd pour l'éprouver de bout en bout — le modèle de sécurité de SNMPv3
+      # ne se simule pas honnêtement. Le profil AppArmor d'Ubuntu enferme snmpd
+      # dans /etc/snmp et /var/lib/snmp, alors que le test le lance avec sa
+      # propre configuration dans un dossier temporaire : on le désactive sur
+      # cette machine de CI, qui ne sert qu'à cela.
+      - name: Installer Net-SNMP (bibliothèque et agent de test)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libsnmp-dev snmpd
+          sudo systemctl stop snmpd 2> /dev/null || true
+          sudo aa-disable /usr/sbin/snmpd 2> /dev/null || true
+
       - name: Compiler (avertissements = erreurs)
         run: |
           cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release \
@@ -51,6 +64,11 @@ jobs:
         run: ./server/build/diagweb-decode-test
 
       - name: Liens réseau de bout en bout (équipements simulés)
+        # Les phrases secrètes de l'agent SNMPv3 de test passent par
+        # l'environnement du serveur : le pilote refuse de les lire ailleurs.
+        env:
+          DIAGWEB_SECRET_AGENT_AUTH: motdepasseauth
+          DIAGWEB_SECRET_AGENT_PRIV: motdepassepriv
         run: |
           ./server/build/diagweb-server --port 8080 --root . \
             --data-dir "$RUNNER_TEMP/diag-data" > "$RUNNER_TEMP/serveur.log" 2>&1 &

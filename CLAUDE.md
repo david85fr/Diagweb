@@ -78,7 +78,8 @@ web/            sources de l'application (page de dev : web/index.html)
   js/dnd.js     déplacement de widgets entre onglets et fenêtres
   js/store.js   configurations : localStorage, export/import JSON+CSV, stub
   js/app.js     onglets, recherche, tableau, journal, boucle de rendu
-server/         serveur de diagnostic C++20 (HTTP + WebSocket ; open62541 pour OPC UA)
+server/         serveur de diagnostic C++20 (HTTP + WebSocket ; open62541 pour
+                OPC UA, Net-SNMP pour SNMP v3 — les deux facultatives)
   src/source.hpp     contrat IVariableSource — à implémenter pour le controller
   src/sim_source.hpp source simulée (bouchon) + générateurs + forçage
   src/recorder.hpp   journalisation autonome (navigateur fermé)
@@ -99,7 +100,8 @@ tools/check-drivers.mjs  un dossier de pilote par protocole (rejoué par la CI)
 tools/serve.py  serveur d'aperçu (port 8080, en-têtes anti-cache)
 tests/ui.mjs    tests d'interface Playwright (24 vérifications)
 tests/dnd.mjs   tests de déplacement de widgets (7 vérifications, http requis)
-tests/protocols.mjs  liens réseau bout en bout (équipements simulés, serveur requis)
+tests/protocols.mjs  liens réseau bout en bout (équipements simulés + agent snmpd
+                réel pour SNMPv3 ; serveur requis, secrets dans son environnement)
 tests/decode.cpp     décodage des protocoles (cible CMake diagweb-decode-test)
 tests/opcua_server.c serveur OPC UA de test (cible diagweb-opcua-test-server)
 tests/mms_ied.mjs    IED IEC 61850 simulé (pile ISO, MMS, rapports)

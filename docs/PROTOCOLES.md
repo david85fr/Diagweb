@@ -155,8 +155,8 @@ donc exactement les champs que le serveur sait lire.
 | CAN (trames brutes) | SocketCAN | implémenté | `drivers/can/` |
 | J1939 | SocketCAN | implémenté (SPN, demande de PGN, transport BAM) | `drivers/j1939/` |
 | CANopen | SocketCAN | implémenté (TPDO, SDO expédié) | `drivers/canopen/` |
-| SNMP v1 et v2c | UDP/161 | implémenté | `drivers/snmp/` |
-| SNMP v3 | UDP/161 | **déclaré** (USM à écrire) | `drivers/snmp/` |
+| SNMP v1 et v2c | UDP/161 | implémenté (sans dépendance) | `drivers/snmp/` |
+| SNMP v3 (USM) | UDP/161 | implémenté (Net-SNMP) | `drivers/snmp/` |
 | IEC 61850 GOOSE (8-1) | Ethernet 0x88B8 | implémenté | `drivers/iec61850/` |
 | IEC 61850 Sampled Values (9-2) | Ethernet 0x88BA | implémenté | `drivers/iec61850/` |
 | IEC 61850 lecture MMS | ISO sur TCP | implémenté | `drivers/iec61850/` |
@@ -275,20 +275,68 @@ Un point est un OID en notation pointée ; un scalaire se termine par `.0`
 - **La communauté circule en clair** en v1 et v2c. C'est une propriété du
   protocole, pas de Diagweb : ne pas y placer un secret qui compte.
 
-**v3 est déclaré, pas implémenté.** La configuration complète se saisit
-(utilisateur, niveau de sécurité, algorithmes d'authentification et de
-chiffrement, référence des secrets) et se conserve, mais un lien en v3
-s'affiche « non branché » et ne lit rien. Le choix mérite d'être explicite :
-il aurait été facile de retomber sur v2c en silence, et ç'aurait été le pire
-comportement possible pour une version choisie précisément pour sa sécurité.
+#### v3 : le modèle de sécurité USM
 
-Ce qui manque est le modèle de sécurité USM (RFC 3414) : découverte du moteur
-distant, fenêtre temporelle, dérivation et localisation des clés depuis les
-phrases secrètes, HMAC-MD5/SHA-1/SHA-256, puis DES-CBC ou AES-128-CFB pour le
-chiffrement. Deux routes, maintenant que les bibliothèques sous licence libre
-en produit commercial sont autorisées : écrire USM — faisable, mais c'est du
-code cryptographique — ou s'appuyer sur une pile existante. À décider avant de
-commencer.
+Les trois versions sont lues. v1 et v2c tiennent dans `drivers/snmp/snmp.hpp`,
+sans aucune dépendance. **v3 s'appuie sur Net-SNMP** (`drivers/snmp/netsnmp.hpp`),
+et le choix mérite d'être dit : USM (RFC 3414) demande la découverte du moteur
+distant, une fenêtre temporelle, la dérivation puis la localisation des clés à
+partir des phrases secrètes, HMAC-MD5/SHA-1/SHA-256, et DES-CBC ou AES-128-CFB.
+Écrire soi-même du code cryptographique qu'on ne peut pas éprouver contre
+l'existant est exactement ce qu'il ne faut pas faire. Net-SNMP est sous licences
+BSD (fichier `COPYING` vérifié, aucune clause GPL), donc utilisable dans un
+produit commercial fermé.
+
+| Réglage | Valeurs |
+|---|---|
+| Niveau de sécurité | `noAuthNoPriv`, `authNoPriv`, `authPriv` |
+| Authentification | HMAC-MD5, HMAC-SHA-1, HMAC-SHA-256 |
+| Chiffrement | DES-CBC, AES-128-CFB |
+
+La clé de chiffrement se dérive avec la **fonction de hachage de
+l'authentification** : c'est la règle de la RFC 3414, pas un raccourci
+d'implémentation.
+
+**Aucun secret dans la configuration.** `protocols.json` est lisible par tout
+poste connecté et s'exporte en clair : il ne porte qu'une **référence**, que le
+serveur résout dans son environnement.
+
+```
+DIAGWEB_SECRET_<RÉFÉRENCE>_AUTH    phrase d'authentification
+DIAGWEB_SECRET_<RÉFÉRENCE>_PRIV    phrase de chiffrement
+DIAGWEB_SECRET_<RÉFÉRENCE>         repli servant aux deux
+```
+
+Une référence `poste-nord` cherche donc `DIAGWEB_SECRET_POSTE_NORD_AUTH` (tout
+caractère non alphanumérique devient `_`). systemd sait alimenter ces variables
+depuis son magasin de secrets, sans rien écrire sur disque. Si le secret manque,
+le lien **refuse de s'ouvrir** et le dit — jamais de repli silencieux vers une
+version non chiffrée.
+
+Un serveur compilé sans Net-SNMP (`-DDIAGWEB_WITH_NETSNMP=OFF`, ou bibliothèque
+absente) sert encore v1 et v2c par l'implémentation interne ; un lien en v3 s'y
+affiche « non branché ». La bascule est faite par `make_snmp_driver()`, à la
+compilation.
+
+#### Horodatage : ce que SNMP ne transporte pas
+
+SNMP ne porte **aucune date** : ni la requête ni la réponse n'en contiennent.
+En revanche, une MIB peut en exposer une dans un objet voisin — et beaucoup le
+font. Un point peut donc désigner un **OID d'horodatage** compagnon, ajouté à la
+**même requête** que la valeur : la date et la mesure viennent alors du même
+échange, donc du même instant.
+
+- `DateAndTime` (RFC 2579) : date absolue sur 8 ou 11 octets, la seule vraiment
+  fiable. La forme longue porte son décalage par rapport à UTC ; la courte est
+  prise pour de l'UTC, faute de mieux. Exemple servi par presque tous les
+  agents : `hrSystemDate.0` = `1.3.6.1.2.1.25.1.2.0`.
+- `TimeTicks` : centièmes de seconde depuis le démarrage de l'agent. N'a de sens
+  que rapporté au `sysUpTime.0` du **même échange** — que le pilote demande
+  alors en tête de requête. Sans ce repère, aucune date n'est fabriquée :
+  l'horloge du serveur est utilisée.
+
+La date obtenue passe ensuite par le garde-fou commun à tous les protocoles
+(« Écart d'horloge admis », voir § Horodatage plus bas).
 
 ### J1939 — SPN, PGN, et comment les obtenir
 
@@ -599,7 +647,8 @@ protocole transporte la date de l'événement, c'est **elle** qui est retenue.
 | IEC 61850 Sampled Values | oui, `refrTm` |
 | IEC 61850 rapports | oui, `TimeOfEntry`, si le bloc l'annonce dans `OptFlds` |
 | OPC UA | oui en **abonnement** (`SourceTimestamp`) ; non en interrogation cyclique |
-| Modbus, SNMP, CAN, J1939, CANopen, lecture MMS | non : le protocole n'en transporte pas |
+| SNMP | pas par le protocole, mais par la **MIB** : OID d'horodatage compagnon (`DateAndTime` ou `TimeTicks`) déclaré sur le point |
+| Modbus, CAN, J1939, CANopen, lecture MMS | non : le protocole n'en transporte pas |
 
 **Le choix se fait point par point** — champ « Horodatage » de chaque point :
 
@@ -729,12 +778,13 @@ Licences vérifiées dans les dépôts eux-mêmes.
 | Bibliothèque | Protocole | Langage | Licence | Décision |
 |---|---|---|---|---|
 | [open62541](https://github.com/open62541/open62541) | OPC UA | C99 | MPL-2.0 (quelques fichiers CC0) | **retenue et intégrée** (v1.5.6) |
+| [Net-SNMP](https://github.com/net-snmp/net-snmp) | SNMP v3 (USM) | C | BSD (CMU/UCD et consorts, aucune clause GPL) | **retenue et intégrée** |
 | [S2OPC](https://gitlab.com/systerel/S2OPC) | OPC UA | C | Apache-2.0 | acceptable — solution de repli, orientée sûreté |
 | [libiec61850](https://github.com/mz-automation/libiec61850) | IEC 61850 (MMS, GOOSE, SV) | C99 | GPLv3 **ou** licence commerciale payante | **écartée** |
 | [lib60870](https://github.com/mz-automation/lib60870) | IEC 60870-5-101/104 | C | GPLv3 **ou** licence commerciale payante | écartée, et sans objet |
 | IEC61850bean | IEC 61850 | Java | Apache-2.0 annoncée, non vérifiée | hors périmètre : demande une JVM |
 
-Trois conséquences, dont une désagréable.
+Quatre conséquences, dont une désagréable.
 
 **OPC UA — intégrée.** C'était le seul protocole du lot où l'écriture à la
 main était disproportionnée : UA-TCP, SecureConversation avec renouvellement de
@@ -743,8 +793,16 @@ session, de lecture et d'abonnement. open62541 couvre l'ensemble sous MPL-2.0,
 qui autorise explicitement la combinaison avec du logiciel propriétaire —
 seules les modifications apportées à ses propres fichiers devraient être
 publiées, ce qui ne concerne pas le code de Diagweb. Version épinglée v1.5.6,
-licence vérifiée dans son fichier `LICENSE`. C'est la **seule** dépendance du
-serveur, et elle se débranche par `-DDIAGWEB_WITH_OPCUA=OFF`.
+licence vérifiée dans son fichier `LICENSE`. Elle se débranche par
+`-DDIAGWEB_WITH_OPCUA=OFF`.
+
+**SNMP v3 — intégrée.** Même raisonnement, pour une raison plus étroite : USM
+est du **code cryptographique**, et l'écrire soi-même sans pouvoir l'éprouver
+contre l'existant serait la mauvaise décision, quel que soit le soin apporté.
+Net-SNMP est sous licences BSD (fichier `COPYING` vérifié : aucune occurrence de
+« General Public License »), et ne sert **que** v3 : v1 et v2c restent servies
+par l'implémentation interne, sans dépendance. Elle se débranche par
+`-DDIAGWEB_WITH_NETSNMP=OFF`, auquel cas v3 s'annonce « non branché ».
 
 **IEC 61850 — écrit à la main, faute de licence acceptable.** Toutes les piles
 C matures sont en double licence GPLv3 / commerciale : gratuites tant que le
@@ -809,17 +867,35 @@ J1939, codec BER/ASN.1 de SNMP — y compris les longueurs qui débordent du
 tampon reçu — grammaire `@lien.point`, lecture de la configuration) **et** les
 filtres
 noyau des trois pilotes CAN, ainsi que leur appariement de trames — un filtre
-trop large ou trop étroit rendrait une variable silencieusement muette.
+trop large ou trop étroit rendrait une variable silencieusement muette. Les
+quatre formats de date s'y vérifient **sur le même instant** (`CP56Time2a`,
+`UtcTime` et `BinaryTime` d'IEC 61850, `DateAndTime` de SNMP) : chacun sert de
+contre-épreuve aux autres.
+
 `tests/protocols.mjs` monte un **esclave Modbus TCP**, une **station
 IEC 60870-5-104**, un **agent SNMP v2c** et un **IED IEC 61850** (pile ISO,
 association MMS, service Read, activation de bloc de rapport et émission
 d'`InformationReport`) en Node, configure les liens par
 REST et vérifie que les
-valeurs arrivent jusqu'au flux WebSocket. Un **serveur OPC UA de test**
-(`tests/opcua_server.c`, cible `diagweb-opcua-test-server`) est lancé de la
-même façon : il couvre l'abonnement, l'interrogation cyclique, la conversion
-des types, le refus des chaînes, et le refus d'ouvrir un lien chiffré sur un
-serveur compilé sans chiffrement. Le test vérifie aussi que le pilote
-**déclaré** restant (IEC 61850) annonce « non branché » sans publier de valeur. Les pilotes CAN ne sont pas couverts de bout en bout faute
-d'interface CAN dans l'environnement de test : seuls leur décodage, leurs
-filtres et leur appariement le sont.
+valeurs arrivent jusqu'au flux WebSocket.
+
+Deux équipements ne sont pas simulés, parce qu'ils ne peuvent pas l'être
+honnêtement :
+
+- un **serveur OPC UA** (`tests/opcua_server.c`, cible
+  `diagweb-opcua-test-server`) — abonnement, interrogation cyclique, conversion
+  des types, refus des chaînes, et refus d'ouvrir un lien chiffré sur un serveur
+  compilé sans chiffrement ;
+- un **agent SNMP réel** (`snmpd` de Net-SNMP, lancé par le test sur un port
+  libre avec sa propre configuration) — v1, v2c et **v3 authPriv** de bout en
+  bout : découverte du moteur, clés dérivées des phrases secrètes lues dans
+  l'environnement du serveur, authentification SHA-1 et chiffrement AES-128.
+  Le test vérifie aussi qu'un lien v3 **sans secret refuse de s'ouvrir**, et
+  que l'horodatage par OID compagnon fonctionne dans les deux formes
+  (`DateAndTime` sur l'agent simulé, avec une date volontairement placée dans le
+  passé ; `hrSystemDate` et `TimeTicks` sur l'agent réel).
+
+L'absence de l'un ou l'autre n'est pas passée sous silence : les vérifications
+concernées échouent en disant ce qui manque. Les pilotes CAN, eux, ne sont pas
+couverts de bout en bout faute d'interface CAN dans l'environnement de test :
+seuls leur décodage, leurs filtres et leur appariement le sont.

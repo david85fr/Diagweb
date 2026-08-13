@@ -21,6 +21,7 @@
 #include "drivers/iec61850/goose.hpp"
 #include "drivers/iec104/iec104.hpp"
 #include "drivers/iec61850/sv.hpp"
+#include "drivers/snmp/dateandtime.hpp"
 #include "drivers/iec61850/time61850.hpp"
 #include "protocol.hpp"
 
@@ -563,6 +564,43 @@ int main() {
     near("BinaryTime décodé (jours depuis 1984 + ms depuis minuit)",
          binary_time_61850(bt, 6), 1710513045.25);
     check("BinaryTime tronqué refusé", binary_time_61850(bt, 4) == 0);
+
+    // DateAndTime (RFC 2579), la date que les MIB SNMP exposent. Même instant
+    // que ci-dessus, au dixième de seconde près — c'est sa résolution.
+    const unsigned char dt[8] = {0x07, 0xE8,           // 2024
+                                 3, 15,                // mois, jour
+                                 14, 30, 45,           // heure UTC
+                                 2};                   // dixièmes de seconde
+    near("DateAndTime décodé (forme courte, pris pour de l'UTC)",
+         date_and_time_utc(dt, 8), 1710513045.2);
+
+    // Forme longue : l'heure est LOCALE et le fuseau explicite. Ici 16:30:45,2
+    // à UTC+2 — le même instant, ce qui vérifie le sens du décalage.
+    const unsigned char dtz[11] = {0x07, 0xE8, 3, 15, 16, 30, 45, 2, '+', 2, 0};
+    near("DateAndTime décodé (forme longue, fuseau retranché)",
+         date_and_time_utc(dtz, 11), 1710513045.2);
+    const unsigned char dtw[11] = {0x07, 0xE8, 3, 15, 12, 30, 45, 2, '-', 2, 0};
+    near("DateAndTime : fuseau à l'ouest ajouté", date_and_time_utc(dtw, 11), 1710513045.2);
+
+    unsigned char faux[11];
+    std::memcpy(faux, dtz, 11);
+    faux[8] = '*';                                     // ni « + » ni « − »
+    check("DateAndTime : sens du fuseau incohérent refusé", date_and_time_utc(faux, 11) == 0);
+    std::memcpy(faux, dt, 8);
+    faux[2] = 13;                                      // treizième mois
+    check("DateAndTime : mois hors plage refusé", date_and_time_utc(faux, 8) == 0);
+    faux[2] = 3;
+    faux[4] = 25;                                      // vingt-cinquième heure
+    check("DateAndTime : heure hors plage refusée", date_and_time_utc(faux, 8) == 0);
+    check("DateAndTime : longueur inattendue refusée", date_and_time_utc(dt, 7) == 0);
+
+    // TimeTicks : seul l'écart avec le sysUpTime du même échange le rend absolu.
+    near("TimeTicks ramené en absolu par le sysUpTime du même échange",
+         time_ticks_utc(1000, 1500, 1710513050.0), 1710513045.0);
+    check("TimeTicks sans sysUpTime : aucune date inventée",
+          time_ticks_utc(1000, 0, 1710513050.0) == 0);
+    check("TimeTicks postérieur au sysUpTime refusé",
+          time_ticks_utc(2000, 1500, 1710513050.0) == 0);
   }
 
   // ---- adresses « @lien.point » ----------------------------------------

@@ -20,6 +20,13 @@ set(DIAGWEB_OPCUA_TAG "v1.5.6" CACHE STRING "Version d'open62541 utilisée")
 # de s'ouvrir, avec le motif — jamais de repli silencieux en clair.
 option(DIAGWEB_OPCUA_ENCRYPTION "Chiffrement OPC UA via OpenSSL" OFF)
 
+# Pilote SNMP v3. Net-SNMP est sous licences BSD (CMU/UCD et consorts, aucune
+# clause GPL — fichier COPYING vérifié). À OFF, ou si la bibliothèque est
+# absente, SNMP v1 et v2c restent servis par l'implémentation interne et v3
+# s'annonce « non branché » : jamais de repli silencieux en version non
+# chiffrée.
+option(DIAGWEB_WITH_NETSNMP "SNMP v3 via Net-SNMP (BSD)" ON)
+
 add_executable(diagweb-server src/main.cpp)
 target_include_directories(diagweb-server PRIVATE src)
 target_compile_options(diagweb-server PRIVATE -Wall -Wextra)
@@ -70,6 +77,31 @@ if(DIAGWEB_WITH_OPCUA)
   # tests/protocols.mjs vérifie la chaîne complète sans matériel.
   add_executable(diagweb-opcua-test-server EXCLUDE_FROM_ALL ../tests/opcua_server.c)
   target_link_libraries(diagweb-opcua-test-server PRIVATE open62541::open62541)
+endif()
+
+if(DIAGWEB_WITH_NETSNMP)
+  find_package(PkgConfig QUIET)
+  if(PkgConfig_FOUND)
+    pkg_check_modules(NETSNMP QUIET netsnmp)
+  endif()
+  if(NOT NETSNMP_FOUND)
+    find_path(NETSNMP_INCLUDE_DIR net-snmp/net-snmp-config.h)
+    find_library(NETSNMP_LIBRARY netsnmp)
+    if(NETSNMP_INCLUDE_DIR AND NETSNMP_LIBRARY)
+      set(NETSNMP_FOUND TRUE)
+      set(NETSNMP_INCLUDE_DIRS "${NETSNMP_INCLUDE_DIR}")
+      set(NETSNMP_LIBRARIES "${NETSNMP_LIBRARY}")
+    endif()
+  endif()
+  if(NETSNMP_FOUND)
+    target_compile_definitions(diagweb-server PRIVATE DIAGWEB_HAS_NETSNMP=1)
+    # En-têtes tiers en « système » : nos -Werror portent sur notre code.
+    target_include_directories(diagweb-server SYSTEM PRIVATE ${NETSNMP_INCLUDE_DIRS})
+    target_link_libraries(diagweb-server PRIVATE ${NETSNMP_LIBRARIES})
+    message(STATUS "Net-SNMP trouvé : SNMP v1, v2c et v3")
+  else()
+    message(STATUS "Net-SNMP absent : SNMP v1 et v2c en implémentation interne, v3 non branché")
+  endif()
 endif()
 
 # Tests unitaires du décodage des protocoles réseau :

@@ -15,10 +15,11 @@ Le `controller` n'existe pas encore côté prototype : il est remplacé par
 (catalogue dérivé automatiquement de `web/js/config.js`). Les **liens
 réseau**, eux, sont réels : voir `docs/PROTOCOLES.md`.
 
-**Aucune dépendance externe** : bibliothèque standard C++20 + POSIX
-uniquement — la poignée de main WebSocket (SHA-1, base64), le découpage en
-trames et le JSON sont implémentés localement, pour rester déployable sur
-le contrôleur embarqué.
+**Le cœur n'a aucune dépendance externe** : bibliothèque standard C++20 +
+POSIX uniquement — la poignée de main WebSocket (SHA-1, base64), le découpage
+en trames et le JSON sont implémentés localement, pour rester déployable sur
+le contrôleur embarqué. Seuls deux pilotes s'appuient sur une bibliothèque, et
+se débranchent à la compilation (voir § Dépendances).
 
 ## Compiler et lancer
 
@@ -122,13 +123,22 @@ front-end restent inchangés.
 
 ## Dépendances
 
-Une seule : **open62541** (MPL-2.0), pour le pilote OPC UA. Tout le reste
-n'utilise que la bibliothèque standard et POSIX.
+Deux, toutes deux facultatives et cantonnées à un pilote :
+
+| Bibliothèque | Licence | Sert à | Sans elle |
+|---|---|---|---|
+| **open62541** | MPL-2.0 | OPC UA | le pilote OPC UA redevient « déclaré » |
+| **Net-SNMP** | BSD | SNMP **v3** (USM) | v1 et v2c restent servies par l'implémentation interne ; v3 s'annonce « non branché » |
+
+Tout le reste n'utilise que la bibliothèque standard et POSIX.
 
 ```bash
-cmake -B build -S . -DDIAGWEB_WITH_OPCUA=OFF        # sans OPC UA : aucune dépendance
+cmake -B build -S . -DDIAGWEB_WITH_OPCUA=OFF        # sans OPC UA
+cmake -B build -S . -DDIAGWEB_WITH_NETSNMP=OFF      # sans SNMPv3
 cmake -B build -S . -DDIAGWEB_OPCUA_ENCRYPTION=ON   # chiffrement OPC UA (OpenSSL)
 ```
+
+Les deux à OFF : aucune dépendance, compilation hors ligne.
 
 CMake préfère une copie déjà installée (`find_package`) et ne la télécharge
 que faute de mieux : la compilation croisée d'un produit embarqué ne devrait
@@ -146,7 +156,7 @@ Chaque protocole a son dossier ; rien ne traîne à la racine de `src/drivers/`.
 | `can/` | CAN, trames brutes | implémenté |
 | `j1939/` | J1939 : SPN, demande de PGN, réassemblage BAM | implémenté |
 | `canopen/` | CANopen (TPDO, SDO expédié) | implémenté |
-| `snmp/` | SNMP v1 et v2c (`ber.hpp` + pilote) | implémenté ; v3 déclaré |
+| `snmp/` | SNMP v1 et v2c (implémentation interne), v3 via Net-SNMP, décodage des dates de MIB | implémenté |
 | `iec61850/` | IEC 61850 : GOOSE, Sampled Values, MMS, rapports (+ pile ISO) | implémenté |
 | `opcua/` | OPC UA (IEC 62541), via open62541 | implémenté |
 | `common/` | `net.hpp` (TCP/UDP/série), `can_socket.hpp`, `l2_socket.hpp` (Ethernet brut), `ber.hpp` (ASN.1), `declared.hpp` | — |

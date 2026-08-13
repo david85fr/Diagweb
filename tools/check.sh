@@ -69,6 +69,11 @@ if [ "$CIBLE" = tout ] || [ "$CIBLE" = serveur ]; then
 
   if [ -x server/build/diagweb-server ]; then
     DATA=$(mktemp -d)
+    # Phrases secrètes de l'agent SNMPv3 de test : jamais dans la
+    # configuration, toujours dans l'environnement du serveur — c'est
+    # exactement ce que le pilote exige en exploitation.
+    export DIAGWEB_SECRET_AGENT_AUTH=motdepasseauth
+    export DIAGWEB_SECRET_AGENT_PRIV=motdepassepriv
     ./server/build/diagweb-server --port "$PORT" --root . --data-dir "$DATA" > /tmp/diagweb-ci.log 2>&1 &
     SRV=$!
     if attendre "http://localhost:$PORT/api/health"; then

@@ -1,19 +1,27 @@
 /* Diagweb — test bout en bout des liens réseau du serveur de diagnostic.
  *
  * Monte de faux équipements (esclave Modbus TCP, station IEC 60870-5-104,
- * agent SNMP v2c, serveur OPC UA), configure les liens par l'API REST du
- * serveur, puis vérifie que les points remontent bien jusqu'au flux WebSocket
- * avec les bonnes valeurs.
+ * agent SNMP v2c, IED IEC 61850, serveur OPC UA), configure les liens par l'API
+ * REST du serveur, puis vérifie que les points remontent bien jusqu'au flux
+ * WebSocket avec les bonnes valeurs.
  *
  *   node tests/protocols.mjs [http://localhost:8080]
  *
- * Le serveur doit tourner (server/build/diagweb-server). Aucune dépendance :
- * net, dgram et WebSocket sont fournis par Node.
+ * Le serveur doit tourner (server/build/diagweb-server), et pour SNMPv3 avec
+ * les phrases secrètes dans son environnement (voir tools/check.sh).
+ *
+ * Deux équipements ne sont pas simulés, parce qu'ils ne peuvent pas l'être
+ * honnêtement : le serveur OPC UA de test (compilé avec open62541) et l'agent
+ * SNMP réel (snmpd de Net-SNMP, pour éprouver USM). Leur absence n'est pas
+ * passée sous silence — les vérifications concernées échouent avec la raison.
+ * Le reste ne dépend de rien : net, dgram et WebSocket viennent de Node.
  */
 import net from 'node:net';
 import dgram from 'node:dgram';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const BASE = process.argv[2] || 'http://localhost:8080';
 const results = [];
@@ -183,6 +191,49 @@ function startIec104Station() {
   return new Promise((res) => server.listen(0, '127.0.0.1', () => res({ server, port: server.address().port })));
 }
 
+// --- BER minimal, partagé par l'agent simulé et la sonde d'un agent réel ---
+const len = (n) => (n < 0x80 ? [n] : (() => {
+  const b = []; for (let v = n; v; v >>= 8) b.unshift(v & 0xff);
+  return [0x80 | b.length, ...b];
+})());
+const tlv = (tag, body) => Buffer.from([tag, ...len(body.length), ...body]);
+const int = (v) => {
+  const b = []; let x = BigInt(v);
+  do { b.unshift(Number(x & 0xffn)); x >>= 8n; }
+  while (!((x === 0n && !(b[0] & 0x80)) || (x === -1n && (b[0] & 0x80))));
+  return tlv(0x02, b);
+};
+const uint = (tag, v) => {
+  const b = []; let x = BigInt(v);
+  do { b.unshift(Number(x & 0xffn)); x >>= 8n; } while (x);
+  if (b[0] & 0x80) b.unshift(0);                 // pas de signe parasite
+  return tlv(tag, b);
+};
+const oidEnc = (dotted) => {
+  const a = dotted.split('.').map(Number);
+  const b = [a[0] * 40 + a[1]];
+  for (const arc of a.slice(2)) {
+    const t = []; let v = arc;
+    do { t.unshift(v & 0x7f); v >>= 7; } while (v);
+    for (let i = 0; i < t.length - 1; i++) t[i] |= 0x80;
+    b.push(...t);
+  }
+  return tlv(0x06, b);
+};
+const readTlv = (buf, i) => {
+  const tag = buf[i]; let n = buf[i + 1]; let off = i + 2;
+  if (n & 0x80) { const k = n & 0x7f; n = 0; for (let j = 0; j < k; j++) n = (n << 8) | buf[off++]; }
+  return { tag, body: buf.subarray(off, off + n), next: off + n };
+};
+const oidDec = (b) => {
+  let s = Math.floor(b[0] / 40) + '.' + (b[0] % 40); let arc = 0;
+  for (let i = 1; i < b.length; i++) {
+    arc = (arc << 7) | (b[i] & 0x7f);
+    if (!(b[i] & 0x80)) { s += '.' + arc; arc = 0; }
+  }
+  return s;
+};
+
 /**
  * Agent SNMP v2c minimal, sur UDP. Décode le GetRequest, répond avec un type
  * applicatif différent par OID — c'est justement ce que le pilote doit savoir
@@ -193,50 +244,17 @@ function startIec104Station() {
  *   1.3.6.1.4.1.9999.1.0     Integer     -42
  *   1.3.6.1.4.1.9999.2.0     OctetString "23.5"      (mesure en chaîne)
  *   1.3.6.1.4.1.9999.3.0     OctetString "hors zone" (non numérique : ignorée)
+ *   1.3.6.1.4.1.9999.4.0     Integer     77          (mesure datée par l'agent)
+ *   1.3.6.1.4.1.9999.5.0     DateAndTime             (sa date, dans le passé)
  *   1.3.6.1.4.1.9999.9.0     noSuchObject
  */
 function startSnmpAgent() {
-  // --- BER minimal ---
-  const len = (n) => (n < 0x80 ? [n] : (() => {
-    const b = []; for (let v = n; v; v >>= 8) b.unshift(v & 0xff);
-    return [0x80 | b.length, ...b];
-  })());
-  const tlv = (tag, body) => Buffer.from([tag, ...len(body.length), ...body]);
-  const int = (v) => {
-    const b = []; let x = BigInt(v);
-    do { b.unshift(Number(x & 0xffn)); x >>= 8n; }
-    while (!((x === 0n && !(b[0] & 0x80)) || (x === -1n && (b[0] & 0x80))));
-    return tlv(0x02, b);
-  };
-  const uint = (tag, v) => {
-    const b = []; let x = BigInt(v);
-    do { b.unshift(Number(x & 0xffn)); x >>= 8n; } while (x);
-    if (b[0] & 0x80) b.unshift(0);                 // pas de signe parasite
-    return tlv(tag, b);
-  };
-  const oidEnc = (dotted) => {
-    const a = dotted.split('.').map(Number);
-    const b = [a[0] * 40 + a[1]];
-    for (const arc of a.slice(2)) {
-      const t = []; let v = arc;
-      do { t.unshift(v & 0x7f); v >>= 7; } while (v);
-      for (let i = 0; i < t.length - 1; i++) t[i] |= 0x80;
-      b.push(...t);
-    }
-    return tlv(0x06, b);
-  };
-  const readTlv = (buf, i) => {
-    const tag = buf[i]; let n = buf[i + 1]; let off = i + 2;
-    if (n & 0x80) { const k = n & 0x7f; n = 0; for (let j = 0; j < k; j++) n = (n << 8) | buf[off++]; }
-    return { tag, body: buf.subarray(off, off + n), next: off + n };
-  };
-  const oidDec = (b) => {
-    let s = Math.floor(b[0] / 40) + '.' + (b[0] % 40); let arc = 0;
-    for (let i = 1; i < b.length; i++) {
-      arc = (arc << 7) | (b[i] & 0x7f);
-      if (!(b[i] & 0x80)) { s += '.' + arc; arc = 0; }
-    }
-    return s;
+  /** DateAndTime (RFC 2579, forme longue) d'un instant donné, en UTC. */
+  const dateAndTime = (date) => {
+    const y = date.getUTCFullYear();
+    return Buffer.from([y >> 8, y & 0xff, date.getUTCMonth() + 1, date.getUTCDate(),
+                        date.getUTCHours(), date.getUTCMinutes(), date.getUTCSeconds(),
+                        Math.floor(date.getUTCMilliseconds() / 100), 0x2b, 0, 0]);
   };
 
   const VALUES = {
@@ -246,6 +264,11 @@ function startSnmpAgent() {
     '1.3.6.1.4.1.9999.2.0': () => tlv(0x04, Buffer.from('23.5')),
     '1.3.6.1.4.1.9999.3.0': () => tlv(0x04, Buffer.from('hors zone')),
     '1.3.6.1.4.1.9999.9.0': () => Buffer.from([0x80, 0x00]),   // noSuchObject
+    // Mesure datée par l'agent : la valeur, puis sa date DECALAGE_S secondes
+    // dans le passé — comme un relevé transmis après coup.
+    '1.3.6.1.4.1.9999.4.0': () => int(77),
+    '1.3.6.1.4.1.9999.5.0': () =>
+      tlv(0x04, dateAndTime(new Date(Date.now() - DECALAGE_S * 1000))),
   };
 
   const sock = dgram.createSocket('udp4');
@@ -282,6 +305,92 @@ function startSnmpAgent() {
     } catch { /* trame incohérente : l'agent reste muet, comme un vrai */ }
   });
   return new Promise((res) => sock.bind(0, '127.0.0.1', () => res({ sock, port: sock.address().port })));
+}
+
+/**
+ * Agent SNMP RÉEL : snmpd de Net-SNMP, avec un utilisateur v3 authPriv.
+ *
+ * L'agent simulé ci-dessus suffit à éprouver le décodage des types, mais pas
+ * v3 : découverte du moteur distant, fenêtre temporelle, clés dérivées des
+ * phrases secrètes, chiffrement de la charge utile — cela ne se simule pas en
+ * trois cents lignes, et le prétendre serait se mentir. Ces vérifications-là
+ * passent donc par un vrai agent.
+ */
+const SNMPD = { user: 'diaguser', auth: 'motdepasseauth', priv: 'motdepassepriv',
+                ref: 'agent' };
+
+/** Un port UDP libre, obtenu en laissant le système en choisir un. */
+function freeUdpPort() {
+  return new Promise((res) => {
+    const s = dgram.createSocket('udp4');
+    s.bind(0, '127.0.0.1', () => {
+      const p = s.address().port;
+      s.close(() => res(p));
+    });
+  });
+}
+
+async function startSnmpd() {
+  const bin = ['/usr/sbin/snmpd', '/usr/local/sbin/snmpd', '/sbin/snmpd']
+    .find((p) => fs.existsSync(p));
+  if (!bin) return { proc: null, absent: true, dir: null, port: 0 };
+
+  const port = await freeUdpPort();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'diagweb-snmpd-'));
+  fs.writeFileSync(path.join(dir, 'snmpd.conf'),
+    'rocommunity public 127.0.0.1\n' +
+    `createUser ${SNMPD.user} SHA "${SNMPD.auth}" AES "${SNMPD.priv}"\n` +
+    `rouser ${SNMPD.user} authPriv\n`);
+  // -f : reste au premier plan, pour que la fermeture du test l'emporte avec
+  // lui ; -r : ne réclame pas les privilèges du superutilisateur ; le fichier
+  // d'état va dans le dossier temporaire, jamais dans /var.
+  const proc = spawn(bin, ['-f', '-C', '-c', path.join(dir, 'snmpd.conf'),
+                           '-Lf', path.join(dir, 'snmpd.log'), '-r',
+                           `udp:127.0.0.1:${port}`],
+                     { stdio: ['ignore', 'ignore', 'ignore'],
+                       env: { ...process.env,
+                              SNMP_PERSISTENT_FILE: path.join(dir, 'persist.conf') } });
+  let mort = false;
+  proc.on('error', () => { mort = true; });
+  proc.on('exit', () => { mort = true; });
+  await sleep(1200);
+  return { proc, port, dir, absent: mort, bin };
+}
+
+/**
+ * Interroge un OID sur un agent v2c et renvoie le type applicatif reçu (ou
+ * null). Sert à savoir si l'agent expose bien l'objet qu'une vérification
+ * suppose, plutôt que de conclure d'un échec ce qui n'est qu'une absence.
+ */
+function snmpProbe(port, oidTexte) {
+  return new Promise((res) => {
+    const sock = dgram.createSocket('udp4');
+    const fini = (v) => { try { sock.close(); } catch {} res(v); };
+    const timer = setTimeout(() => fini(null), 1500);
+    sock.on('message', (msg) => {
+      clearTimeout(timer);
+      try {
+        const seq = readTlv(msg, 0);
+        let i = readTlv(seq.body, 0).next;            // version
+        i = readTlv(seq.body, i).next;                // communauté
+        const pdu = readTlv(seq.body, i);
+        let j = readTlv(pdu.body, 0).next;            // request-id
+        j = readTlv(pdu.body, j).next;                // error-status
+        j = readTlv(pdu.body, j).next;                // error-index
+        const binds = readTlv(pdu.body, j);
+        const vb = readTlv(binds.body, 0);
+        const val = readTlv(vb.body, readTlv(vb.body, 0).next);
+        fini({ tag: val.tag, body: val.body });
+      } catch { fini(null); }
+    });
+    sock.on('error', () => fini(null));
+    const req = tlv(0x30, Buffer.concat([
+      int(1), tlv(0x04, Buffer.from('public')),
+      tlv(0xa0, Buffer.concat([int(1), int(0), int(0),
+        tlv(0x30, tlv(0x30, Buffer.concat([oidEnc(oidTexte), Buffer.from([0x05, 0x00])])))])),
+    ]));
+    sock.send(req, port, '127.0.0.1');
+  });
 }
 
 /**
@@ -348,8 +457,16 @@ if (health.status !== 200 || !health.json || health.json.role !== 'diag-server')
 const modbus = await startModbusSlave();
 const iec = await startIec104Station();
 const snmp = await startSnmpAgent();
+const snmpd = await startSnmpd();
 const ua = await startOpcUaServer(48401);
 const ied = await startMmsIed(10250);
+
+// hrSystemDate n'est pas servi par tous les agents : on le demande avant de
+// fonder une vérification dessus, plutôt que de prendre une absence pour un
+// défaut du pilote.
+const hrDate = snmpd.absent ? null : await snmpProbe(snmpd.port, '1.3.6.1.2.1.25.1.2.0');
+const hrDateSert = !!hrDate && hrDate.tag === 0x04 &&
+                   (hrDate.body.length === 8 || hrDate.body.length === 11);
 
 const before = await api('/api/protocols');
 check('description des protocoles publiée par le serveur',
@@ -443,14 +560,61 @@ const config = {
           params: { oid: '1.3.6.1.4.1.9999.3.0', gain: 1, offset: 0 } },
         { id: 'absent', label: 'OID inconnu', unit: '', kind: 'float', periodMs: 200,
           params: { oid: '1.3.6.1.4.1.9999.9.0', gain: 1, offset: 0 } },
+        // Deux fois la même mesure : l'une datée par la MIB (OID compagnon),
+        // l'autre par le serveur. L'écart entre les deux est la preuve.
+        { id: 'date_src', label: 'Mesure datée par la MIB', unit: '', kind: 'float',
+          periodMs: 200,
+          params: { oid: '1.3.6.1.4.1.9999.4.0', tsOid: '1.3.6.1.4.1.9999.5.0',
+                    tsType: 'dateAndTime', gain: 1, offset: 0, timestamp: 'source' } },
+        { id: 'date_srv', label: 'Même mesure, datée par le serveur', unit: '', kind: 'float',
+          periodMs: 200,
+          params: { oid: '1.3.6.1.4.1.9999.4.0', tsOid: '1.3.6.1.4.1.9999.5.0',
+                    tsType: 'dateAndTime', gain: 1, offset: 0, timestamp: 'server' } },
+      ],
+    },
+    // --- agent réel (snmpd) : les trois versions, dont USM ------------------
+    {
+      id: 'reelv1', label: 'Agent réel, v1', protocol: 'snmp', enabled: !snmpd.absent,
+      params: { host: '127.0.0.1', port: snmpd.port, version: 'v1', community: 'public',
+                timeoutMs: 1500, maxVars: 8 },
+      points: [
+        { id: 'uptime', label: 'Temps depuis démarrage', unit: 's', kind: 'float', periodMs: 200,
+          params: { oid: '1.3.6.1.2.1.1.3.0', gain: 0.01, offset: 0 } },
       ],
     },
     {
-      id: 'snmpv3', label: 'Agent SNMPv3', protocol: 'snmp', enabled: true,
-      params: { host: '127.0.0.1', port: snmp.port, version: 'v3', user: 'diag',
-                level: 'authPriv', authProto: 'SHA', privProto: 'AES', timeoutMs: 1500 },
+      id: 'reelv2', label: 'Agent réel, v2c', protocol: 'snmp', enabled: !snmpd.absent,
+      params: { host: '127.0.0.1', port: snmpd.port, version: 'v2c', community: 'public',
+                timeoutMs: 1500, maxVars: 8, clockSkewS: 30 },
       points: [
-        { id: 'uptime', label: 'Temps depuis démarrage', unit: 's', kind: 'float', periodMs: 1000,
+        // Horodatage en TimeTicks : le pilote doit demander sysUpTime dans le
+        // MÊME échange pour le ramener en date absolue.
+        { id: 'ticks', label: 'Datée en TimeTicks', unit: 's', kind: 'float', periodMs: 200,
+          params: { oid: '1.3.6.1.2.1.1.3.0', tsOid: '1.3.6.1.2.1.1.3.0',
+                    tsType: 'timeTicks', gain: 0.01, offset: 0 } },
+        // Horodatage DateAndTime, celui d'un vrai agent (HOST-RESOURCES-MIB).
+        { id: 'hrdate', label: 'Datée par hrSystemDate', unit: 's', kind: 'float', periodMs: 200,
+          params: { oid: '1.3.6.1.2.1.1.3.0', tsOid: '1.3.6.1.2.1.25.1.2.0',
+                    tsType: 'dateAndTime', gain: 0.01, offset: 0 } },
+      ],
+    },
+    {
+      id: 'reelv3', label: 'Agent réel, v3 authPriv', protocol: 'snmp', enabled: !snmpd.absent,
+      params: { host: '127.0.0.1', port: snmpd.port, version: 'v3', user: SNMPD.user,
+                level: 'authPriv', authProto: 'SHA', privProto: 'AES',
+                secretRef: SNMPD.ref, timeoutMs: 2500, maxVars: 8 },
+      points: [
+        { id: 'uptime', label: 'Temps depuis démarrage', unit: 's', kind: 'float', periodMs: 200,
+          params: { oid: '1.3.6.1.2.1.1.3.0', gain: 0.01, offset: 0 } },
+      ],
+    },
+    {
+      id: 'v3nu', label: 'v3 sans secret', protocol: 'snmp', enabled: true,
+      params: { host: '127.0.0.1', port: snmpd.port || snmp.port, version: 'v3',
+                user: SNMPD.user, level: 'authPriv', authProto: 'SHA', privProto: 'AES',
+                secretRef: '', timeoutMs: 1000 },
+      points: [
+        { id: 'uptime', label: 'Temps depuis démarrage', unit: 's', kind: 'float', periodMs: 500,
           params: { oid: '1.3.6.1.2.1.1.3.0', gain: 1, offset: 0 } },
       ],
     },
@@ -540,9 +704,23 @@ check('OPC UA : pas de repli en clair sur un lien chiffré',
   stMap.uasecu ? stMap.uasecu.state + ' · ' + stMap.uasecu.detail : 'absent');
 check('lien SNMP v2c établi', stMap.commut && stMap.commut.state === 'up',
   stMap.commut ? stMap.commut.state + ' · ' + stMap.commut.detail : 'absent');
-check('SNMPv3 annoncé non branché (pas de repli silencieux en v2c)',
-  stMap.snmpv3 && stMap.snmpv3.state === 'todo',
-  stMap.snmpv3 ? stMap.snmpv3.detail : 'absent');
+const dit = (id) => (stMap[id] ? stMap[id].state + ' · ' + stMap[id].detail : 'absent');
+const sansSnmpd = 'snmpd (Net-SNMP) absent de la machine : installer le paquet snmpd';
+check('SNMP v1 : lien établi sur un agent réel',
+  !snmpd.absent && stMap.reelv1 && stMap.reelv1.state === 'up',
+  snmpd.absent ? sansSnmpd : dit('reelv1'));
+check('SNMP v2c : lien établi sur un agent réel',
+  !snmpd.absent && stMap.reelv2 && stMap.reelv2.state === 'up',
+  snmpd.absent ? sansSnmpd : dit('reelv2'));
+// USM de bout en bout : découverte du moteur, clés dérivées des phrases
+// secrètes lues dans l'environnement, authentification SHA-1 et chiffrement
+// AES-128 — c'est ce que valide un lien « up » ici.
+check('SNMP v3 : session authentifiée et chiffrée établie (USM, agent réel)',
+  !snmpd.absent && stMap.reelv3 && stMap.reelv3.state === 'up',
+  snmpd.absent ? sansSnmpd : dit('reelv3'));
+check('SNMP v3 : sans secret, le lien refuse de s’ouvrir (jamais de repli en clair)',
+  stMap.v3nu && stMap.v3nu.state === 'down' && /secret/i.test(stMap.v3nu.detail || ''),
+  dit('v3nu'));
 
 const test = await api('/api/protocols/test', {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -559,7 +737,9 @@ const { got, dates, metas } = await collect(
    '@supervision.pression', '@supervision.compteur', '@supervision.marche',
    '@supervision.texte', '@uapoll.regime', '@uasecu.regime',
    '@commut.uptime', '@commut.octets', '@commut.signe', '@commut.chaine',
-   '@commut.texte', '@commut.absent', '@snmpv3.uptime'], 1400);
+   '@commut.texte', '@commut.absent', '@commut.date_src', '@commut.date_srv',
+   '@reelv1.uptime', '@reelv2.ticks', '@reelv2.hrdate', '@reelv3.uptime',
+   '@v3nu.uptime'], 1400);
 
 const last = (a) => { const v = got.get(a); return v.length ? v[v.length - 1] : null; };
 
@@ -622,8 +802,48 @@ check('SNMP : chaîne non numérique jamais publiée',
   got.get('@commut.texte').length === 0);
 check('SNMP : noSuchObject ne publie rien',
   got.get('@commut.absent').length === 0);
-check('SNMP : aucun point lu sur un lien v3',
-  got.get('@snmpv3.uptime').length === 0);
+check('SNMP : aucun point lu sur un lien v3 sans secret',
+  got.get('@v3nu.uptime').length === 0);
+check('SNMP v1 : valeur lue sur l’agent réel',
+  last('@reelv1.uptime') !== null && last('@reelv1.uptime') > 0,
+  snmpd.absent ? sansSnmpd : 'sysUpTime ' + last('@reelv1.uptime') + ' s');
+check('SNMP v3 : valeur lue à travers la session chiffrée',
+  last('@reelv3.uptime') !== null && last('@reelv3.uptime') > 0,
+  snmpd.absent ? sansSnmpd : 'sysUpTime ' + last('@reelv3.uptime') + ' s');
+// Horodatage par OID compagnon. La MIB de l'agent simulé date la mesure
+// DECALAGE_S secondes dans le passé : l'écart avec le jumeau daté par le
+// serveur doit le retrouver, et la valeur être la même des deux côtés.
+{
+  const src = dates.get('@commut.date_src');
+  const srv = dates.get('@commut.date_srv');
+  const ecart = (src.length && srv.length)
+    ? srv[srv.length - 1] - src[src.length - 1] : NaN;
+  check('SNMP : date de la MIB retenue (OID compagnon, DateAndTime)',
+    Math.abs(ecart - DECALAGE_S) < 0.5,
+    'écart source/serveur ' + (isNaN(ecart) ? 'indisponible' : ecart.toFixed(3) + ' s'));
+  check('SNMP : valeur identique quel que soit l’horodatage',
+    last('@commut.date_src') === 77 && last('@commut.date_srv') === 77,
+    'source ' + last('@commut.date_src') + ' / serveur ' + last('@commut.date_srv'));
+}
+// Sur l'agent réel, la date compagnonne désigne le même instant que l'horloge
+// du serveur : on vérifie qu'elle est exploitée sans dériver, pas qu'elle
+// diffère.
+{
+  const t = dates.get('@reelv2.ticks');
+  const ref = dates.get('@reelv1.uptime');
+  const ecart = (t.length && ref.length) ? Math.abs(t[t.length - 1] - ref[ref.length - 1]) : NaN;
+  check('SNMP : horodatage TimeTicks rapporté au sysUpTime du même échange',
+    ecart < 1.0,
+    snmpd.absent ? sansSnmpd
+                 : (isNaN(ecart) ? 'aucun échantillon' : 'écart ' + ecart.toFixed(3) + ' s'));
+
+  const h = dates.get('@reelv2.hrdate');
+  const eh = (h.length && ref.length) ? Math.abs(h[h.length - 1] - ref[ref.length - 1]) : NaN;
+  check('SNMP : DateAndTime d’un agent réel (hrSystemDate) décodée et retenue',
+    hrDateSert ? eh < 2.0 : true,
+    !hrDateSert ? 'hrSystemDate non servi par cet agent : vérification sans objet'
+                : (isNaN(eh) ? 'aucun échantillon' : 'écart ' + eh.toFixed(3) + ' s'));
+}
 // Horodatage : les deux points lisent le MÊME objet, l'un daté par la station
 // (2 s dans le passé), l'autre par le serveur. L'écart doit apparaître.
 {
@@ -676,6 +896,13 @@ iec.server.close();
 snmp.sock.close();
 if (ua.proc) ua.proc.kill();
 if (ied.proc) ied.proc.kill();
+if (snmpd.proc) snmpd.proc.kill();
+if (snmpd.dir) {
+  // snmpd écrit son fichier d'état en s'arrêtant : effacer son dossier avant
+  // qu'il ait fini échouerait sur un répertoire qui se repeuple.
+  await sleep(300);
+  try { fs.rmSync(snmpd.dir, { recursive: true, force: true }); } catch { /* sans gravité */ }
+}
 
 console.log('');
 console.log(`${results.length - failed}/${results.length} vérifications réussies`);

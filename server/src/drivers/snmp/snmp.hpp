@@ -9,23 +9,31 @@
 //   v1   — RFC 1157, communauté en clair, pas de type Counter64 ;
 //   v2c  — RFC 1901/3416, communauté en clair, exceptions par variable
 //          (noSuchObject, noSuchInstance) et Counter64 ;
-//   v3   — RFC 3414 (USM) : DÉCLARÉ, pas encore implémenté. Un lien configuré
-//          en v3 s'annonce « non branché » et ne publie aucune valeur, plutôt
-//          que de retomber en silence sur une version non chiffrée — ce qui
-//          serait le pire des comportements pour un protocole choisi
-//          précisément pour sa sécurité.
+//   v3   — RFC 3414 (USM) : servi par netsnmp.hpp, pas ici. Cette
+//          implémentation interne est le repli d'un serveur compilé sans
+//          Net-SNMP ; un lien en v3 s'y annonce « non branché » et ne publie
+//          aucune valeur, plutôt que de retomber en silence sur une version non
+//          chiffrée — ce qui serait le pire des comportements pour un protocole
+//          choisi précisément pour sa sécurité.
+//
+// Horodatage : SNMP n'en transporte aucun, mais une MIB peut en exposer un dans
+// un objet voisin. Un point peut donc désigner un OID d'horodatage compagnon,
+// demandé dans la MÊME requête que sa valeur (voir dateandtime.hpp).
 //
 // Aucune écriture : SetRequest n'est pas implémenté, et ne le sera pas.
 #pragma once
 
 #include <algorithm>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "../../protocol.hpp"
 #include "../common/net.hpp"
 #include "../common/ber.hpp"
+#include "dateandtime.hpp"
+#include "netsnmp.hpp"
 
 namespace diagweb {
 
@@ -37,10 +45,13 @@ class SnmpDriver : public IProtocolDriver {
       const PointConfig& p = link_.points[i];
       Point pt;
       pt.oid = normalize_oid(p.str("oid"));
+      pt.ts_oid = normalize_oid(p.str("tsOid"));
+      pt.ts_type = p.str("tsType", "dateAndTime");
       pt.period_s = p.period_ms / 1000.0;
       pt.gain = p.num("gain", 1);
       pt.offset = p.num("offset", 0);
       if (!pt.oid.empty()) by_oid_[pt.oid].push_back(i);
+      if (!pt.oid.empty() && !pt.ts_oid.empty()) by_ts_oid_[pt.ts_oid].push_back(i);
       points_.push_back(pt);
     }
   }
@@ -91,7 +102,7 @@ class SnmpDriver : public IProtocolDriver {
 
  private:
   struct Point {
-    std::string oid;
+    std::string oid, ts_oid, ts_type;
     double period_s = 1;
     double due = 0;
     double gain = 1, offset = 0;
@@ -120,10 +131,21 @@ class SnmpDriver : public IProtocolDriver {
   /** Une transaction : GetRequest groupé, puis décodage de la réponse. */
   bool exchange(const std::vector<size_t>& lot, std::string& err) {
     std::vector<uint8_t> binds;
-    for (size_t i : lot) {
+    std::set<std::string> demandes;                // un OID n'est demandé qu'une fois
+    const auto ajouter = [&](const std::string& oid) {
+      if (oid.empty() || !demandes.insert(oid).second) return;
       const std::vector<uint8_t> vb =
-          ber::wrap(ber::kSequence, ber::cat({ber::put_oid(points_[i].oid), ber::put_null()}));
+          ber::wrap(ber::kSequence, ber::cat({ber::put_oid(oid), ber::put_null()}));
       binds.insert(binds.end(), vb.begin(), vb.end());
+    };
+    for (size_t i : lot) {
+      ajouter(points_[i].oid);
+      // La date compagnonne voyage dans la MÊME requête que la valeur : les
+      // deux viennent alors du même instant, ce qui est tout l'intérêt.
+      ajouter(points_[i].ts_oid);
+      // Un horodatage en TimeTicks ne devient absolu que rapporté au sysUpTime
+      // du même échange.
+      if (!points_[i].ts_oid.empty() && points_[i].ts_type == "timeTicks") ajouter(kSysUpTime);
     }
     const int32_t rid = ++req_id_;
     const std::vector<uint8_t> pdu = ber::wrap(
@@ -189,33 +211,79 @@ class SnmpDriver : public IProtocolDriver {
 
     ber::Cursor binds;
     if (!ber::read_into(pdu, tag, binds) || tag != ber::kSequence) return false;
+
+    // Les variables liées sont d'abord recueillies : une date doit être connue
+    // avant que la valeur qu'elle porte ne soit publiée, et l'ordre dans lequel
+    // l'agent les renvoie ne nous appartient pas.
+    std::vector<Var> vars;
     while (!binds.done()) {
       ber::Cursor vb;
       if (!ber::read_into(binds, tag, vb) || tag != ber::kSequence) break;
       if (!ber::read_tlv(vb, tag, body, len) || tag != ber::kOid) break;
-      std::string oid;
-      if (!ber::read_oid(body, len, oid)) break;
-      uint8_t vtag = 0;
-      const uint8_t* vbody = nullptr;
-      size_t vlen = 0;
-      if (!ber::read_tlv(vb, vtag, vbody, vlen)) break;
-      publish(oid, vtag, vbody, vlen);
+      Var v;
+      if (!ber::read_oid(body, len, v.oid)) break;
+      if (!ber::read_tlv(vb, v.tag, v.body, v.len)) break;
+      vars.push_back(v);
     }
+    publish_all(vars);
     return true;
   }
 
-  void publish(const std::string& oid, uint8_t tag, const uint8_t* b, size_t n) {
-    const auto it = by_oid_.find(oid);
-    if (it == by_oid_.end()) return;
+  /** Variable liée d'une réponse : l'OID, son type applicatif et son corps. */
+  struct Var {
+    std::string oid;
+    uint8_t tag = 0;
+    const uint8_t* body = nullptr;
+    size_t len = 0;
+  };
 
-    double v = 0;
-    if (!value_of(tag, b, n, v)) {
-      // noSuchObject / noSuchInstance / type non numérique : aucune valeur
-      // publiée, un trou franc dans la courbe et un motif dans l'état du lien.
-      sink_.warn("OID " + oid + " : " + reason(tag));
-      return;
+  /** sysUpTime, dates compagnonnes, puis valeurs — dans cet ordre. */
+  void publish_all(const std::vector<Var>& vars) {
+    double uptime_ticks = 0;
+    for (const Var& v : vars) {
+      double t = 0;
+      if (v.oid == kSysUpTime && v.tag == ber::kTimeTicks && value_of(v.tag, v.body, v.len, t)) {
+        uptime_ticks = t;
+      }
     }
-    for (size_t i : it->second) sink_.publish(i, v * points_[i].gain + points_[i].offset);
+
+    std::map<size_t, double> dates;                // indice du point → date source
+    for (const Var& v : vars) {
+      const auto it = by_ts_oid_.find(v.oid);
+      if (it == by_ts_oid_.end()) continue;
+      for (size_t i : it->second) {
+        const double d = (points_[i].ts_type == "timeTicks")
+                             ? ticks_utc(v, uptime_ticks)
+                             : ((v.tag == ber::kOctetStr)
+                                    ? date_and_time_utc(v.body, v.len) : 0.0);
+        if (d > 0) dates[i] = d;
+      }
+    }
+
+    for (const Var& v : vars) {
+      const auto it = by_oid_.find(v.oid);
+      if (it == by_oid_.end()) continue;
+      double val = 0;
+      if (!value_of(v.tag, v.body, v.len, val)) {
+        // noSuchObject / noSuchInstance / type non numérique : aucune valeur
+        // publiée, un trou franc dans la courbe et un motif dans l'état du lien.
+        sink_.warn("OID " + v.oid + " : " + reason(v.tag));
+        continue;
+      }
+      for (size_t i : it->second) {
+        const auto d = dates.find(i);
+        sink_.publish(i, val * points_[i].gain + points_[i].offset,
+                      d == dates.end() ? 0.0 : d->second);
+      }
+    }
+  }
+
+  /** TimeTicks compagnon → date absolue, ou 0 si le repère manque. */
+  static double ticks_utc(const Var& v, double uptime_ticks) {
+    double ticks = 0;
+    if (v.tag != ber::kTimeTicks && v.tag != ber::kInteger) return 0;
+    if (!value_of(v.tag, v.body, v.len, ticks)) return 0;
+    return time_ticks_utc(ticks, uptime_ticks, utc_now());
   }
 
   /** Types applicatifs SNMP → grandeur. false = pas de valeur exploitable. */
@@ -277,14 +345,37 @@ class SnmpDriver : public IProtocolDriver {
     }
   }
 
+  /** sysUpTime.0 : le repère des horodatages en TimeTicks. */
+  static constexpr const char* kSysUpTime = "1.3.6.1.2.1.1.3.0";
+
   LinkConfig link_;
   IPointSink& sink_;
   std::string version_;
   std::vector<Point> points_;
-  std::map<std::string, std::vector<size_t>> by_oid_;
+  std::map<std::string, std::vector<size_t>> by_oid_, by_ts_oid_;
   int fd_ = -1;
   int32_t req_id_ = 0;
   int misses_ = 0;              // délais consécutifs avant de déclarer le lien perdu
 };
+
+}  // namespace diagweb
+
+namespace diagweb {
+
+/**
+ * Choix du pilote SNMP.
+ *
+ * Net-SNMP compilé : il sert les trois versions, v3 comprise — son modèle de
+ * sécurité USM ne s'écrit pas à la main sans risque. Sinon, l'implémentation
+ * interne prend le relais pour v1 et v2c, sans aucune dépendance, et v3
+ * s'annonce « non branché » plutôt que de retomber en clair.
+ */
+inline DriverPtr make_snmp_driver(const LinkConfig& link, IPointSink& sink) {
+#if defined(DIAGWEB_HAS_NETSNMP) && DIAGWEB_HAS_NETSNMP
+  return std::make_unique<NetSnmpDriver>(link, sink);
+#else
+  return std::make_unique<SnmpDriver>(link, sink);
+#endif
+}
 
 }  // namespace diagweb

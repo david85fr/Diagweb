@@ -419,20 +419,22 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
 - **Modèle** : un *lien* (protocole + paramètres de connexion) porte des
   *points* (variables lues). Adresse Diagweb : **`@lien.point`** (famille NET).
 - **Protocoles** : Modbus TCP, Modbus RTU (série), IEC 60870-5-104, CAN brut,
-  J1939 (transport multi-trames compris), CANopen, **SNMP v1 et v2c**,
+  J1939 (transport multi-trames compris), CANopen, **SNMP v1, v2c et v3 (USM)**,
   **OPC UA (IEC 62541)**, **IEC 61850** dans ses quatre mécanismes (GOOSE,
-  Sampled Values, lecture MMS, rapports BRCB/URCB) — pilotes implémentés ;
-  **SNMP v3 (USM)** est *déclaré* : la configuration est acceptée et
-  conservée, la lecture viendra avec leur pile respective (ISO/MMS d'un côté,
-  USM pour SNMPv3). Un pilote déclaré ne publie **aucune** valeur — et un lien SNMP configuré en v3 ne retombe
-  jamais en silence sur v2c, ce qui viderait de son sens le choix de v3.
+  Sampled Values, lecture MMS, rapports BRCB/URCB) — tous implémentés. SNMP v3
+  s'appuie sur Net-SNMP (authentification MD5/SHA-1/SHA-256, chiffrement
+  DES/AES-128) ; un serveur compilé sans cette bibliothèque sert encore v1 et
+  v2c et annonce v3 « non branché ». Un lien réglé en v3 ne retombe **jamais**
+  en silence sur v2c, ce qui viderait de son sens le choix de v3.
 - **Bibliothèques tierces** : autorisées côté serveur si leur licence reste
   **gratuite en produit commercial fermé** (MIT, BSD, Apache-2.0, MPL-2.0…) ;
   refusées si GPL/AGPL ou en double licence dont l'usage commercial se paie.
   L'interface web garde sa règle de **zéro dépendance**. Licences vérifiées et
   décisions consignées dans `docs/PROTOCOLES.md` § « Bibliothèques externes et
-  licences ». **Seule dépendance à ce jour : open62541** (MPL-2.0), pour OPC UA,
-  débranchable par `-DDIAGWEB_WITH_OPCUA=OFF`. **IEC 61850 n'a aucune pile C
+  licences ». **Deux dépendances à ce jour**, toutes deux facultatives :
+  **open62541** (MPL-2.0) pour OPC UA, débranchable par
+  `-DDIAGWEB_WITH_OPCUA=OFF`, et **Net-SNMP** (BSD) pour SNMP v3,
+  débranchable par `-DDIAGWEB_WITH_NETSNMP=OFF`. **IEC 61850 n'a aucune pile C
   permissive** — les stacks matures sont GPLv3 ou payantes.
 - **Sécurité OPC UA** : le chiffrement demande OpenSSL (option de compilation
   `DIAGWEB_OPCUA_ENCRYPTION`). Sans elle, un lien réglé en signature ou
@@ -487,7 +489,10 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
   étant lisible dans l'état du lien.
 - **Horodatage** : quand le protocole transporte la date de l'événement, c'est
   elle qui est retenue (IEC-104 types horodatés, GOOSE, Sampled Values,
-  rapports, OPC UA en abonnement). Le choix est **par point** : « de
+  rapports, OPC UA en abonnement). SNMP n'en transporte aucune, mais une MIB
+  peut en exposer une : le point désigne alors un **OID d'horodatage**
+  compagnon (`DateAndTime` ou `TimeTicks`), lu dans la même requête que la
+  valeur. Le choix est **par point** : « de
   l'équipement si disponible » (défaut) ou « du serveur (forcé) », pour une
   horloge d'équipement qui n'est pas de confiance. La date reçue n'est pas
   recopiée : son **écart** à l'heure courante est appliqué, afin que toutes les
