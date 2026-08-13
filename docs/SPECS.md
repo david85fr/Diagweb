@@ -40,16 +40,23 @@ pour les familles PLC, normalisé en majuscules) :
   ↑/↓/Entrée/Échap ; au tact, un appui sur une suggestion ajoute
   immédiatement.
 - **Filtres par type** en tête des suggestions : « Toutes », « PLC »
-  (familles I/Q/M/S), « Modbus » (registres MB), « Simulink » (signaux
+  (familles I/Q/M/S), « Modbus » (registres MB), « Matlab » (signaux
   C API), « Réseau » (points des liens, famille NET). Sélection exclusive,
   conservée pendant la saisie ; le filtre s'applique aussi à la ligne « hors
   catalogue ».
 - Le vivier de suggestions est le catalogue du contrôleur **plus** les points
   déclarés dans les liens réseau : un point configuré est proposé à la frappe
   comme n'importe quelle variable.
-- Sélecteur de **cible** : « Tableau numérique », chacun des graphiques
-  existants, « Nouveau graphique ». Après création d'un graphique via
-  « Nouveau graphique » ou « + Graphique », il devient la cible courante.
+- Sélecteur de **cible** : chaque tableau et chaque graphique de l'onglet,
+  puis « → Nouveau tableau » et « → Nouveau graphique ». Ces deux dernières
+  entrées **créent la tuile aussitôt** et la visent : créer une tuile et
+  choisir sa cible sont le même geste, au même endroit — il n'y a plus de
+  boutons « + Tableau » / « + Graphique » ailleurs dans la page.
+- **Étiquettes de famille** : `PLC`, `MB`, `Matlab`, `ext.<protocole>`. Elles
+  ont toutes la **largeur d'« ext.MB »** (six caractères), pour que les
+  adresses s'alignent d'une ligne à l'autre ; seuls les badges de protocole
+  plus longs (`ext.61850`, `ext.CANopen`) la dépassent — les rétrécir les
+  rendrait illisibles.
 - **Période de rafraîchissement** optionnelle par variable, choisie au
   moment de l'ajout (sélecteur à côté de la cible) : **10 ms par défaut**,
   valeurs proposées 10 / 20 / 50 / 100 / 200 / 500 ms / 1 s. La période est
@@ -74,8 +81,8 @@ pour les familles PLC, normalisé en majuscules) :
 - Les abonnements des onglets inactifs **restent vivants** : l'historique
   des courbes et la journalisation continuent en arrière-plan, rien n'est
   perdu en changeant d'onglet. Seul l'onglet actif est rendu à l'écran.
-- La recherche, la cible d'ajout, « + Graphique », la pause et le Journal
-  agissent sur l'onglet actif.
+- La recherche, la cible d'ajout (création de tuile comprise), la pause et le
+  Journal agissent sur l'onglet actif.
 - La session (v2) mémorise tous les onglets, l'onglet actif et l'état de
   journalisation de chacun.
 
@@ -114,16 +121,16 @@ restent partagées entre toutes les fenêtres (stockage local).
 
 ## 3. Tableaux numériques
 
-- Un onglet porte **autant de tableaux qu'on veut** (« + Tableau »), chacun
-  étant une **carte de la grille** au même titre qu'un graphique : on peut donc
-  alterner tableau, graphique, tableau, graphique, et donner à chacun sa
-  largeur (en colonnes) et sa hauteur. Un tableau regroupe ce qui se lit
-  ensemble ; deux tableaux séparent deux sujets, ce qu'une seule liste ne sait
-  pas faire. Chaque tableau a son **nom** (modifiable, il sert de destination
-  d'ajout), son bouton **＋** et son menu **⋮** — le même jeu de gestes que
-  celui d'un graphique : ajouter des variables, vider, taille automatique,
-  **dupliquer ce tableau**, **déplacer vers un onglet**, **ouvrir dans une
-  nouvelle fenêtre**, fermer.
+- Un onglet porte **autant de tableaux qu'on veut** (« → Nouveau tableau »
+  dans la liste des destinations), chacun étant une **tuile de la mosaïque**
+  au même titre qu'un graphique (§3 bis) : même placement libre, même poignée
+  de dimensionnement. Un tableau regroupe ce qui se lit ensemble ; deux
+  tableaux séparent deux sujets, ce qu'une seule liste ne sait pas faire.
+  Chaque tableau a son **nom** (modifiable, il sert de destination d'ajout),
+  son bouton **＋** et son menu **⋮** — le même jeu de gestes que celui d'un
+  graphique : ajouter des variables, vider, taille de départ, **dupliquer ce
+  tableau**, **déplacer vers un onglet**, **ouvrir dans une nouvelle
+  fenêtre**, fermer.
 - Colonnes : badge famille, adresse (mono), libellé, valeur vivante, unité,
   tendance (↗/↘/→ sur ~2,5 s, sauf bits), bouton **✎** (renommer), bouton
   retirer.
@@ -138,20 +145,65 @@ restent partagées entre toutes les fenêtres (stockage local).
   accentué qui s'estompe en ~1 s). Repère immédiat des variables qui
   bougent, même pour un changement d'un seul cycle. (Les grandeurs
   continues, qui changent en permanence, ne flashent donc pas.)
-- **Format des dispositions** : `{version: 2, tables: [{name, h, cols, pos,
-  entries}], charts: [{…, pos}]}`. `pos` est le rang de la carte dans la
-  grille — c'est lui qui restitue l'alternance. Le format v1 (`table`,
-  `tableH`, `tableCols`, `tableAfter`) reste **lu** et traduit à la volée.
-- **Redimensionnement** : une poignée ◢ (coin bas-droit, écrans ≥ 700 px) fixe
-  la hauteur du tableau ; au-delà, il **défile en interne** au lieu de pousser
-  les graphiques vers le bas. Double-clic sur la poignée = hauteur automatique.
-  Mémorisé dans la configuration (`tableH`, pixels).
+- **Format des dispositions** : `{version: 3, tables: [{name, x, y, w, h,
+  entries}], charts: [{…, x, y, w, h}]}` — la place et la taille de chaque
+  tuile, en colonnes et en rangées (§3 bis). Les formats v1 et v2 (rang `pos`
+  dans une grille en flux, hauteur en pixels, largeur en colonnes
+  « naturelles ») restent **lus** et convertis à l'ouverture : chaque carte
+  est reposée à la première place libre, dans son ancien ordre — le flux
+  d'origine est reproduit.
+- **Défilement interne** : réduite en hauteur, la tuile ne rogne pas ses
+  lignes, elle **défile à l'intérieur** — les tuiles voisines ne bougent pas.
 - **Forçage** (diagnostic) : suffixe `= valeur` dans la barre de recherche
   (`Q0.3 = 1`, `MB400 = 12500`) impose la valeur **côté serveur** ; la ligne
   est surlignée et porte un ⏻ qui relâche. Les bits sont ramenés à 0/1. Les
   points réseau `@lien.point` restent en **lecture seule** (refusés). Voir §7
   (commande `set` du contrat) et §7 bis.
 - Rafraîchissement ~5 Hz. Masqué quand il est vide.
+
+## 3 bis. Mosaïque (placement et dimensionnement libres)
+
+Tableaux et graphiques sont la même chose pour la mise en page : des **tuiles**
+rectangulaires posées sur une grille de **douze colonnes** fractionnaires et de
+rangées de hauteur fixe (30 px, 33 au-delà de 1700 px, 36 au-delà de 2300).
+Chaque tuile porte `x`, `y`, `w`, `h` — colonne, rangée, largeur, hauteur.
+
+**Pourquoi une grille explicite.** La version précédente laissait la grille CSS
+placer les cartes toute seule (`auto-fit`), la largeur étant exprimée en
+« colonnes naturelles » dont le nombre changeait avec la fenêtre. Conséquences :
+on ne pouvait que **ranger** les cartes les unes après les autres — jamais en
+poser une à un endroit choisi — et la même carte n'avait pas la même largeur
+d'un écran à l'autre. Avec `x/y/w/h`, la tuile va où on la met, et la
+disposition se transpose telle quelle d'un poste à l'autre.
+
+Deux règles de comportement, celles d'un tableau de bord :
+
+1. **poussée** — une tuile posée sur une autre la repousse vers le **bas**,
+   jamais sur le côté (le côté ferait valser toute la ligne). La tuile tenue
+   sous la main ne bouge jamais : ce sont les autres qui lui font place ;
+2. **gravité** — les tuiles remontent tant qu'il y a de la place au-dessus,
+   donc pas de trou involontaire après un déplacement ou une suppression.
+
+**Déplacer** : poignée ⠿, glisser-déposer. Un **rectangle d'atterrissage**
+occupe, dans la grille, la place exacte que prendra la tuile — ce n'est pas une
+approximation dessinée par-dessus. La même poignée emmène la tuile sur un
+**onglet** ou dans une **autre fenêtre** du navigateur : un geste, trois
+destinations.
+
+**Redimensionner** : poignée ◢ (coin bas-droit), largeur **et** hauteur, par
+cellules entières, avec réagencement à chaque cellule franchie. Le contenu suit
+la tuile — le tableau défile à l'intérieur, le graphique s'étire — sans quoi la
+hauteur tirée resterait sans effet visible. Double-clic : taille de départ
+(tableau 12×7, graphique 6×9). Bornes : 2 colonnes et 3 rangées au minimum.
+
+**Téléphone** (< 700 px) : la mosaïque se replie en **une colonne**, les tuiles
+empilées dans l'ordre (y, x) ; la poignée disparaît. Le modèle est conservé —
+la disposition d'un poste de travail se retrouve intacte au retour sur grand
+écran — et la **hauteur** choisie est traduite en pixels plutôt que perdue.
+
+Le moteur est dans `web/js/mosaic.js` : géométrie pure (poussée, gravité,
+première place libre, cellule visée) plus la poignée de dimensionnement,
+partagée par les deux natures de tuile.
 
 ## 4. Graphiques
 
@@ -162,27 +214,11 @@ restent partagées entre toutes les fenêtres (stockage local).
   + valeur continue par zoom), pause locale (+ pause de l'onglet), menu ⋮
   (échelles automatiques, taille, plein écran, fermeture). Max 8 courbes
   par graphique (palette fixe).
-- **Tailles** : hauteur adaptée à l'écran (`32vh`, bornée 220–420 px) ;
-  cycle **M → L → XL** par graphique via le menu ⋮ (L ≈ 48vh, XL ≈ 56vh et
-  pleine largeur de la grille) — mémorisé dans la configuration
-  (`heightMode`). **Plein écran** par graphique (menu ⋮, sortie par Échap
-  ou le menu).
-- **Dimensionnement libre à la poignée** (coin bas-droit, souris ou stylet) :
-  glisser ↕ règle la **hauteur** libre (150–2000 px, `customH`), glisser ↔ la
-  **largeur** exprimée en **nombre de colonnes de la grille** (2 à 6,
-  `colSpan` ; 1 = automatique). **Double-clic** sur la poignée — ou menu ⋮ →
-  « Taille automatique » — revient au préréglage M/L/XL. Les deux valeurs
-  sont mémorisées dans la configuration et suivent le graphique lors d'une
-  duplication ou d'un déplacement.
-  - La largeur **appliquée** est bornée au nombre de colonnes disponibles
-    (recalculé depuis `--col-min` à chaque redimensionnement de la fenêtre) :
-    une fenêtre rétrécie ne crée jamais de colonne supplémentaire, et la
-    largeur voulue est retrouvée dès que la place revient.
-  - **Disposition différente sur mobile** : sous 700 px la poignée est
-    masquée et le dimensionnement libre est neutralisé — la grille reste en
-    une colonne avec les hauteurs M/L/XL. Une configuration réglée sur un
-    poste de travail s'ouvre donc proprement sur téléphone, sans perdre ses
-    valeurs (elles redeviennent actives sur grand écran).
+- **Taille** : le graphique est une tuile de la mosaïque (§3 bis) — largeur et
+  hauteur libres à la poignée ◢, taille de départ 6 colonnes × 9 rangées, menu
+  ⋮ → « Taille de départ » pour y revenir. Le tracé **remplit** la tuile : la
+  hauteur tirée se voit sur le tracé, pas seulement sur la carte. **Plein
+  écran** par graphique (menu ⋮, sortie par Échap ou le menu).
 - Sur canvas étroit (< 520 px) : règles d'axes compactes (38 px), 2 règles
   visibles au maximum (les groupes suivants gardent leur mise à l'échelle,
   badge « É· ») ; ≥ 1100 px : règles de 50 px, police 11 px.
@@ -260,14 +296,12 @@ Historique conservé : 330 s glissantes.
 
 ## 6. Configurations (liste des variables + agencement)
 
-Configuration (une par onglet) : `{version: 1, table: [{addr, periodMs?}],
-charts: [{title, windowS, heightMode?, customH?, colSpan?, series: [{addr,
-axisMode: 'auto'|'solo', visible, periodMs?, offsetY?, colorIdx?,
-color?}]}]}`. `periodMs` absent = 10 ms ;
-`heightMode` = préréglage `'L'|'XL'` (absent = M), `customH` = hauteur libre
-en pixels et `colSpan` = largeur en colonnes de grille, tous deux issus de la
-poignée de redimensionnement (absents = taille automatique, ignorés sous
-700 px) ;
+Configuration (une par onglet) : `{version: 3, tables: [{name, x, y, w, h,
+entries: [{addr, periodMs?, name?}]}], charts: [{title, windowS, x, y, w, h,
+series: [{addr, axisMode: 'auto'|'solo', visible, periodMs?, offsetY?,
+colorIdx?, color?}]}]}`. `periodMs` absent = 10 ms ;
+`x`, `y`, `w`, `h` = place et taille de la tuile dans la mosaïque, en colonnes
+et en rangées (§3 bis) ;
 `offsetY` = décalage vertical (unités de la variable, absent = 0) ;
 `colorIdx` = emplacement de palette (suit le thème), `color` = teinte libre
 en hexadécimal qui, si présente, l'emporte. L'ordre du tableau `charts`
@@ -524,8 +558,9 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
   onglets (＋ inclus), et à droite le tag de version, le bouton de **repli
   de la zone de configuration** (⌃/⌄) et le **menu burger ☰**.
 - **Menu burger ☰ = fonctions globales** (indépendantes des onglets) :
-  Basculer le thème, **Apparence** (logo et couleurs, §8 bis), **Journal de
-  données** (§6 bis — point ⏺ tant qu'un enregistrement tourne), Aide
+  Basculer le thème, **Apparence** (logo et couleurs, §8 bis),
+  **Configurations** (§6), **Journal de données** (§6 bis — point ⏺ tant
+  qu'un enregistrement tourne), Aide
   (commandes et gestes), **Liens réseau** (configuration des protocoles
   industriels, §7 bis), À propos (version, mode) et les trois **pages
   réseau** (§8 ter) ; les notes de version restent affichées « à venir ».
@@ -533,16 +568,16 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
 - **Figer/Reprendre** est dans la **barre du haut**, à côté du tag de version :
   arrêter tous les graphiques est le geste qu'on fait dans l'urgence, il ne
   doit pas dépendre du repli de la zone de configuration.
-- **Actions de l'onglet actif**, dans une rangée sous la barre d'onglets
-  (elle défile avec le contenu) : + Tableau · + Graphique · Configs.
+- **Pas de rangée d'actions** sous les onglets : créer un tableau ou un
+  graphique se fait dans la liste des destinations (§2), et les fonctions qui
+  ne dépendent pas de ce qui est affiché sont dans le menu ☰. La barre du haut
+  ne porte que ce qui sert à chaque instant.
 - **Carte visée** : un clic sur un tableau ou un graphique (hors ses boutons,
   champs et poignées) en fait la **destination d'ajout** de la barre du haut ;
   elle se signale par un liseré. Avec plusieurs cartes à l'écran, « Ajouter »
   cessait sinon d'être prévisible.
-- **Repli de la zone de configuration** via ⌃/⌄ : masque la recherche +
-  cible + période + Ajouter **et** la rangée d'actions de l'onglet
-  (+ Tableau / + Graphique / Configs) ; l'état est mémorisé dans le
-  navigateur. Replié, il ne reste que la ligne des onglets (~63 px sur
+- **Repli de la zone de configuration** via ⌃/⌄ : masque la recherche, la
+  cible, la période et Ajouter ; l'état est mémorisé dans le navigateur. Replié, il ne reste que la ligne des onglets (~63 px sur
   téléphone) et le contenu.
 - La barre reste **empilée** (onglets / zone de configuration) jusqu'à
   1100 px — y compris téléphone en paysage — et passe sur une seule ligne
@@ -684,8 +719,9 @@ absence de voisins.
 - [x] Onglets multiples (une configuration par onglet, session v2)
 - [x] Déplacement de widgets entre onglets et entre fenêtres (multi-écran)
 - [x] Duplication de graphiques, rangement de la grille, couleur des courbes
-- [x] Dimensionnement libre à la poignée (hauteur + largeur en colonnes),
-      neutralisé sur mobile ; hauteur du tableau numérique (défilement interne)
+- [x] **Mosaïque** : placement et dimensionnement libres des tuiles (12
+      colonnes, poussée + gravité, rectangle d'atterrissage), repliée en une
+      colonne sur téléphone ; format de disposition v3
 - [x] Nom d'affichage par variable (tableau et courbes)
 - [x] Forçage de variables (diagnostic) par suffixe `= valeur`, refusé pour
       les points réseau (lecture seule)
@@ -706,9 +742,9 @@ absence de voisins.
 - [x] Serveur de diagnostic C++ (squelette) : WebSocket, /api/layouts,
       /api/datalog, service des pages ; source encore simulée
 - [x] Source WebSocket côté navigateur + bascule automatique
-- [x] Plusieurs tableaux par onglet, alternés avec les graphiques (format de
-      disposition v2), menu ⋮ complet sur les tableaux (dupliquer, déplacer,
-      nouvelle fenêtre), carte visée par un clic
+- [x] Plusieurs tableaux par onglet, mêlés aux graphiques, menu ⋮ complet sur
+      les tableaux (dupliquer, déplacer, nouvelle fenêtre), tuile visée par un
+      clic, création de tuile depuis la liste des destinations
 - [x] Apparence : logo de l'exploitant et couleurs de l'interface, partagés
       par tous les postes quand le contrôleur sert la page
 - [x] Pages réseau : audit des communications, capture d'interfaces (quota,

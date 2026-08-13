@@ -21,7 +21,7 @@
    * l'adresse, c'est l'ORIGINE de la donnée :
    *   PLC       entrées, sorties, bits mémoire et variables système (I/Q/M/S) ;
    *   MB        registres de bus, par le canal interne du contrôleur ;
-   *   Simulink  signaux des modèles, via la C API ;
+   *   Matlab    signaux des modèles, via la C API ;
    *   ext.…     point lu à l'EXTÉRIEUR par un client du serveur de diagnostic,
    *             suffixé du protocole (ext.MB, ext.61850, ext.OPCUA…).
    *
@@ -35,7 +35,7 @@
     const f = meta.family;
     if (BADGE_PLC[f]) return 'PLC';
     if (f === 'MB') return 'MB';
-    if (f === 'CAPI') return 'Simulink';
+    if (f === 'CAPI') return 'Matlab';
     if (f !== 'NET') return f || '';
     // Point réseau : le protocole du lien fournit le suffixe.
     let proto = meta.protocol;
@@ -51,7 +51,7 @@
   const NET_ID = '[A-Za-z][A-Za-z0-9_-]{0,23}';
 
   const HELP = "Formats acceptés : I1.2.3.4, Q14.15, M1.14, S0.4 (bits), " +
-               "MB414 (mot de bus), Modele.sous_systeme.signal (C API Simulink, " +
+               "MB414 (mot de bus), Modele.sous_systeme.signal (C API Matlab, " +
                "premier champ = nom du modèle), @lien.point (point lu sur un " +
                "lien réseau).";
 

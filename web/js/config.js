@@ -67,7 +67,7 @@
     { addr: 'MB520',     label: 'Consigne opérateur (registre 520)',      kind: 'word', unit: '', sim: { type: 'steps', values: [800, 1000, 1200, 1500], period: 35 } },
     { addr: 'MB1000',    label: 'Compteur trames bus',                    kind: 'word', unit: '', sim: { type: 'counter', rate: 87 } },
 
-    // --- Signaux modèles Simulink (C API) ---------------------------
+    // --- Signaux de modèles Matlab (C API) --------------------------
     { addr: 'Regulation.consigne.vitesse',   label: 'Consigne de vitesse',        kind: 'float', unit: 'tr/min', sim: { type: 'steps', values: [1480, 1500, 1500, 1520, 1550], period: 40 } },
     { addr: 'Regulation.mesure.vitesse',     label: 'Vitesse mesurée',            kind: 'float', unit: 'tr/min', sim: { type: 'sine', base: 1500, amp: 22, period: 17, noise: 4 } },
     { addr: 'Regulation.sortie.commande',    label: 'Commande actionneur',        kind: 'float', unit: '%',      sim: { type: 'sine', base: 54, amp: 18, period: 23, noise: 1.5 } },

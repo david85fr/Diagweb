@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="Diagweb — diagnostic en ligne des variables et signaux internes d'un contrôleur embarqué : mapping PLC, mots de bus, signaux modèles Simulink (C API).">
+<meta name="description" content="Diagweb — diagnostic en ligne des variables et signaux internes d'un contrôleur embarqué : mapping PLC, mots de bus, signaux de modèles Matlab (C API).">
 <title>Diagweb — Diagnostic contrôleur</title>
 <link rel="stylesheet" href="css/app.css">
 </head>
@@ -28,6 +28,7 @@
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
         <button id="skinBtn" type="button" title="Apparence : logo de l’installation et couleurs de l’interface — réglages partagés par tous les postes quand la page est servie par le contrôleur">Apparence — logo et couleurs…</button>
+        <button id="layoutsBtn" type="button" title="Configurations : enregistrer, télécharger (JSON/CSV), charger, copier la disposition de cet onglet">Configurations…</button>
         <button id="logBtn" type="button" title="Journal de données : enregistrer tous les échantillons des variables de l’onglet actif (dans le navigateur ou sur le contrôleur), puis les télécharger en CSV/JSON">Journal de données…<i id="logInd" class="recdot hide"></i></button>
         <button id="helpBtn" type="button" title="Récapitulatif des commandes et des gestes (utile sur écran tactile, où les infobulles n’apparaissent pas)">Aide — commandes et gestes…</button>
         <button id="netBtn" type="button" title="Liens réseau : déclarer des équipements Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen, SNMP ou OPC UA et choisir les variables à lire">Liens réseau…</button>
@@ -55,12 +56,6 @@
       <div id="suggestBox" class="suggest hide"></div>
     </div>
   </header>
-
-  <div class="tabActions">
-    <button id="addTableBtn" class="btn" type="button" title="Créer un tableau numérique vide dans cet onglet ; il devient la destination d’ajout. Plusieurs tableaux peuvent cohabiter avec les graphiques — tableau, graphique, tableau…">+ Tableau</button>
-    <button id="addChartBtn" class="btn" type="button" title="Créer un graphique vide dans cet onglet ; il devient la destination d’ajout">+ Graphique</button>
-    <button id="layoutsBtn" class="btn" type="button" title="Configurations : enregistrer, télécharger (JSON/CSV), charger, copier la configuration de cet onglet">Configs</button>
-  </div>
 
   <section id="emptyState" class="empty hide">
     <h2>Aucune variable dans cet onglet</h2>
@@ -90,6 +85,7 @@
 <script src="js/sim.js"></script>
 <script src="js/source-ws.js"></script>
 <script src="js/source.js"></script>
+<script src="js/mosaic.js"></script>
 <script src="js/chart.js"></script>
 <script src="js/store.js"></script>
 <script src="js/dnd.js"></script>

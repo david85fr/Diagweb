@@ -129,13 +129,6 @@ button { font-family: var(--sans); }
 .menu-panel button:hover:not(:disabled) { background: var(--panel-2); }
 .menu-panel button:disabled { color: var(--faint); cursor: default; }
 
-/* Actions liées au contenu de l'onglet actif */
-.tabActions {
-  display: flex; flex-wrap: wrap; gap: 6px;
-  margin-bottom: 12px;
-}
-.tabActions .btn { font-size: 12.5px; padding: 7px 11px; }
-
 .build-tag {
   font: 10.5px var(--mono);
   color: var(--faint);
@@ -253,8 +246,14 @@ button { font-family: var(--sans); }
 .iconbtn.on { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
 
 /* ---------- Badges de famille ---------- */
+/* Largeur commune, calée sur « ext.MB » (six caractères) : sans elle, les
+   adresses ne s'alignaient pas d'une ligne à l'autre — le regard doit pouvoir
+   descendre la colonne d'un trait. Les badges de protocole plus longs
+   (ext.61850, ext.CANopen) débordent seuls cette largeur : les rétrécir à six
+   caractères les rendrait illisibles. */
 .badge {
   display: inline-block; flex: none;
+  min-width: calc(6ch + 14px); text-align: center;
   font-family: var(--mono); font-size: 10px; font-weight: 700;
   padding: 2px 6px; border-radius: 5px;
   border: 1px solid var(--line);
@@ -312,20 +311,12 @@ button { font-family: var(--sans); }
 .chart-tools { flex: none; }
 
 /* ---------- Tableau numérique ---------- */
-/* Le tableau est une carte de la grille des graphiques : sa largeur se règle
-   en colonnes (poignée ↔), ce qui laisse la place à un graphique à côté.
-   Sans réglage, il occupe toute la largeur — la disposition d'origine. */
-.table-card { position: relative; min-width: 0; grid-column: 1 / -1; }
+/* Le tableau est une tuile de la mosaïque, exactement comme un graphique :
+   même placement libre, même poignée de dimensionnement. */
+.table-card { position: relative; min-width: 0; }
 .trows { padding: 0 2px 2px; }
-/* Hauteur libre (poignée) : le tableau défile en interne au lieu de pousser
-   les graphiques vers le bas. La poignée reste réservée aux écrans ≥ 700 px. */
-/* height, pas max-height : « max » ne sait que rétrécir. Avec elle, tirer la
-   poignée vers le bas ne faisait rien du tout — le tableau ne pouvait que
-   diminuer. */
-.table-card.has-th .trows { height: var(--table-h); overflow-y: auto; }
 .table-card.resizing { outline: 1px solid color-mix(in srgb, var(--accent) 60%, transparent); }
 .table-card.resizing .resize-grip { opacity: 1; }
-.table-grip { bottom: 4px; right: 4px; }
 #tableRows { padding: 2px 6px 8px; }
 .vrow {
   display: grid;
@@ -388,31 +379,37 @@ button { font-family: var(--sans); }
 .vrow.forced { box-shadow: inset 3px 0 0 var(--warn); }
 .vrow.forced .val { color: var(--warn); }
 
-/* ---------- Grille de graphiques ---------- */
-/* --col-min : largeur minimale d'une colonne, lue par chart.js pour connaître
-   le nombre de colonnes « naturelles » (0 = une seule colonne, mobile). */
-/* align-items: start — chaque carte garde SA hauteur. Par défaut une grille
-   étire ses éléments à la hauteur de leur rangée : le tableau réduit à la
-   poignée restait alors aussi haut que le graphique voisin, avec du vide sous
-   ses lignes, et la réduction semblait sans effet. */
-.charts-grid { display: grid; gap: 12px; grid-template-columns: 1fr;
-  align-items: start; --col-min: 0px; }
+/* ---------- Mosaïque (tableaux et graphiques) ---------- */
+/* Mosaïque : sur téléphone, une seule colonne et des tuiles empilées dans
+   l'ordre (y, x) du modèle — le placement libre n'a pas de sens sur 390 px de
+   large. Les douze colonnes et le placement explicite arrivent à 700 px
+   (cf. media query). */
+.charts-grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
 
 .chart-card { position: relative; display: flex; flex-direction: column; min-width: 0; }
 
-/* Poignée de redimensionnement (coin bas-droit, souris ou stylet) */
+/* Poignée de redimensionnement (coin bas-droit, souris ou stylet). Cible
+   volontairement large : à 18 px elle se ratait une fois sur deux. */
 .resize-grip {
   display: none;                      /* activée ≥ 700 px — cf. media query */
-  position: absolute; right: 2px; bottom: 2px;
-  width: 18px; height: 18px;
+  position: absolute; right: 0; bottom: 0;
+  width: 24px; height: 24px;
   cursor: nwse-resize; touch-action: none;
   border-bottom-right-radius: 12px;
-  opacity: .45;
+  opacity: .45; z-index: 3;
   background:
-    linear-gradient(135deg, transparent 46%, var(--faint) 46%, var(--faint) 58%, transparent 58%),
-    linear-gradient(135deg, transparent 68%, var(--faint) 68%, var(--faint) 80%, transparent 80%);
+    linear-gradient(135deg, transparent 52%, var(--faint) 52%, var(--faint) 62%, transparent 62%),
+    linear-gradient(135deg, transparent 71%, var(--faint) 71%, var(--faint) 81%, transparent 81%);
 }
 .resize-grip:hover { opacity: 1; }
+
+/* Rectangle d'atterrissage pendant un déplacement : il occupe DANS la grille
+   la place exacte que prendra la tuile lâchée. */
+.tile-ghost {
+  border: 2px dashed color-mix(in srgb, var(--accent) 70%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 12px; pointer-events: none;
+}
 .chart-card.resizing { outline: 1px solid color-mix(in srgb, var(--accent) 60%, transparent); }
 .chart-card.resizing .resize-grip { opacity: 1; }
 .chart-card.fs .resize-grip { display: none; }
@@ -437,10 +434,11 @@ button { font-family: var(--sans); }
   border: 1px solid var(--line); border-radius: 8px;
   height: 34px; padding: 0 6px;
 }
-.chart-body { position: relative; height: clamp(220px, 32vh, 420px); padding: 0 4px; }
-.chart-card.size-L .chart-body { height: clamp(300px, 48vh, 640px); }
-.chart-card.size-XL { grid-column: 1 / -1; }
-.chart-card.size-XL .chart-body { height: clamp(340px, 56vh, 780px); }
+/* Téléphone : la mosaïque est repliée en une colonne, mais la hauteur choisie
+   sur un poste de travail est conservée — traduite en pixels depuis le nombre
+   de rangées de la tuile, plutôt que perdue au profit d'une taille unique. */
+.chart-body { position: relative; padding: 0 4px;
+  height: clamp(200px, calc(var(--th, 9) * 42px - 104px), 62vh); }
 
 /* Plein écran par graphique */
 .chart-card.fs {
@@ -599,20 +597,6 @@ body.dnd-over-pane #panes {
   border-radius: 12px;
 }
 .vrow[draggable="true"] { cursor: grab; }
-
-/* Repère d'insertion pendant le rangement des graphiques */
-.chart-card { position: relative; }
-.chart-card.drop-before::before,
-.chart-card.drop-after::after {
-  content: '';
-  position: absolute; top: 6px; bottom: 6px; width: 3px;
-  background: var(--accent);
-  border-radius: 2px;
-  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 70%, transparent);
-  z-index: 20;
-}
-.chart-card.drop-before::before { left: -7px; }
-.chart-card.drop-after::after { right: -7px; }
 
 /* Même repère, à l'horizontale, pour le rangement des lignes du tableau */
 .vrow { position: relative; }
@@ -960,17 +944,37 @@ body.dnd-over-pane #panes {
 @media (min-width: 700px) {
   body { font-size: 14.5px; }
   .wrap { padding: 12px 20px 64px; }
-  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); --col-min: 380px; }
   .modal-back { place-items: center; padding: 20px; }
   .modal { border-radius: 16px; }
   .chip-addr { max-width: 240px; }
 
-  /* Dimensionnement libre à la poignée — réservé aux écrans multi-colonnes ;
-     sur mobile la grille reste en une colonne avec les hauteurs M/L/XL. */
+  /* ---------- Mosaïque : placement et taille libres ----------
+     Douze colonnes fractionnaires et des rangées de hauteur fixe. Chaque tuile
+     dit où elle va (--tx, --ty) et ce qu'elle prend (--tw, --th) : la
+     disposition se transpose telle quelle d'un écran à l'autre, ce que des
+     colonnes « naturelles » de largeur fixe ne savaient pas faire. */
+  .charts-grid {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-auto-rows: 30px;
+    align-items: stretch;
+  }
+  .charts-grid > .card, .tile-ghost {
+    grid-column: var(--tx, 1) / span var(--tw, 6);
+    grid-row: var(--ty, 1) / span var(--th, 9);
+  }
+  /* La tuile remplit sa case : le corps du graphique et les lignes du tableau
+     se partagent ce qui reste sous l'en-tête. Sans cela, la hauteur tirée à la
+     poignée n'aurait aucun effet visible sur le contenu. */
+  .charts-grid > .card { height: 100%; overflow: hidden; }
+  .charts-grid > .table-card { display: flex; flex-direction: column; }
+  .charts-grid > .table-card .trows { flex: 1 1 0; min-height: 0; overflow-y: auto; }
+  .charts-grid > .chart-card .chart-body { flex: 1 1 0; height: auto; min-height: 60px; }
+  .charts-grid > .chart-card .chart-legend { flex: 0 0 auto; max-height: 38%; overflow-y: auto; }
+
   .resize-grip { display: block; }
-  .chart-card.has-custom-h .chart-body { height: var(--custom-h); }
-  .chart-card.has-span { grid-column: span var(--col-span); }
-  .table-card.has-span { grid-column: span var(--col-span); }
+  /* La poignée ⠿ déplace la tuile : le curseur doit le dire. */
+  .charts-grid > .card > :first-child .drag-handle,
+  .charts-grid > .card .chart-head .drag-handle { cursor: grab; }
 }
 
 /* Barre supérieure sur une seule ligne : uniquement quand tout tient */
@@ -984,13 +988,11 @@ body.dnd-over-pane #panes {
   body.cfg-hidden .topbar { grid-template-columns: minmax(180px, 1fr) auto; grid-template-areas: "tabs icons"; }
 }
 body.cfg-hidden .searchrow { display: none; }
-body.cfg-hidden .tabActions { display: none; }
-@media (min-width: 1700px) {
-  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); --col-min: 500px; }
-}
-@media (min-width: 2300px) {
-  .charts-grid { grid-template-columns: repeat(auto-fit, minmax(620px, 1fr)); --col-min: 620px; }
-}
+/* Grands écrans : les colonnes s'élargissent d'elles-mêmes (elles sont
+   fractionnaires) ; seules les rangées gagnent en hauteur, pour que la même
+   disposition ne s'écrase pas verticalement sur un 32 pouces. */
+@media (min-width: 1700px) { .charts-grid { grid-auto-rows: 33px; } }
+@media (min-width: 2300px) { .charts-grid { grid-auto-rows: 36px; } }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }

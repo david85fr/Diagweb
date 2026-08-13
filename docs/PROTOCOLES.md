@@ -65,7 +65,7 @@ manipule exactement comme les autres.
  ┌───────────────────────────────────────────────────────────────────┐
  │ BARRE DU HAUT — commune aux deux chemins                          │
  │  [ recherche + suggestions ]  [ cible ▾ ]  [ période ▾ ] [Ajouter]│
- │  filtres : Toutes · PLC · Modbus · Simulink · Réseau              │
+ │  filtres : Toutes · PLC · Modbus · Matlab · Réseau                │
  └────────────────────────────────┬──────────────────────────────────┘
                                   ▼
              tableau numérique · graphique · journal

@@ -69,6 +69,10 @@
       chart: payload.chart,
       table: payload.table,
       title: payload.title,
+      // Taille de la tuile : elle voyage avec elle, pour que le rectangle
+      // d'atterrissage montre la vraie place prise, ici comme dans une autre
+      // fenêtre.
+      w: payload.w, h: payload.h,
     });
   }
 
@@ -96,13 +100,21 @@
    */
   function startDrag(e, payload, onMoved) {
     const dragId = 'd' + Math.random().toString(36).slice(2, 10);
+    // Où la tuile a-t-elle été saisie ? Sans ce décalage, elle sauterait sous
+    // le curseur au lieu de suivre la main.
+    const carte = e.target.closest && e.target.closest('.chart-card, .table-card');
+    const r = carte && carte.getBoundingClientRect();
+    // Un dragstart synthétique (test) n'a pas de coordonnées : sans garde, le
+    // décalage vaudrait NaN et le point de chute partirait à l'infini.
+    const off = (r && isFinite(e.clientX) && isFinite(e.clientY))
+      ? { x: e.clientX - r.left, y: e.clientY - r.top } : { x: 0, y: 0 };
     const text = envelope(payload, dragId);
     try {
       e.dataTransfer.setData(MIME, text);
       e.dataTransfer.setData('text/plain', text);   // repli inter-fenêtres
       e.dataTransfer.effectAllowed = 'copyMove';
     } catch (err) { return; }
-    dragging = { dragId, onMoved, payload };
+    dragging = { dragId, onMoved, payload, off };
     // L'attente de l'accusé est armée dès maintenant : entre deux fenêtres,
     // la cible traite le dépôt AVANT que « dragend » ne survienne ici.
     const timer = setTimeout(() => pending.delete(dragId), ACK_MS);
@@ -131,24 +143,37 @@
   // -------------------------------------------------------------- réception
   function clearHighlight() {
     document.querySelectorAll('.tab.dnd-over').forEach((el) => el.classList.remove('dnd-over'));
-    document.querySelectorAll('.chart-card.drop-before, .chart-card.drop-after, ' +
-                              '.table-card.drop-before, .table-card.drop-after')
-      .forEach((el) => el.classList.remove('drop-before', 'drop-after'));
+    if (DW.mosaic) DW.mosaic.fantomeOff();
     document.body.classList.remove('dnd-over-pane');
   }
 
   /**
-   * Point d'insertion visé : la carte survolée et le côté (avant / après).
-   * Permet de ranger les graphiques dans l'ordre voulu.
+   * Point de chute visé : la CELLULE de la mosaïque sous le curseur. C'est ce
+   * qui rend le placement libre — la tuile se pose là où on la lâche, elle ne
+   * s'insère plus « avant » ou « après » une autre.
+   *
+   * Le décalage saisi au départ (où l'on a pris la tuile) est retranché : on
+   * pose le coin haut-gauche de la tuile, pas le curseur.
    */
   function placeAt(e) {
-    // Le tableau numérique vit dans la même grille que les graphiques : il est
-    // un point d'insertion comme eux, sans quoi rien ne pourrait se ranger à
-    // sa gauche.
-    const card = e.target.closest && e.target.closest('.chart-card, .table-card');
-    if (!card) return null;
-    const r = card.getBoundingClientRect();
-    return { anchorEl: card, after: (e.clientX - r.left) > r.width / 2 };
+    const grid = e.target.closest && e.target.closest('.charts-grid');
+    if (!grid || !DW.mosaic || !DW.mosaic.actif()) return null;
+    const off = (dragging && dragging.off) || { x: 0, y: 0 };
+    const cell = DW.mosaic.cellule(grid, e.clientX - off.x, e.clientY - off.y, 'proche');
+    const card = e.target.closest('.chart-card, .table-card');
+    return { grid, cell, overEl: card || null };
+  }
+
+  /**
+   * Taille de la tuile en cours de déplacement. Venue d'une AUTRE fenêtre, la
+   * charge utile n'est pas lisible pendant le survol (le navigateur ne la
+   * livre qu'au dépôt) : on montre alors la taille de départ de cette nature
+   * de tuile, ce qui reste honnête sur la place qu'elle prendra.
+   */
+  function tailleTuile() {
+    const p = dragging && dragging.payload;
+    const d = DW.mosaic.defaut(p && p.kind === 'table' ? 'table' : 'chart');
+    return { w: (p && p.w) || d.w, h: (p && p.h) || d.h };
   }
 
   function hasWidget(dt) {
@@ -165,8 +190,14 @@
     const tabEl = e.target.closest && e.target.closest('.tab');
     if (tabEl) { tabEl.classList.add('dnd-over'); return; }
     const place = placeAt(e);
-    if (place) place.anchorEl.classList.add(place.after ? 'drop-after' : 'drop-before');
-    else document.body.classList.add('dnd-over-pane');
+    if (place) {
+      // Rectangle d'atterrissage : la place EXACTE que prendra la tuile.
+      const t = tailleTuile();
+      DW.mosaic.fantome(place.grid,
+        { x: Math.min(place.cell.x, DW.mosaic.COLS - t.w), y: place.cell.y, w: t.w, h: t.h });
+    } else {
+      document.body.classList.add('dnd-over-pane');
+    }
   }
 
   function onDrop(e) {

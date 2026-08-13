@@ -171,29 +171,62 @@ console.log(`Cible : ${URL}\n`);
   await A.waitForSelector('.tabpane.on .chart-card', { timeout: 20000 });
   await A.waitForTimeout(1500);
 
-  // 0) Rangement des graphiques dans la grille (sans duplication)
-  const ordre0 = await A.locator('.tabpane.on .chart-title').evaluateAll((e) => e.map((x) => x.value));
-  await dragOntoCard(A, '.tabpane.on .chart-card .drag-handle',
-    '.tabpane.on .chart-card#1', true);
-  await A.waitForTimeout(700);
-  const ordre1 = await A.locator('.tabpane.on .chart-title').evaluateAll((e) => e.map((x) => x.value));
-  check('graphiques rangés dans l’ordre voulu (aucune copie)',
-    ordre1.length === ordre0.length && ordre1[0] === ordre0[1] && ordre1[1] === ordre0[0],
-    ordre1.join(' · '));
+  // 0) Placement libre : une tuile lâchée sur une cellule s'y pose, sans
+  // duplication. Le glisser-déposer HTML5 sert aussi au transfert entre
+  // onglets et entre fenêtres — c'est le même geste, trois destinations.
+  const plan = () => A.$$eval('.tabpane.on .charts-grid > .card', (c) => c.map((x) => ({
+    k: x.classList.contains('table-card') ? 'T' : 'G',
+    x: +x.style.getPropertyValue('--tx'), y: +x.style.getPropertyValue('--ty'),
+  })));
+  /** Lâche la carte `sel` sur la cellule (colonne, rangée) de la mosaïque. */
+  const poserSur = async (sel, colonne, rangee) => {
+    const store = await A.evaluate((s2) => {
+      const el = document.querySelector(s2);
+      const st = {};
+      const dt = { types: [], setData(t, v) { st[t] = v; this.types.push(t); },
+        getData(t) { return st[t] || ''; }, setDragImage() {}, effectAllowed: '', dropEffect: '' };
+      const ev = new Event('dragstart', { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, 'dataTransfer', { value: dt });
+      el.dispatchEvent(ev);
+      return st;
+    }, sel + ' .drag-handle');
+    await A.evaluate(({ store, colonne, rangee }) => {
+      const grid = document.querySelector('.tabpane.on .charts-grid');
+      const m = DW.mosaic.metrique(grid);
+      const pt = { clientX: m.rect.left + colonne * (m.colW + m.gap) + 6,
+                   clientY: m.rect.top + rangee * (m.rowH + m.gapY) + 6 };
+      const dt = { types: Object.keys(store), getData(t) { return store[t] || ''; },
+        setData() {}, dropEffect: '', effectAllowed: '' };
+      for (const type of ['dragover', 'drop']) {
+        const ev = new MouseEvent(type, { bubbles: true, cancelable: true, ...pt });
+        Object.defineProperty(ev, 'dataTransfer', { value: dt });
+        grid.dispatchEvent(ev);
+      }
+    }, { store, colonne, rangee });
+    await A.evaluate(() => document.dispatchEvent(new Event('dragend', { bubbles: true })));
+    await A.waitForTimeout(500);
+  };
 
-  // 0 ter) Le tableau vit dans la même grille que les graphiques : il se range
-  // comme eux, ce qui permet d'avoir un graphique à sa GAUCHE.
-  const rang = () => A.evaluate(() => [...document.querySelector('.tabpane.on .charts-grid').children]
-    .findIndex((c) => c.classList.contains('table-card')));
-  const rang0 = await rang();
-  await dragOntoCard(A, '.tabpane.on .table-card .drag-handle',
-    '.tabpane.on .chart-card#0', true);
-  await A.waitForTimeout(600);
-  const rang1 = await rang();
+  const cartes0 = (await plan()).length;
+  await poserSur('.tabpane.on .chart-card', 0, 0);
+  const p1 = await plan();
+  const gEnHaut = p1.find((c) => c.k === 'G' && c.x === 1 && c.y === 1);
+  check('placement libre : la tuile se pose sur la cellule visée (aucune copie)',
+    !!gEnHaut && p1.length === cartes0,
+    p1.map((c) => c.k + '(' + c.x + ',' + c.y + ')').join(' '));
+
+  // 0 ter) Un tableau se pose comme un graphique : on peut donc mettre un
+  // graphique à sa GAUCHE — la disposition qu'aucun rangement en file ne
+  // savait produire.
+  await poserSur('.tabpane.on .table-card', 7, 0);
+  const p2 = await plan();
+  const t = p2.find((c) => c.k === 'T');
+  const gGauche = p2.find((c) => c.k === 'G' && c.x < t.x && c.y === t.y);
   const varsIntactes = await A.locator('.tabpane.on .vrow').count();
-  check('tableau rangé après un graphique (un graphique passe à sa gauche)',
-    rang0 === 0 && rang1 > 0 && varsIntactes > 0,
-    'rang ' + rang0 + ' → ' + rang1 + ', ' + varsIntactes + ' variable(s) conservée(s)');
+  check('un graphique peut se tenir à GAUCHE du tableau, variables intactes',
+    !!gGauche && varsIntactes > 0,
+    p2.map((c) => c.k + '(' + c.x + ',' + c.y + ')').join(' ') +
+    ' · ' + varsIntactes + ' variable(s)');
 
   // 0 bis) Rangement des lignes du tableau numérique
   const lignes = () => A.locator('.tabpane.on .vrow').evaluateAll(

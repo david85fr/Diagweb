@@ -99,14 +99,18 @@ await p1.waitForTimeout(300);
 check('onglets isolés (nouvel onglet vide, retour intact)',
   tab2Empty && tab2One && await p1.locator(PANE + '.vrow').count() === 7);
 
-// Journal de données — il vit désormais dans le menu général ☰, avec les
-// autres fonctions indépendantes des onglets ; la barre d'onglets n'a plus à
-// le porter.
-check('journal rangé dans le menu général, plus dans la barre d’actions',
+// Rangement de la barre : tout ce qui ne dépend pas du contenu affiché vit
+// dans le menu général ☰ (journal, configurations) ; « Figer » est dans la
+// barre du haut ; créer une tuile se fait dans la liste des destinations. La
+// rangée d'actions sous les onglets n'existe plus.
+check('barre rangée : journal et configurations dans le menu ☰',
   await p1.locator('#menuPanel #logBtn').count() === 1 &&
-  await p1.locator('.tabActions #logBtn').count() === 0 &&
-  await p1.locator('.topIcons #pauseAllBtn').count() === 1,
-  'et « Figer » remonté dans la barre du haut');
+  await p1.locator('#menuPanel #layoutsBtn').count() === 1 &&
+  await p1.locator('.tabActions').count() === 0 &&
+  await p1.locator('.topIcons #pauseAllBtn').count() === 1 &&
+  await p1.locator('#targetSel option[value="newtable"]').count() === 1 &&
+  await p1.locator('#targetSel option[value="new"]').count() === 1,
+  '« Figer » en haut, création de tuile dans la liste des destinations');
 await p1.click('#menuBtn');
 await p1.waitForTimeout(150);
 await p1.click('#logBtn');
@@ -128,6 +132,8 @@ check('menu de courbe : ouverture puis fermeture par la pastille',
   menu1 === 1 && await p1.locator('.popmenu').count() === 0);
 
 // Configurations : enregistrement puis relecture
+await p1.click('#menuBtn');
+await p1.waitForTimeout(150);
 await p1.click('#layoutsBtn');
 await p1.waitForTimeout(250);
 await p1.fill('#layName', 'Test auto');
@@ -148,25 +154,24 @@ check('session restaurée au rechargement (onglets + journal)',
   await p1.locator(PANE + '.vrow').count() === 7 &&
   await p1.locator('.tab .recdot').count() === 1);
 
-// Disposition mobile : poignée masquée et taille libre (venue d'un poste
-// de travail) neutralisée — la grille reste en une colonne.
+// Mosaïque repliée sur téléphone : une seule colonne quoi qu'en dise la
+// disposition (ici une tuile large, venue d'un poste de travail), poignée
+// masquée — mais la HAUTEUR choisie est conservée, traduite en pixels.
 const mobSize = await p1.locator(PANE + '.chart-card').first().evaluate((el) => {
-  el.classList.add('has-custom-h', 'has-span');
-  el.style.setProperty('--custom-h', '900px');
-  el.style.setProperty('--col-span', '3');
+  el.style.setProperty('--tx', '4'); el.style.setProperty('--tw', '6');
+  el.style.setProperty('--th', '14');
   const r = {
     h: el.querySelector('.chart-body').getBoundingClientRect().height,
-    col: getComputedStyle(el).gridColumnEnd,
+    w: Math.round(el.getBoundingClientRect().width),
+    grille: Math.round(el.parentElement.getBoundingClientRect().width),
     grip: getComputedStyle(el.querySelector('.resize-grip')).display,
   };
-  el.classList.remove('has-custom-h', 'has-span');
-  el.style.removeProperty('--custom-h');
-  el.style.removeProperty('--col-span');
+  el.style.setProperty('--tw', '6'); el.style.setProperty('--th', '9');
   return r;
 });
-check('mobile : poignée masquée et dimensionnement libre ignoré',
-  mobSize.grip === 'none' && mobSize.h < 420 && !/span/.test(mobSize.col),
-  `hauteur ${Math.round(mobSize.h)} px, colonne « ${mobSize.col} »`);
+check('mobile : mosaïque repliée en une colonne, hauteur conservée',
+  mobSize.grip === 'none' && mobSize.w === mobSize.grille && mobSize.h > 420,
+  `carte ${mobSize.w} px sur ${mobSize.grille}, corps ${Math.round(mobSize.h)} px`);
 await mob.close();
 
 // --------------------------------------------------------------- desktop
@@ -179,9 +184,18 @@ await p2.goto(TARGET);
 await p2.waitForSelector(PANE + '.chart-card', { timeout: 20000 });
 await p2.waitForTimeout(1200);
 
-const bodyH = await p2.locator('.chart-body').first().evaluate((el) => el.getBoundingClientRect().height);
-check('hauteur des graphiques adaptée à l\'écran (32vh)',
-  Math.abs(bodyH - 288) < 12, Math.round(bodyH) + ' px');
+// Le contenu remplit sa tuile : sans cela, la hauteur tirée à la poignée
+// laisserait du vide sous le tracé et le redimensionnement semblerait sans
+// effet — c'est précisément ce qui clochait dans la version précédente.
+const remplit = await p2.locator(PANE + '.chart-card').first().evaluate((el) => {
+  const c = el.getBoundingClientRect(), b = el.querySelector('.chart-body').getBoundingClientRect();
+  const l = el.querySelector('.chart-legend').getBoundingClientRect();
+  return { carte: Math.round(c.height), reste: Math.round(c.bottom - l.bottom),
+           corps: Math.round(b.height) };
+});
+check('le contenu remplit la tuile (aucun vide sous le graphique)',
+  remplit.reste >= 0 && remplit.reste < 12 && remplit.corps > 100,
+  `carte ${remplit.carte} px · corps ${remplit.corps} px · reste ${remplit.reste} px`);
 
 const card = p2.locator('.chart-card').first();
 const more = card.locator('.chart-more');
@@ -253,11 +267,11 @@ await p2.waitForTimeout(300);
 check('clic bref : curseur de mesure épinglé',
   await card.locator('.chart-tip:visible').count() === 1);
 
-// Poignée bas-droite : hauteur libre + largeur en colonnes, conservées au
-// rechargement, annulées par un double-clic.
+// Poignée ◢ d'un graphique : la taille tenue est conservée au rechargement et
+// « Taille de départ » (menu ⋮) la remet à sa valeur d'origine.
 const geom = () => p2.locator(PANE + '.chart-card').first().evaluate((el) => ({
-  w: Math.round(el.getBoundingClientRect().width),
-  h: Math.round(el.querySelector('.chart-body').getBoundingClientRect().height),
+  w: +el.style.getPropertyValue('--tw'), h: +el.style.getPropertyValue('--th'),
+  px: Math.round(el.getBoundingClientRect().width),
 }));
 const g0 = await geom();
 const grip = p2.locator(PANE + '.chart-card').first().locator('.resize-grip');
@@ -268,7 +282,7 @@ await p2.waitForTimeout(200);
 const gb = await grip.boundingBox();
 await p2.mouse.move(gb.x + gb.width / 2, gb.y + gb.height / 2);
 await p2.mouse.down();
-await p2.mouse.move(gb.x + gb.width / 2 + 320, gb.y + gb.height / 2 + 130, { steps: 12 });
+await p2.mouse.move(gb.x + gb.width / 2 - 260, gb.y + gb.height / 2 + 130, { steps: 12 });
 await p2.mouse.up();
 await p2.waitForTimeout(900);   // > debounce de sauvegarde de session
 const g1 = await geom();
@@ -276,14 +290,15 @@ await p2.reload();
 await p2.waitForSelector(PANE + '.chart-card', { timeout: 20000 });
 await p2.waitForTimeout(1200);
 const g2 = await geom();
-await p2.locator(PANE + '.chart-card').first().locator('.resize-grip').dblclick();
+await p2.locator(PANE + '.chart-card').first().locator('.chart-more').click();
+await p2.waitForTimeout(150);
+await p2.locator('.popmenu button', { hasText: 'Taille de départ' }).click();
 await p2.waitForTimeout(400);
 const g3 = await geom();
-check('poignée de redimensionnement (hauteur + largeur), mémorisée et annulable',
-  Math.abs(g1.h - g0.h - 130) < 24 && g1.w > g0.w + 100 &&
-  Math.abs(g2.h - g1.h) < 4 && Math.abs(g2.w - g1.w) < 4 &&
-  Math.abs(g3.h - g0.h) < 4 && Math.abs(g3.w - g0.w) < 4,
-  `${g0.w}×${g0.h} → ${g1.w}×${g1.h} → recharge ${g2.w}×${g2.h} → auto ${g3.w}×${g3.h}`);
+check('taille d’une tuile : tenue, mémorisée, et remise à la taille de départ',
+  g1.w === g0.w - 2 && g1.h === g0.h + 3 && g1.px < g0.px - 150 &&
+  g2.w === g1.w && g2.h === g1.h && g3.w === 6 && g3.h === 9,
+  `${g0.w}×${g0.h} → ${g1.w}×${g1.h} → recharge ${g2.w}×${g2.h} → départ ${g3.w}×${g3.h}`);
 
 // Liens réseau : déclarer un lien, un point, puis l'ajouter au diagnostic
 await p2.click('#menuBtn');
@@ -332,9 +347,9 @@ check('le point réseau apparaît dans les suggestions (filtre « Réseau »)',
   sugNet === 1 && netOnly.length > 0 && netOnly.every((t) => t === 'ext.MB'),
   netOnly.join(', ') || 'aucune suggestion');
 const badgesTable = await p2.locator(PANE + '.vrow .badge').allTextContents();
-check('étiquettes de famille : PLC, MB, Simulink, ext.<protocole>',
+check('étiquettes de famille : PLC, MB, Matlab, ext.<protocole>, largeur commune',
   badgesTable.includes('ext.MB') &&
-  badgesTable.every((t) => ['PLC', 'MB', 'Simulink'].includes(t) || t.startsWith('ext.')),
+  badgesTable.every((t) => ['PLC', 'MB', 'Matlab'].includes(t) || t.startsWith('ext.')),
   [...new Set(badgesTable)].join(' · '));
 
 // Nom d'affichage : renommer une variable du tableau, conservé au rechargement
@@ -381,32 +396,85 @@ await p2.waitForTimeout(200);
 check('forçage d’un point réseau refusé (lecture seule)',
   await p2.locator('.toast.err').filter({ hasText: 'lecture seule' }).count() >= 1);
 
-// Redimensionnement du tableau numérique : hauteur libre + défilement interne.
-// La CARTE doit rétrécir, pas seulement sa zone de lignes : le tableau vit
-// dans la grille des graphiques, qui étirerait sinon chaque carte à la hauteur
-// de sa rangée — la réduction serait alors sans effet visible.
-const tgrip = p2.locator(PANE + '.table-card .table-grip').first();
+// Mosaïque — redimensionnement libre à la poignée ◢, dans les DEUX sens.
+// La largeur se règle en colonnes (c'est elle qui laisse la place à une autre
+// tuile à côté) et la hauteur en rangées, la carte entière suivant.
+const tuile = (sel) => p2.locator(PANE + sel).first().evaluate((el) => ({
+  x: +el.style.getPropertyValue('--tx'), y: +el.style.getPropertyValue('--ty'),
+  w: +el.style.getPropertyValue('--tw'), h: +el.style.getPropertyValue('--th'),
+  px: Math.round(el.getBoundingClientRect().width),
+  ph: Math.round(el.getBoundingClientRect().height),
+}));
+const tAvant = await tuile('.table-card');
+const tgrip = p2.locator(PANE + '.table-card .resize-grip').first();
 await tgrip.scrollIntoViewIfNeeded();
-const hAvant = Math.round((await p2.locator(PANE + '.table-card').first().boundingBox()).height);
 const tb = await tgrip.boundingBox();
 await p2.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2);
 await p2.mouse.down();
-await p2.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2 - 90, { steps: 8 });
+await p2.mouse.move(tb.x + tb.width / 2 - 260, tb.y + tb.height / 2 - 130, { steps: 10 });
 await p2.mouse.up();
-await p2.waitForTimeout(200);
-const tableSized = await p2.locator(PANE + '.table-card').first().evaluate((el) => ({
-  has: el.classList.contains('has-th'),
-  overflow: getComputedStyle(el.querySelector('.trows')).overflowY,
-}));
-const hApres = Math.round((await p2.locator(PANE + '.table-card').first().boundingBox()).height);
-check('redimensionnement du tableau numérique (la carte rétrécit, défilement interne)',
-  tableSized.has && tableSized.overflow === 'auto' && hApres < hAvant - 40,
-  hAvant + ' → ' + hApres + ' px · ' + JSON.stringify(tableSized));
+await p2.waitForTimeout(250);
+const tApres = await tuile('.table-card');
+const defile = await p2.locator(PANE + '.table-card .trows').first()
+  .evaluate((el) => getComputedStyle(el).overflowY);
+check('poignée ◢ : largeur ET hauteur libres (la carte entière suit)',
+  tApres.w === tAvant.w - 2 && tApres.h === tAvant.h - 3 &&
+  tApres.px < tAvant.px - 150 && tApres.ph < tAvant.ph - 100 && defile === 'auto',
+  `${tAvant.w}×${tAvant.h} → ${tApres.w}×${tApres.h} cellules · ` +
+  `${tAvant.px}×${tAvant.ph} → ${tApres.px}×${tApres.ph} px`);
 
-// Plusieurs tableaux dans un onglet, alternés avec les graphiques : c'est ce
-// qui permet de séparer deux sujets au lieu d'une seule longue liste.
+// Placement libre : la tuile se pose à la CELLULE visée, pas « avant » ou
+// « après » une autre. C'est ce qui permet de mettre un graphique à gauche
+// d'un tableau, ce qu'un simple rangement en file ne savait pas faire.
+const poser = (sel, colonne, rangee) => p2.evaluate(({ sel, colonne, rangee }) => {
+  const src = document.querySelector('.tabpane.on ' + sel);
+  const h = src.querySelector('.drag-handle');
+  const r = src.getBoundingClientRect();
+  const store = {};
+  const dt = { types: [], setData(t, v) { store[t] = v; this.types.push(t); },
+    getData(t) { return store[t] || ''; }, setDragImage() {}, effectAllowed: '', dropEffect: '' };
+  const ev = new Event('dragstart', { bubbles: true, cancelable: true });
+  Object.defineProperty(ev, 'dataTransfer', { value: dt });
+  Object.defineProperty(ev, 'clientX', { value: r.left + 8 });
+  Object.defineProperty(ev, 'clientY', { value: r.top + 8 });
+  h.dispatchEvent(ev);
+
+  const grid = document.querySelector('.tabpane.on .charts-grid');
+  const m = DW.mosaic.metrique(grid);
+  const pt = { clientX: m.rect.left + colonne * (m.colW + m.gap) + 8,
+               clientY: m.rect.top + rangee * (m.rowH + m.gapY) + 8 };
+  const dt2 = { types: Object.keys(store), getData(t) { return store[t] || ''; },
+    setData() {}, dropEffect: '', effectAllowed: '' };
+  let fantome = null;
+  for (const type of ['dragover', 'drop']) {
+    const e2 = new MouseEvent(type, { bubbles: true, cancelable: true, ...pt });
+    Object.defineProperty(e2, 'dataTransfer', { value: dt2 });
+    grid.dispatchEvent(e2);
+    if (type === 'dragover') {
+      const g = document.querySelector('.tile-ghost');
+      fantome = g ? [+g.style.getPropertyValue('--tx'), +g.style.getPropertyValue('--ty')] : null;
+    }
+  }
+  document.dispatchEvent(new Event('dragend', { bubbles: true }));
+  return fantome;
+}, { sel, colonne, rangee });
+
+// Le premier graphique est envoyé tout en haut à gauche : le tableau, qui y
+// était, doit descendre.
+const fantome = await poser('.chart-card', 0, 0);
+await p2.waitForTimeout(400);
+const gApres = await tuile('.chart-card');
+const tPousse = await tuile('.table-card');
+check('placement libre : la tuile se pose à la cellule visée, les voisines s’écartent',
+  fantome && fantome[0] === 1 && fantome[1] === 1 &&
+  gApres.x === 1 && gApres.y === 1 && tPousse.y > 1,
+  'fantôme en (' + (fantome || []).join(',') + ') · graphique (' + gApres.x + ',' + gApres.y +
+  ') · tableau descendu en rangée ' + tPousse.y);
+
+// Plusieurs tableaux dans un onglet, mêlés aux graphiques : c'est ce qui
+// permet de séparer deux sujets au lieu d'une seule longue liste.
 const tablesAvant = await p2.locator(PANE + '.table-card').count();
-await p2.click('#addTableBtn');
+await p2.selectOption('#targetSel', 'newtable');
 await p2.waitForTimeout(300);
 const cible = await p2.locator('#targetSel').inputValue();
 await p2.fill('#searchInput', 'Elec.frequence');
@@ -418,42 +486,21 @@ check('plusieurs tableaux par onglet (le nouveau devient la destination)',
   tablesApres === tablesAvant + 1 && /^table:/.test(cible) && lignes2 === 1,
   tablesAvant + ' → ' + tablesApres + ' tableau(x), cible « ' + cible + ' »');
 
-// Ordre dans la grille : un tableau se range comme un graphique, donc on peut
-// alterner tableau / graphique / tableau.
-await p2.locator(PANE + '.table-card').last().locator('.drag-handle').evaluate((el) => {
-  const s2 = {};
-  const dt = { types: [], setData(t, v) { s2[t] = v; this.types.push(t); },
-    getData(t) { return s2[t] || ''; }, setDragImage() {}, effectAllowed: '', dropEffect: '' };
-  const ev = new Event('dragstart', { bubbles: true, cancelable: true });
-  Object.defineProperty(ev, 'dataTransfer', { value: dt });
-  el.dispatchEvent(ev);
-  window.__dw_drag = s2;
-});
-// Déposé sur la MOITIÉ DROITE du dernier graphique : le tableau passe après
-// lui — c'est la preuve de l'alternance, un tableau derrière un graphique.
-await p2.locator(PANE + '.chart-card').last().evaluate((el) => {
-  const r = el.getBoundingClientRect();
-  const store = window.__dw_drag;
-  const dt = { types: Object.keys(store), getData(t) { return store[t] || ''; },
-    setData() {}, dropEffect: '', effectAllowed: '' };
-  for (const type of ['dragover', 'drop']) {
-    const ev = new MouseEvent(type, { bubbles: true, cancelable: true,
-      clientX: r.left + r.width * 0.9, clientY: r.top + 20 });
-    Object.defineProperty(ev, 'dataTransfer', { value: dt });
-    el.dispatchEvent(ev);
-  }
-});
-await p2.waitForTimeout(400);
-const ordreCartes = () => p2.$$eval(PANE + '.charts-grid > *',
-  (c) => c.map((x) => (x.classList.contains('table-card') ? 'T' : 'G')).join(''));
-const ordre = await ordreCartes();
+// La disposition complète — place ET taille de chaque tuile — doit revenir
+// telle quelle au rechargement : c'est tout l'intérêt de la ranger.
+const plan = () => p2.$$eval(PANE + '.charts-grid > .card', (c) => c.map((x) =>
+  (x.classList.contains('table-card') ? 'T' : 'G') + x.style.getPropertyValue('--tx') + ',' +
+  x.style.getPropertyValue('--ty') + ',' + x.style.getPropertyValue('--tw') + ',' +
+  x.style.getPropertyValue('--th')).join(' '));
+const plan0 = await plan();
 await p2.waitForTimeout(700);                  // > debounce de sauvegarde
 await p2.reload();
 await p2.waitForSelector(PANE + '.chart-card', { timeout: 20000 });
 await p2.waitForTimeout(1200);
-const ordreApres = await ordreCartes();
-check('alternance tableau / graphique, conservée au rechargement',
-  /G.*T/.test(ordre) && ordreApres === ordre, ordre + ' → ' + ordreApres);
+const plan1 = await plan();
+check('mosaïque (place et taille de chaque tuile) conservée au rechargement',
+  plan0 === plan1 && /T/.test(plan0) && /G/.test(plan0),
+  plan0 === plan1 ? plan0 : plan0 + '  ≠  ' + plan1);
 
 // Menu ⋮ d'un tableau : les mêmes gestes que sur un graphique. Sans lui, un
 // tableau ne pouvait ni se dupliquer ni partir dans un autre onglet. Un second
@@ -629,6 +676,7 @@ await sweep(async () => {
   await p2.waitForTimeout(200);
 });
 await p2.mouse.click(5, 5); await p2.waitForTimeout(150);
+await p2.click('#menuBtn'); await p2.waitForTimeout(150);
 await sweep(async () => { await p2.click('#layoutsBtn'); await p2.waitForTimeout(300); });
 await p2.click('.m-close');
 await p2.click('#menuBtn'); await p2.waitForTimeout(150);

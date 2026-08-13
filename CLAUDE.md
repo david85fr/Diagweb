@@ -72,6 +72,7 @@ web/            sources de l'application (page de dev : web/index.html)
   js/protocols.js  **source de vérité** des protocoles réseau (champs, aides)
   js/protocols-ui.js fenêtre « Liens réseau » (☰) : liens, points, test
   js/sim.js     source de données simulée — implémente le contrat DataSource
+  js/mosaic.js  mosaïque : placement et taille libres des tuiles (12 colonnes)
   js/chart.js   moteur de graphiques canvas (multi-échelles, gestes, échelles)
   js/source-ws.js source WebSocket (même contrat que sim.js)
   js/source.js  choix de la source au démarrage (DW.sourceReady)
@@ -108,8 +109,8 @@ tools/gen-catalog.mjs  régénère server/src/catalog.generated.hpp depuis confi
 tools/gen-protocols.mjs régénère server/src/protocols.generated.hpp depuis protocols.js
 tools/check-drivers.mjs  un dossier de pilote par protocole (rejoué par la CI)
 tools/serve.py  serveur d'aperçu (port 8080, en-têtes anti-cache)
-tests/ui.mjs    tests d'interface Playwright (35 vérifications)
-tests/dnd.mjs   tests de déplacement de widgets (7 vérifications, http requis)
+tests/ui.mjs    tests d'interface Playwright (36 vérifications)
+tests/dnd.mjs   tests de placement et déplacement de tuiles (10 vérifications, http requis)
 tests/protocols.mjs  liens réseau bout en bout (équipements simulés + agent snmpd
                 réel pour SNMPv3 ; serveur requis, secrets dans son environnement)
 tests/decode.cpp     décodage des protocoles (cible diagweb-decode-test)
