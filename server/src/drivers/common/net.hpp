@@ -175,6 +175,12 @@ inline ssize_t recv_datagram(int fd, uint8_t* out, size_t max, int timeout_ms) {
   }
 }
 
+/** Petite attente, sans réveiller le processus pour rien. */
+inline void sleep_ms(int ms) {
+  pollfd none{};
+  ::poll(&none, 0, ms);
+}
+
 /** Vide ce qui traîne en réception (resynchronisation d'une liaison série). */
 inline void drain(int fd) {
   uint8_t junk[256];

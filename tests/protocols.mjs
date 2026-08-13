@@ -1,9 +1,9 @@
 /* Diagweb — test bout en bout des liens réseau du serveur de diagnostic.
  *
  * Monte de faux équipements (esclave Modbus TCP, station IEC 60870-5-104,
- * agent SNMP v2c), configure les liens par l'API REST du serveur, puis vérifie
- * que les points remontent bien jusqu'au flux WebSocket avec les bonnes
- * valeurs.
+ * agent SNMP v2c, serveur OPC UA), configure les liens par l'API REST du
+ * serveur, puis vérifie que les points remontent bien jusqu'au flux WebSocket
+ * avec les bonnes valeurs.
  *
  *   node tests/protocols.mjs [http://localhost:8080]
  *
@@ -12,6 +12,8 @@
  */
 import net from 'node:net';
 import dgram from 'node:dgram';
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 
 const BASE = process.argv[2] || 'http://localhost:8080';
 const results = [];
@@ -256,6 +258,20 @@ function startSnmpAgent() {
   return new Promise((res) => sock.bind(0, '127.0.0.1', () => res({ sock, port: sock.address().port })));
 }
 
+/**
+ * Serveur OPC UA de test : binaire compilé par CMake avec open62541
+ * (cible diagweb-opcua-test-server). Son absence n'est pas passée sous
+ * silence — les vérifications OPC UA échouent avec la raison.
+ */
+function startOpcUaServer(port) {
+  const bin = process.env.DIAGWEB_OPCUA_TEST_SERVER ||
+              new URL('../server/build/diagweb-opcua-test-server', import.meta.url).pathname;
+  if (!fs.existsSync(bin)) return Promise.resolve({ proc: null, port, bin, absent: true });
+  const proc = spawn(bin, [String(port)], { stdio: ['ignore', 'ignore', 'ignore'] });
+  proc.on('error', () => {});
+  return new Promise((res) => setTimeout(() => res({ proc, port, bin, absent: false }), 1200));
+}
+
 // ---------------------------------------------------------------- utilitaires
 async function api(path, options) {
   const r = await fetch(BASE + path, options);
@@ -297,6 +313,7 @@ if (health.status !== 200 || !health.json || health.json.role !== 'diag-server')
 const modbus = await startModbusSlave();
 const iec = await startIec104Station();
 const snmp = await startSnmpAgent();
+const ua = await startOpcUaServer(48401);
 
 const before = await api('/api/protocols');
 check('description des protocoles publiée par le serveur',
@@ -371,13 +388,41 @@ const config = {
     },
     {
       id: 'supervision', label: 'Supervision OPC UA', protocol: 'opcua', enabled: true,
-      params: { endpoint: 'opc.tcp://127.0.0.1:4840', securityPolicy: 'None',
+      params: { endpoint: 'opc.tcp://127.0.0.1:' + ua.port, securityPolicy: 'None',
                 securityMode: 'None', auth: 'anonymous', mode: 'subscribe',
-                publishMs: 500, sessionTimeoutS: 60 },
+                publishMs: 200, sessionTimeoutS: 60 },
       points: [
-        { id: 'debit', label: 'Débit ligne 1', unit: 'm³/h', kind: 'float', periodMs: 1000,
-          params: { nodeId: 'ns=2;s=Ligne1/Debit', attr: 'Value', samplingMs: 200,
+        { id: 'pression', label: 'Pression', unit: 'bar', kind: 'float', periodMs: 200,
+          params: { nodeId: 'ns=1;s=pression', attr: 'Value', samplingMs: 100,
+                    deadband: 0, gain: 10, offset: 0 } },
+        { id: 'compteur', label: 'Compteur signé', unit: '', kind: 'float', periodMs: 200,
+          params: { nodeId: 'ns=1;s=compteur', attr: 'Value', samplingMs: 100,
                     deadband: 0, gain: 1, offset: 0 } },
+        { id: 'marche', label: 'Booléen', unit: '', kind: 'bit', periodMs: 200,
+          params: { nodeId: 'ns=1;s=marche', attr: 'Value', samplingMs: 100,
+                    deadband: 0, gain: 1, offset: 0 } },
+        { id: 'texte', label: 'Chaîne', unit: '', kind: 'float', periodMs: 200,
+          params: { nodeId: 'ns=1;s=texte', attr: 'Value', samplingMs: 100,
+                    deadband: 0, gain: 1, offset: 0 } },
+      ],
+    },
+    {
+      id: 'uapoll', label: 'OPC UA en interrogation', protocol: 'opcua', enabled: true,
+      params: { endpoint: 'opc.tcp://127.0.0.1:' + ua.port, securityPolicy: 'None',
+                securityMode: 'None', auth: 'anonymous', mode: 'poll', sessionTimeoutS: 60 },
+      points: [
+        { id: 'regime', label: 'Régime', unit: 'tr/min', kind: 'float', periodMs: 200,
+          params: { nodeId: 'ns=1;s=regime', attr: 'Value', gain: 1, offset: 0 } },
+      ],
+    },
+    {
+      id: 'uasecu', label: 'OPC UA chiffré', protocol: 'opcua', enabled: true,
+      params: { endpoint: 'opc.tcp://127.0.0.1:' + ua.port, securityPolicy: 'Basic256Sha256',
+                securityMode: 'SignAndEncrypt', auth: 'anonymous', mode: 'poll',
+                sessionTimeoutS: 60 },
+      points: [
+        { id: 'regime', label: 'Régime', unit: 'tr/min', kind: 'float', periodMs: 500,
+          params: { nodeId: 'ns=1;s=regime', attr: 'Value', gain: 1, offset: 0 } },
       ],
     },
   ],
@@ -402,9 +447,20 @@ check('lien IEC 60870-5-104 établi', stMap.poste && stMap.poste.state === 'up',
 check('pilote IEC 61850 annoncé comme non branché (pas de valeur inventée)',
   stMap.poste61850 && stMap.poste61850.state === 'todo',
   stMap.poste61850 ? stMap.poste61850.detail : 'absent');
-check('pilote OPC UA annoncé comme non branché (pas de valeur inventée)',
-  stMap.supervision && stMap.supervision.state === 'todo',
-  stMap.supervision ? stMap.supervision.detail : 'absent');
+check('lien OPC UA établi (abonnement)',
+  !ua.absent && stMap.supervision && stMap.supervision.state === 'up',
+  ua.absent ? 'cible diagweb-opcua-test-server non compilée : ' + ua.bin
+            : (stMap.supervision ? stMap.supervision.state + ' · ' + stMap.supervision.detail
+                                 : 'absent'));
+check('lien OPC UA établi (interrogation cyclique)',
+  !ua.absent && stMap.uapoll && stMap.uapoll.state === 'up',
+  stMap.uapoll ? stMap.uapoll.state + ' · ' + stMap.uapoll.detail : 'absent');
+// Sans chiffrement compilé, un lien réglé « signature et chiffrement » doit
+// refuser de s'ouvrir plutôt que de dialoguer en clair.
+check('OPC UA : pas de repli en clair sur un lien chiffré',
+  stMap.uasecu && stMap.uasecu.state === 'down' &&
+  /chiffrement|sécurité/.test(stMap.uasecu.detail || ''),
+  stMap.uasecu ? stMap.uasecu.state + ' · ' + stMap.uasecu.detail : 'absent');
 check('lien SNMP v2c établi', stMap.commut && stMap.commut.state === 'up',
   stMap.commut ? stMap.commut.state + ' · ' + stMap.commut.detail : 'absent');
 check('SNMPv3 annoncé non branché (pas de repli silencieux en v2c)',
@@ -420,7 +476,9 @@ check('test de connexion du lien Modbus', test.status === 200 && test.json.ok ==
 
 const { got, metas } = await collect(
   ['@banc.reg0', '@banc.reg5', '@banc.flot', '@banc.bobine', '@banc.absent',
-   '@poste.mesure', '@poste.etat', '@poste61850.courant', '@supervision.debit',
+   '@poste.mesure', '@poste.etat', '@poste61850.courant',
+   '@supervision.pression', '@supervision.compteur', '@supervision.marche',
+   '@supervision.texte', '@uapoll.regime', '@uasecu.regime',
    '@commut.uptime', '@commut.octets', '@commut.signe', '@commut.chaine',
    '@commut.texte', '@commut.absent', '@snmpv3.uptime'], 1400);
 
@@ -442,8 +500,23 @@ check('état simple IEC-104 décodé (0/1)',
   [0, 1].includes(last('@poste.etat')), 'valeur ' + last('@poste.etat'));
 check('point IEC 61850 sans valeur (pilote non branché)',
   got.get('@poste61850.courant').length === 0);
-check('point OPC UA sans valeur (pilote non branché)',
-  got.get('@supervision.debit').length === 0);
+check('OPC UA : Double reçu par abonnement et mis à l’échelle',
+  last('@supervision.pression') !== null && last('@supervision.pression') >= 25 &&
+  last('@supervision.pression') <= 60,
+  'valeur ' + last('@supervision.pression'));
+check('OPC UA : abonnement notifié à chaque changement',
+  got.get('@supervision.pression').length >= 3,
+  got.get('@supervision.pression').length + ' notification(s) en 1,4 s');
+check('OPC UA : Int32 négatif décodé', last('@supervision.compteur') === -42,
+  'valeur ' + last('@supervision.compteur'));
+check('OPC UA : booléen décodé en 0/1', last('@supervision.marche') === 1,
+  'valeur ' + last('@supervision.marche'));
+check('OPC UA : chaîne jamais publiée (type non numérique)',
+  got.get('@supervision.texte').length === 0);
+check('OPC UA : UInt32 lu en interrogation cyclique', last('@uapoll.regime') === 1500,
+  'valeur ' + last('@uapoll.regime'));
+check('OPC UA : aucun point sur un lien chiffré non ouvert',
+  got.get('@uasecu.regime').length === 0);
 check('SNMP : TimeTicks décodé et mis à l’échelle',
   Math.abs(last('@commut.uptime') - 1234.56) < 1e-6, 'valeur ' + last('@commut.uptime'));
 check('SNMP : Counter32 au-delà d’un entier 32 bits signé',
@@ -483,6 +556,8 @@ await api('/api/protocols', {
 });
 modbus.server.close();
 iec.server.close();
+snmp.sock.close();
+if (ua.proc) ua.proc.kill();
 
 console.log('');
 console.log(`${results.length - failed}/${results.length} vérifications réussies`);

@@ -78,7 +78,7 @@ web/            sources de l'application (page de dev : web/index.html)
   js/dnd.js     déplacement de widgets entre onglets et fenêtres
   js/store.js   configurations : localStorage, export/import JSON+CSV, stub
   js/app.js     onglets, recherche, tableau, journal, boucle de rendu
-server/         serveur de diagnostic C++20 (HTTP + WebSocket, sans dépendance)
+server/         serveur de diagnostic C++20 (HTTP + WebSocket ; open62541 pour OPC UA)
   src/source.hpp     contrat IVariableSource — à implémenter pour le controller
   src/sim_source.hpp source simulée (bouchon) + générateurs + forçage
   src/recorder.hpp   journalisation autonome (navigateur fermé)
@@ -100,6 +100,7 @@ tests/ui.mjs    tests d'interface Playwright (24 vérifications)
 tests/dnd.mjs   tests de déplacement de widgets (7 vérifications, http requis)
 tests/protocols.mjs  liens réseau bout en bout (équipements simulés, serveur requis)
 tests/decode.cpp     décodage des protocoles (cible CMake diagweb-decode-test)
+tests/opcua_server.c serveur OPC UA de test (cible diagweb-opcua-test-server)
 tests/server.mjs     forçage + journalisation autonome (serveur requis)
 dist/           livrables générés (commités) : index.html autonome + artifact.html
 docs/           PROJET.md, SPECS.md, PROTOCOLES.md

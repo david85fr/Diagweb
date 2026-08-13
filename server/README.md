@@ -122,11 +122,18 @@ front-end restent inchangés.
 
 ## Dépendances
 
-Le serveur n'en a aucune aujourd'hui : bibliothèque standard et POSIX
-uniquement. Une bibliothèque tierce reste possible pour un protocole, à
-condition que sa licence soit **gratuite en produit commercial fermé** — le
-détail, les licences vérifiées et les décisions par protocole sont dans
-`docs/PROTOCOLES.md` § « Bibliothèques externes et licences ».
+Une seule : **open62541** (MPL-2.0), pour le pilote OPC UA. Tout le reste
+n'utilise que la bibliothèque standard et POSIX.
+
+```bash
+cmake -B build -S . -DDIAGWEB_WITH_OPCUA=OFF        # sans OPC UA : aucune dépendance
+cmake -B build -S . -DDIAGWEB_OPCUA_ENCRYPTION=ON   # chiffrement OPC UA (OpenSSL)
+```
+
+CMake préfère une copie déjà installée (`find_package`) et ne la télécharge
+que faute de mieux : la compilation croisée d'un produit embarqué ne devrait
+pas dépendre du réseau. Les licences vérifiées et les décisions par protocole
+sont dans `docs/PROTOCOLES.md` § « Bibliothèques externes et licences ».
 
 ## Organisation des pilotes
 
@@ -141,7 +148,7 @@ Chaque protocole a son dossier ; rien ne traîne à la racine de `src/drivers/`.
 | `canopen/` | CANopen (TPDO, SDO expédié) | implémenté |
 | `snmp/` | SNMP v1 et v2c (`ber.hpp` + pilote) | implémenté ; v3 déclaré |
 | `iec61850/` | IEC 61850 (MMS) | déclaré |
-| `opcua/` | OPC UA (IEC 62541) | déclaré |
+| `opcua/` | OPC UA (IEC 62541), via open62541 | implémenté |
 | `common/` | `net.hpp` (TCP/série), `can_socket.hpp` (socle SocketCAN), `declared.hpp` | — |
 
 Modbus TCP et RTU partagent un dossier : même PDU, même décodage, seul le

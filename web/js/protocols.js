@@ -337,14 +337,14 @@
       id: 'opcua',
       label: 'OPC UA (IEC 62541)',
       transport: 'UA-TCP binaire (opc.tcp, port 4840)',
-      state: 'declared',
+      state: 'live',
       help: 'Client OPC UA d’un serveur de supervision ou d’un équipement : lecture ' +
-            'de nœuds désignés par leur NodeId, par interrogation cyclique (Read) ou ' +
-            'par abonnement (MonitoredItems). La configuration et les points se ' +
-            'saisissent dès maintenant ; la lecture effective demande la pile UA ' +
-            '(UA-TCP, SecureConversation, encodage binaire), prévue en phase ' +
-            'ultérieure (voir docs/PROTOCOLES.md). Lecture seule définitive : ni ' +
-            'Write ni Call ne seront implémentés.',
+            'de nœuds désignés par leur NodeId, par abonnement (MonitoredItems) ou ' +
+            'par interrogation cyclique (Read). S’appuie sur open62541. Lecture seule ' +
+            'définitive : ni Write ni Call ne sont appelés. Le chiffrement demande un ' +
+            'serveur compilé avec l’option correspondante ; sans elle, un lien réglé ' +
+            'en signature ou chiffrement refuse de s’ouvrir plutôt que de dialoguer ' +
+            'en clair.',
       linkFields: [
         F('endpoint', 'Point de terminaison', 'text', 'opc.tcp://192.168.0.10:4840', true,
           'URL du serveur OPC UA, forme opc.tcp://hôte:port/chemin. Le chemin est facultatif ' +
@@ -366,11 +366,12 @@
         F('username', 'Nom d’utilisateur', 'text', '', false,
           'Identifiant de session. Le mot de passe n’est JAMAIS enregistré ici : la ' +
           'configuration des liens est lisible par tout poste connecté et s’exporte en ' +
-          'clair. Le secret est repris du magasin de secrets du contrôleur.',
+          'clair. Le secret est repris de l’environnement du serveur de diagnostic.',
           { when: { auth: ['username'] } }),
         F('secretRef', 'Référence du secret', 'text', '', false,
-          'Nom sous lequel le mot de passe ou la clé privée du certificat est rangé dans le ' +
-          'magasin de secrets du contrôleur — une désignation, jamais le secret lui-même.',
+          'Nom désignant le secret — jamais le secret lui-même. Le serveur lit la variable ' +
+          'd’environnement DIAGWEB_SECRET_<référence> (en majuscules), que systemd sait ' +
+          'alimenter depuis son magasin de secrets sans l’écrire sur disque.',
           { when: { auth: ['username', 'certificate'] } }),
         F('mode', 'Mode de lecture', 'enum', 'subscribe', false,
           'Abonnement = le serveur OPC UA notifie les changements (économe, recommandé). ' +

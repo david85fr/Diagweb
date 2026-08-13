@@ -158,7 +158,7 @@ donc exactement les champs que le serveur sait lire.
 | SNMP v1 et v2c | UDP/161 | implémenté | `drivers/snmp/` |
 | SNMP v3 | UDP/161 | **déclaré** (USM à écrire) | `drivers/snmp/` |
 | IEC 61850 (MMS) | ISO sur TCP | **déclaré** | `drivers/iec61850/` |
-| OPC UA (IEC 62541) | UA-TCP binaire | **déclaré** | `drivers/opcua/` |
+| OPC UA (IEC 62541) | UA-TCP binaire | implémenté (open62541) | `drivers/opcua/` |
 
 ### Un dossier par protocole
 
@@ -353,36 +353,76 @@ BER, soit un volume de code comparable à celui de tout le reste du serveur, et
 elle ne peut pas être validée sans IED réel. C'est une phase ultérieure, pas un
 oubli.
 
-### OPC UA (IEC 62541) — pilote déclaré
+### OPC UA (IEC 62541)
 
-Client d'un serveur OPC UA (supervision, passerelle, équipement récent). La
-configuration se saisit et se conserve dès maintenant — point de terminaison
-`opc.tcp://hôte:port`, politique et mode de sécurité, mode de lecture, puis un
-**NodeId** par point (`ns=2;s=Ligne1/Debit`, `ns=2;i=1234`) — mais **aucune
-valeur n'est lue** : le lien s'affiche « non branché » et ne publie rien.
+Client d'un serveur OPC UA — supervision, passerelle, équipement récent — en
+**lecture seule** : ni `Write` ni `Call` ne sont appelés, et ne le seront pas.
+Un point est un **NodeId** (`ns=1;s=pression`, `ns=2;i=1234`).
 
-Ce qui manque est une pile UA binaire complète : transport UA-TCP
-(Hello/Acknowledge, découpage en morceaux), SecureConversation avec
-renouvellement de jetons, encodage binaire des types intégrés et des
-structures, puis les services CreateSession / ActivateSession, Read,
-CreateSubscription et CreateMonitoredItems / Publish. Comme pour IEC 61850,
-c'est une phase ultérieure et non un oubli : le projet s'interdit toute
-dépendance externe au runtime, la pile devra donc être écrite.
+C'est le seul protocole qui s'appuie sur une bibliothèque, **open62541**
+(MPL-2.0) : écrire la pile à la main — UA-TCP, SecureConversation, encodage
+binaire de tous les types, services de session, de lecture et d'abonnement —
+représentait plus de code que tout le reste du serveur réuni.
 
-Deux partis pris sont déjà fixés, pour ne pas avoir à les reprendre :
+| Mode | Ce qui se passe | Quand l'utiliser |
+|---|---|---|
+| **Abonnement** (défaut) | le serveur notifie les changements (`MonitoredItems`) | par défaut : économe, réactif |
+| Interrogation cyclique | service `Read` répété à la période du point | serveur qui refuse les abonnements |
 
-- **Lecture seule définitive.** Les services `Write` et `Call` ne seront pas
-  implémentés, même une fois la pile disponible — un outil de diagnostic
-  n'écrit pas dans un serveur de supervision.
-- **Aucun secret dans la configuration.** `protocols.json` est lisible par tout
-  poste connecté au serveur de diagnostic et s'exporte en clair depuis
-  l'interface. Le nom d'utilisateur y figure ; le mot de passe et la clé privée
-  du certificat client, jamais. Le champ « Référence du secret » ne porte qu'un
-  **nom** désignant l'entrée du magasin de secrets du contrôleur.
+En abonnement, chaque point porte son **intervalle d'échantillonnage** et sa
+**bande morte** ; le lien porte l'**intervalle de publication**.
 
-Les deux modes de lecture prévus sont l'**abonnement** (MonitoredItems, avec
-intervalle de publication, échantillonnage et bande morte) et l'**interrogation
-cyclique** (service Read), pour les serveurs qui refusent les abonnements.
+- **Types acceptés** : `Boolean`, `SByte`/`Byte`, `Int16`/`UInt16`,
+  `Int32`/`UInt32`, `Int64`/`UInt64`, `Float`, `Double` — scalaires seulement.
+  Tout autre type (chaîne, tableau, structure) n'est **jamais publié** : le
+  motif apparaît dans l'état du lien.
+- **Qualité** : une valeur dont le `StatusCode` n'est pas bon ne produit aucun
+  échantillon, comme le bit IV en IEC-104.
+- **NodeId illisible** : le point est ignoré avec un motif, les autres points
+  du lien continuent d'être lus.
+
+#### Sécurité et secrets
+
+Deux règles, et elles ne se négocient pas.
+
+**Pas de repli silencieux en clair.** Le chiffrement demande OpenSSL, apporté
+par l'option de compilation `DIAGWEB_OPCUA_ENCRYPTION` (désactivée par défaut,
+car OpenSSL doit alors exister dans le SDK du contrôleur). Sans elle, un lien
+réglé en « Signature » ou « Signature et chiffrement » **refuse de s'ouvrir**
+et affiche pourquoi. Se rabattre sur une connexion en clair aurait donné une
+fausse impression de sécurité, ce qui est pire que l'absence de connexion.
+
+**Aucun secret dans la configuration.** `protocols.json` est lisible par tout
+poste connecté au serveur de diagnostic et s'exporte en clair depuis
+l'interface. Le nom d'utilisateur y figure ; le mot de passe, jamais. Le champ
+« Référence du secret » ne porte qu'un **nom** : le serveur lit la variable
+d'environnement `DIAGWEB_SECRET_<RÉFÉRENCE>` (en majuscules, caractères non
+alphanumériques remplacés par `_`), que systemd sait alimenter depuis son
+magasin de secrets sans jamais l'écrire sur disque.
+
+#### Compilation
+
+`DIAGWEB_WITH_OPCUA` est actif par défaut ; CMake utilise une copie
+d'open62541 déjà installée si `find_package` en trouve une — le cas d'un SDK
+de contrôleur — et la récupère sinon par `FetchContent` sur la version épinglée
+`DIAGWEB_OPCUA_TAG`. **La compilation croisée d'un produit ne devrait pas
+dépendre d'un accès réseau** : fournir la bibliothèque dans le SDK est la voie
+recommandée.
+
+```bash
+cmake -B build -S server -DDIAGWEB_WITH_OPCUA=OFF        # sans OPC UA, hors ligne
+cmake -B build -S server -DDIAGWEB_OPCUA_ENCRYPTION=ON   # avec chiffrement (OpenSSL)
+```
+
+À `OFF`, le serveur se construit sans aucune dépendance et le pilote redevient
+« déclaré » : la configuration reste saisissable, rien n'est publié, et l'état
+du lien le dit.
+
+Deux réglages ont dû être forcés sur la construction d'open62541, et méritent
+d'être notés : ses en-têtes sont vus comme **includes système** (nos `-Werror`
+portent sur le code de Diagweb, pas sur celui d'une bibliothèque tierce), et
+son **optimisation inter-procédurale est désactivée** — à l'édition de liens,
+GCC recompilait son code C avec nos options, dont `-Werror`.
 
 ## Ce qui est volontairement hors périmètre
 
@@ -401,7 +441,9 @@ cyclique** (service Read), pour les serveurs qui refusent les abonnements.
   re-revendication.
 - **GOOSE** (IEC 61850-8-1 couche 2) et **rôle de maître CANopen**.
 - **Écriture et appel de méthode OPC UA** (`Write`, `Call`), **découverte**
-  automatique de l'arborescence (`Browse`) et **historique** (`HistoryRead`).
+  automatique de l'arborescence (`Browse`), **historique** (`HistoryRead`) et
+  **événements** (`EventNotifier`). Les types non scalaires — tableaux,
+  structures — ne sont pas convertis.
 - **SNMP** : `SetRequest` (écriture), réception de **trappes** et
   d'`InformRequest` (Diagweb interroge, il n'écoute pas), parcours de MIB
   (`GetNext`, `GetBulk`) et résolution des noms symboliques — un OID se saisit
@@ -518,7 +560,7 @@ Licences vérifiées dans les dépôts eux-mêmes.
 
 | Bibliothèque | Protocole | Langage | Licence | Décision |
 |---|---|---|---|---|
-| [open62541](https://github.com/open62541/open62541) | OPC UA | C99 | MPL-2.0 (quelques fichiers CC0) | **candidat retenu** |
+| [open62541](https://github.com/open62541/open62541) | OPC UA | C99 | MPL-2.0 (quelques fichiers CC0) | **retenue et intégrée** (v1.5.6) |
 | [S2OPC](https://gitlab.com/systerel/S2OPC) | OPC UA | C | Apache-2.0 | acceptable — solution de repli, orientée sûreté |
 | [libiec61850](https://github.com/mz-automation/libiec61850) | IEC 61850 (MMS, GOOSE, SV) | C99 | GPLv3 **ou** licence commerciale payante | **écartée** |
 | [lib60870](https://github.com/mz-automation/lib60870) | IEC 60870-5-101/104 | C | GPLv3 **ou** licence commerciale payante | écartée, et sans objet |
@@ -526,13 +568,15 @@ Licences vérifiées dans les dépôts eux-mêmes.
 
 Trois conséquences, dont une désagréable.
 
-**OPC UA — la bibliothèque vaut le coup.** C'est le seul protocole du lot où
-l'écriture à la main est disproportionnée : il faut UA-TCP, SecureConversation
-avec renouvellement de jetons, l'encodage binaire de tous les types intégrés,
-puis les services de session, de lecture et d'abonnement. open62541 couvre
-l'ensemble sous MPL-2.0, qui autorise explicitement la combinaison avec du
-logiciel propriétaire — seules les modifications apportées à ses propres
-fichiers doivent être publiées, ce qui ne concerne pas le code de Diagweb.
+**OPC UA — intégrée.** C'était le seul protocole du lot où l'écriture à la
+main était disproportionnée : UA-TCP, SecureConversation avec renouvellement de
+jetons, encodage binaire de tous les types intégrés, puis les services de
+session, de lecture et d'abonnement. open62541 couvre l'ensemble sous MPL-2.0,
+qui autorise explicitement la combinaison avec du logiciel propriétaire —
+seules les modifications apportées à ses propres fichiers devraient être
+publiées, ce qui ne concerne pas le code de Diagweb. Version épinglée v1.5.6,
+licence vérifiée dans son fichier `LICENSE`. C'est la **seule** dépendance du
+serveur, et elle se débranche par `-DDIAGWEB_WITH_OPCUA=OFF`.
 
 **IEC 61850 — la contrainte de licence ferme la porte.** Toutes les piles C
 matures sont en double licence GPLv3 / commerciale : gratuites tant que le
@@ -595,8 +639,11 @@ trop large ou trop étroit rendrait une variable silencieusement muette.
 `tests/protocols.mjs` monte un **esclave Modbus TCP**, une **station
 IEC 60870-5-104** et un **agent SNMP v2c** en Node, configure les liens par
 REST et vérifie que les
-valeurs arrivent jusqu'au flux WebSocket ; il vérifie aussi que les pilotes
-**déclarés** (IEC 61850, OPC UA) annoncent « non branché » et ne publient
-aucune valeur. Les pilotes CAN ne sont pas couverts de bout en bout faute
+valeurs arrivent jusqu'au flux WebSocket. Un **serveur OPC UA de test**
+(`tests/opcua_server.c`, cible `diagweb-opcua-test-server`) est lancé de la
+même façon : il couvre l'abonnement, l'interrogation cyclique, la conversion
+des types, le refus des chaînes, et le refus d'ouvrir un lien chiffré sur un
+serveur compilé sans chiffrement. Le test vérifie aussi que le pilote
+**déclaré** restant (IEC 61850) annonce « non branché » sans publier de valeur. Les pilotes CAN ne sont pas couverts de bout en bout faute
 d'interface CAN dans l'environnement de test : seuls leur décodage, leurs
 filtres et leur appariement le sont.

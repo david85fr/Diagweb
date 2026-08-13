@@ -419,21 +419,26 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
 - **Modèle** : un *lien* (protocole + paramètres de connexion) porte des
   *points* (variables lues). Adresse Diagweb : **`@lien.point`** (famille NET).
 - **Protocoles** : Modbus TCP, Modbus RTU (série), IEC 60870-5-104, CAN brut,
-  J1939 (transport multi-trames compris), CANopen, **SNMP v1 et v2c** —
-  pilotes implémentés ; **SNMP v3 (USM)**,
-  **IEC 61850 (MMS)** et **OPC UA (IEC 62541)** sont *déclarés* : la configuration est acceptée et
+  J1939 (transport multi-trames compris), CANopen, **SNMP v1 et v2c**,
+  **OPC UA (IEC 62541)** — pilotes implémentés ; **SNMP v3 (USM)** et
+  **IEC 61850 (MMS)** sont *déclarés* : la configuration est acceptée et
   conservée, la lecture viendra avec leur pile respective (ISO/MMS d'un côté,
-  UA-TCP + SecureConversation de l'autre ; USM pour SNMPv3). Un pilote déclaré
-  ne publie **aucune** valeur — et un lien SNMP configuré en v3 ne retombe
+  USM pour SNMPv3). Un pilote déclaré ne publie **aucune** valeur — et un lien SNMP configuré en v3 ne retombe
   jamais en silence sur v2c, ce qui viderait de son sens le choix de v3.
 - **Bibliothèques tierces** : autorisées côté serveur si leur licence reste
   **gratuite en produit commercial fermé** (MIT, BSD, Apache-2.0, MPL-2.0…) ;
   refusées si GPL/AGPL ou en double licence dont l'usage commercial se paie.
   L'interface web garde sa règle de **zéro dépendance**. Licences vérifiées et
   décisions consignées dans `docs/PROTOCOLES.md` § « Bibliothèques externes et
-  licences ». Conséquence à retenir : OPC UA pourra s'appuyer sur open62541
-  (MPL-2.0), mais **IEC 61850 n'a aucune pile C permissive** — les stacks
-  matures sont GPLv3 ou payantes.
+  licences ». **Seule dépendance à ce jour : open62541** (MPL-2.0), pour OPC UA,
+  débranchable par `-DDIAGWEB_WITH_OPCUA=OFF`. **IEC 61850 n'a aucune pile C
+  permissive** — les stacks matures sont GPLv3 ou payantes.
+- **Sécurité OPC UA** : le chiffrement demande OpenSSL (option de compilation
+  `DIAGWEB_OPCUA_ENCRYPTION`). Sans elle, un lien réglé en signature ou
+  chiffrement **refuse de s'ouvrir** — jamais de repli silencieux en clair.
+  Le mot de passe ne figure pas dans la configuration : celle-ci ne porte
+  qu'une référence, résolue dans l'environnement du serveur
+  (`DIAGWEB_SECRET_<RÉFÉRENCE>`).
 - **Un dossier par protocole** : chaque pilote vit dans
   `server/src/drivers/<protocole>/`, le partagé dans `drivers/common/`.
   `tools/check-drivers.mjs` (rejoué par la CI) refuse un protocole sans

@@ -63,7 +63,8 @@ if [ "$CIBLE" = tout ] || [ "$CIBLE" = serveur ]; then
   etape "compilation (avertissements = erreurs)" bash -c '
     cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror" &&
-    cmake --build server/build -j --target diagweb-server diagweb-decode-test'
+    cmake --build server/build -j --target diagweb-server diagweb-decode-test \
+                                          diagweb-opcua-test-server'
   etape "décodage des protocoles" ./server/build/diagweb-decode-test
 
   if [ -x server/build/diagweb-server ]; then
