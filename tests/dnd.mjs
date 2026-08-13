@@ -231,6 +231,24 @@ console.log(`Cible : ${URL}\n`);
   check('session propre à chaque fenêtre', tabsA === 2 && tabsB === 1,
     `A ${tabsA} onglet(s), B ${tabsB}`);
 
+  // 2 bis) Un nom d'affichage appartient à la variable, pas à l'endroit où on
+  // la regarde : il doit valoir dans tous les tableaux, toutes les courbes,
+  // tous les onglets — et dans les autres fenêtres ouvertes sur la même
+  // origine (organisation multi-écran).
+  await A.locator('.tab').first().click();
+  await A.waitForTimeout(300);
+  const cible = await A.locator('.tabpane.on .vrow').first().getAttribute('data-addr');
+  await A.locator('.tabpane.on .vrow').first().locator('.v-edit').click();
+  await A.waitForTimeout(200);
+  await A.locator('.v-rename').fill('Nom partagé');
+  await A.keyboard.press('Enter');
+  await A.waitForTimeout(700);
+  const nomA = await A.locator(`.tabpane.on .vrow[data-addr="${cible}"] .v-label`).textContent();
+  const nomB = await B.locator(`.tabpane.on .vrow[data-addr="${cible}"] .v-label`).textContent();
+  check('renommage d’une variable propagé aux autres fenêtres',
+    /Nom partagé/.test(nomA || '') && /Nom partagé/.test(nomB || ''),
+    cible + ' : A « ' + (nomA || '') + ' » · B « ' + (nomB || '') + ' »');
+
   // 3) Glisser un graphique de B vers A (autre fenêtre)
   const chartsB0 = await B.locator('.tabpane.on .chart-card').count();
   await A.locator('.tab').first().click();

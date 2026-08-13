@@ -72,6 +72,7 @@
       onChange();
     },
     refreshTargets,
+    renameVariable,
     /** Onglets autres que l'actif (menus « Déplacer vers »). */
     otherTabs: () => state.tabs.filter((t) => t !== state.active),
     moveChartToTab,
@@ -247,6 +248,37 @@
   /** Libellé affiché d'une variable : nom d'affichage choisi, sinon libellé du catalogue. */
   function displayLabel(e) { return e.name || e.meta.label; }
 
+  /**
+   * Un nom d'affichage appartient à la VARIABLE, pas à l'endroit où on la
+   * regarde : renommer « MB414 » en « Pression collecteur » dans un tableau
+   * doit la nommer ainsi partout dans la page — autres tableaux, courbes,
+   * légendes, tous onglets confondus. Deux noms pour une même adresse, c'est
+   * la porte ouverte à lire une courbe pour une autre.
+   *
+   * L'adresse, elle, ne change jamais : c'est toujours elle qui identifie.
+   */
+  function renameVariable(addr, name, distant) {
+    const nom = (name || '').trim() || undefined;
+    for (const tab of state.tabs) {
+      let touche = false;
+      for (const e of tab.table) {
+        if (e.addr === addr && e.name !== nom) { e.name = nom; touche = true; }
+      }
+      if (touche) renderTable(tab);
+      for (const chart of tab.charts) {
+        let legende = false;
+        for (const s of chart.series) {
+          if (s.addr === addr && s.name !== nom) { s.name = nom; legende = true; }
+        }
+        if (legende) chart.rebuildLegend();
+      }
+    }
+    refreshTargets();
+    onChange();
+    // Les autres fenêtres ouvertes sur le même contrôleur suivent (multi-écran).
+    if (!distant && DW.dnd && DW.dnd.shareRename) DW.dnd.shareRename(addr, nom);
+  }
+
   /** Renommage en place du nom d'affichage d'une variable du tableau. */
   function renameTableEntry(tab, e, labelEl) {
     if (labelEl.querySelector('input')) return;
@@ -264,11 +296,8 @@
     const commit = () => {
       if (done) return;
       done = true;
-      const v = input.value.trim();
-      e.name = v || undefined;
-      renderTable(tab);
-      refreshTargets();
-      onChange();
+      renameVariable(e.addr, input.value);
+      renderTable(tab);        // la ligne éditée retrouve son affichage normal
     };
     input.addEventListener('blur', commit);
     input.addEventListener('keydown', (ev) => {
@@ -1581,7 +1610,7 @@
             ['Poignée ⠿', 'Glisser un graphique ou le tableau vers un onglet, une autre fenêtre, ou sur un autre graphique pour le ranger.'],
             ['Ligne du tableau', 'Se glisse <b>dans le tableau</b> pour changer son rang (un repère montre où elle se posera), ou vers un autre onglet ou une autre fenêtre.'],
             ['Poignée ◢ (coin bas-droit)', 'Redimensionner un graphique à la souris : ↕ hauteur libre, ↔ largeur en nombre de colonnes. Sur le tableau numérique : ↕ fixe sa hauteur (défilement interne). Double-clic pour revenir à la taille automatique.'],
-            ['Renommer', 'Bouton ✎ sur une ligne du tableau, ou « Renommer la courbe… » dans le menu d’une pastille : un nom d’affichage remplace le libellé du catalogue (vide = valeur d’origine).'],
+            ['Renommer', 'Bouton ✎ sur une ligne du tableau, ou « Renommer la courbe… » dans le menu d’une pastille : un nom d’affichage remplace le libellé du catalogue (vide = valeur d’origine). Le nom appartient à la <b>variable</b> : il s’applique partout où elle figure — tous les tableaux, toutes les courbes, tous les onglets, et les autres fenêtres ouvertes.'],
             ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
           ]) +
@@ -1596,6 +1625,7 @@
           L([
             ['Pastille de légende', 'Couleur (palette ou teinte libre), masquer, échelle dédiée, décalage vertical, retrait.'],
             ['Badge Én', 'Numéro de l’échelle utilisée ; 🔒 signale un réglage manuel.'],
+            ['Échelles verticales', 'Clic sur une <b>règle d’axe</b> (les graduations, curseur ↕) : saisir le minimum et le maximum exacts, pour cette échelle seule ou pour <b>toutes</b> celles du graphique. Glisser ou molette sur la règle : réglage à la volée ; double-clic : retour à l’automatique. Même réglage depuis le menu d’une pastille (« Bornes de l’échelle… »).'],
           ]) +
         '</div>';
       back.querySelector('.m-close').addEventListener('click', () => { root.innerHTML = ''; });
@@ -1691,6 +1721,7 @@
       activeTab: () => state.active,
       tabFromElement: (el) => el._tab || state.active,
       isSameTarget: (tab, payload) => tab === state.active && payload.kind !== 'chart',
+      applyRename: (addr, name) => renameVariable(addr, name, true),
       toast,
     });
 

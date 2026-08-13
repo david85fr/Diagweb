@@ -31,9 +31,20 @@
   if (bc) {
     bc.addEventListener('message', (ev) => {
       const m = ev.data;
-      if (!m || m.type !== 'widget-accepted') return;
-      completeMove(m.dragId);
+      if (!m) return;
+      if (m.type === 'widget-accepted') completeMove(m.dragId);
+      // Un nom d'affichage appartient à la variable : il vaut dans toutes les
+      // fenêtres ouvertes sur le même contrôleur, pas seulement celle où il a
+      // été saisi (organisation multi-écran).
+      else if (m.type === 'variable-renamed' && m.origin !== winId && api && api.applyRename) {
+        api.applyRename(m.addr, m.name);
+      }
     });
+  }
+
+  /** Annonce un renommage aux autres fenêtres de la même origine. */
+  function shareRename(addr, name) {
+    if (bc) bc.postMessage({ type: 'variable-renamed', origin: winId, addr, name });
   }
 
   function envelope(payload, dragId) {
@@ -216,6 +227,7 @@
     winId,
     startDrag,
     endDrag,
+    shareRename,
     openInNewWindow,
     consumeOpenParam,
     describe,

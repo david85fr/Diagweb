@@ -260,7 +260,9 @@
           '<canvas aria-label="Courbes du graphique" ' +
             'title="Glisser ↔ : remonter le temps · glisser ↕ : déplacer l’échelle · ' +
             'pincer ou molette : zoom · appui bref : curseur de mesure · double-appui : retour au direct. ' +
-            'Sur une règle d’axe : glisser ou molette pour son échelle, double-appui pour la remettre en automatique."></canvas>' +
+            'Sur une règle d’axe (curseur ↕ sur les bords) : clic pour saisir les bornes exactes ' +
+            '— une échelle ou toutes — glisser ou molette pour la régler à la volée, ' +
+            'double-clic pour revenir à l’automatique."></canvas>' +
           '<div class="chart-tip hide"></div>' +
           '<button class="chart-live hide" type="button" ' +
             'title="Revenir au temps réel (la vue est figée dans l’historique)">▶ Direct</button>' +
@@ -508,6 +510,113 @@
       for (const st of this.axisState.values()) { st.mode = 'auto'; st.snap = true; }
     }
 
+    // ---------- Échelles verticales : réglage explicite -------------------
+    /**
+     * Ancre pour le menu d'une règle d'axe. Le popover se positionne sur un
+     * élément ; une règle n'en est pas un — elle est peinte dans le canvas. On
+     * en pose donc une, de taille nulle, à l'endroit visé.
+     */
+    axisAnchor(band) {
+      if (!this._axisAnchorEl) {
+        this._axisAnchorEl = document.createElement('span');
+        this._axisAnchorEl.className = 'axis-anchor';
+        this.canvas.parentNode.appendChild(this._axisAnchorEl);
+      }
+      const el = this._axisAnchorEl;
+      // Le canvas n'est pas collé au bord de son parent (marge intérieure) :
+      // sans son décalage, le menu se poserait à côté de la règle visée.
+      el.style.left = (this.canvas.offsetLeft + band.x0) + 'px';
+      el.style.top = this.canvas.offsetTop + 'px';
+      el.style.width = (band.x1 - band.x0) + 'px';
+      el.style.height = this.canvas.clientHeight + 'px';
+      return el;
+    }
+
+    /** Libellé d'une échelle : son unité, ou les courbes qui la partagent. */
+    axisTitle(key) {
+      const series = this.series.filter((s) => this.axisKey(s) === key);
+      if (!series.length) return 'Échelle';
+      const unit = series[0].meta.unit;
+      if (key.startsWith('solo:')) return (series[0].name || series[0].addr) + (unit ? ' (' + unit + ')' : '');
+      return unit ? 'Échelle « ' + unit + ' »' : 'Échelle sans unité';
+    }
+
+    /** Applique des bornes à une échelle, ou à toutes (réglage groupé). */
+    setAxisRange(key, min, max, toutes) {
+      const r = sanitizeRange(min, max);
+      const cles = toutes ? [...this.axisState.keys()] : [key];
+      for (const k of cles) {
+        const st = this.axisState.get(k);
+        if (!st) continue;
+        st.mode = 'manual';
+        st.cur = { min: r.min, max: r.max };
+      }
+      this.app.onChange();
+    }
+
+    /**
+     * Menu d'une échelle verticale : bornes exactes, retour à l'automatique,
+     * et le même réglage appliqué à toutes les échelles du graphique.
+     *
+     * Le glisser et la molette sur la règle font déjà le réglage à la volée ;
+     * ils ne se voient pas et ne permettent pas de saisir une valeur. Ce menu
+     * est le chemin explicite, à la souris comme au doigt.
+     */
+    openAxisMenu(key, anchorEl) {
+      const st = this.axisState.get(key);
+      if (!st) return;
+      openPopover('axis:' + this.id + ':' + key, anchorEl, (mk, add) => {
+        const t = document.createElement('div');
+        t.className = 'pop-title';
+        t.textContent = this.axisTitle(key);
+        add(t);
+
+        const form = document.createElement('div');
+        form.className = 'pop-range';
+        form.innerHTML =
+          '<label>Max<input type="number" step="any" class="ax-max" ' +
+            'title="Valeur en haut de l’axe"></label>' +
+          '<label>Min<input type="number" step="any" class="ax-min" ' +
+            'title="Valeur en bas de l’axe"></label>' +
+          '<label class="pop-check"><input type="checkbox" class="ax-all" ' +
+            'title="Donner ces mêmes bornes à toutes les échelles de ce graphique">' +
+            '<span>Toutes les échelles</span></label>' +
+          '<button type="button" class="btn sm ax-ok" ' +
+            'title="Appliquer ces bornes (l’axe passe en réglage manuel 🔒)">Appliquer</button>';
+        const fMin = form.querySelector('.ax-min');
+        const fMax = form.querySelector('.ax-max');
+        // Quatre chiffres significatifs : de quoi retoucher sans recopier
+        // les décimales d'un cadrage automatique.
+        fMin.value = Number(st.cur.min.toPrecision(4));
+        fMax.value = Number(st.cur.max.toPrecision(4));
+        const appliquer = () => {
+          const lo = parseFloat(fMin.value), hi = parseFloat(fMax.value);
+          if (!isFinite(lo) || !isFinite(hi)) {
+            this.app.toast('Bornes non numériques : réglage ignoré.', 'err');
+            return;
+          }
+          this.setAxisRange(key, Math.min(lo, hi), Math.max(lo, hi),
+                            form.querySelector('.ax-all').checked);
+          closePopover();
+        };
+        form.querySelector('.ax-ok').addEventListener('click', appliquer);
+        form.addEventListener('keydown', (e) => { if (e.key === 'Enter') appliquer(); });
+        // Un appui dans le formulaire ne doit pas être pris pour un geste
+        // sur le canvas, ni refermer le menu.
+        form.addEventListener('pointerdown', (e) => e.stopPropagation());
+        add(form);
+
+        mk('Échelle automatique', () => {
+          st.mode = 'auto'; st.snap = true;
+          this.app.onChange();
+        }, null, 'Recadrer cette échelle sur les valeurs reçues (annule le réglage manuel 🔒)');
+        mk('Toutes les échelles en automatique', () => {
+          this.resetAxes();
+          this.app.onChange();
+        }, null, 'Remettre en cadrage automatique toutes les échelles de ce graphique');
+      });
+    }
+
     // ---------- Mode décalage d'une courbe ------------------------------
     startMoveMode(s) {
       this.moveSeries = s.addr;
@@ -570,8 +679,12 @@
 
       cv.addEventListener('pointermove', (e) => {
         if (e.pointerType === 'mouse' && e.buttons === 0) {
-          if (!this.bandAt(e.offsetX)) this.cursor = { x: e.offsetX };
-          else this.cursor = null;
+          const surRegle = !!this.bandAt(e.offsetX);
+          this.cursor = surRegle ? null : { x: e.offsetX };
+          // Le curseur est le seul indice qu'une règle se règle à la souris :
+          // trois centimètres de canvas peint ne se distinguent en rien du
+          // reste sans cela.
+          cv.style.cursor = surRegle ? 'ns-resize' : '';
           return;
         }
         const p = this._ptrs.get(e.pointerId);
@@ -652,6 +765,11 @@
             if (isDouble && this._lastTapBand === band.key) {
               const st = this.axisState.get(band.key);
               if (st) { st.mode = 'auto'; st.snap = true; }
+            } else {
+              // Appui bref sur une règle : le menu de l'échelle, seul chemin
+              // où l'on peut saisir des bornes exactes — à la souris comme au
+              // doigt, contrairement au glisser et à la molette.
+              this.openAxisMenu(band.key, this.axisAnchor(band));
             }
             this._lastTapBand = band.key;
           } else if (isDouble && this._lastTapBand === null) {
@@ -799,10 +917,10 @@
       const commit = () => {
         if (done) return;
         done = true;
-        const v = input.value.trim();
-        s.name = v || undefined;
+        // Le nom appartient à la variable : l'application le répercute dans
+        // tous les tableaux et toutes les courbes de la page.
+        this.app.renameVariable(s.addr, input.value);
         this.rebuildLegend();
-        this.app.onChange();
       };
       input.addEventListener('blur', commit);
       input.addEventListener('keydown', (e) => {
@@ -854,6 +972,11 @@
           this.rebuildLegend();
           this.app.onChange();
         }, null, 'Retirer la courbe du tracé sans la supprimer (elle reste abonnée)');
+        mk('Bornes de l’échelle…', () => {
+          const key = this.axisKey(s);
+          this.openAxisMenu(key, chip);
+        }, null, 'Saisir le minimum et le maximum de l’axe de cette courbe, ' +
+          'ou les donner à toutes les échelles du graphique');
         mk((s.axisMode === 'solo' ? '✓ ' : '') + 'Échelle dédiée', () => {
           s.axisMode = s.axisMode === 'solo' ? 'auto' : 'solo';
           this.app.onChange();
