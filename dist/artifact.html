@@ -1019,6 +1019,11 @@ body.cfg-hidden .tabActions { display: none; }
 .modal.page { max-width: 1180px; max-height: 92vh; display: flex; flex-direction: column; }
 .page-body { overflow-y: auto; padding-right: 4px; }
 .page-vide { color: var(--muted); font-size: 13px; margin: 8px 0; }
+/* Bandeau des pages réseau servies par la simulation : il doit se voir sans
+   se lire deux fois, une page d'audit ne devant jamais passer pour réelle. */
+.net-sim { margin: 0 0 4px; padding: 8px 10px; font-size: 12.5px; line-height: 1.45;
+  border: 1px solid var(--warn); border-left-width: 4px; border-radius: 6px;
+  background: color-mix(in srgb, var(--warn) 12%, transparent); }
 .net-sec { padding: 12px 0; border-top: 1px solid var(--line); }
 .net-sec:first-child { border-top: 0; }
 .net-sec h4 { margin: 0 0 8px; font-size: 12.5px; text-transform: uppercase;
@@ -1075,6 +1080,20 @@ body.cfg-hidden .tabActions { display: none; }
   .lldp-grid { grid-template-columns: auto 1fr auto 1fr; }
 }
 
+/* Figer/Reprendre monte dans la barre supérieure : c'est une commande qu'on
+   cherche vite, et elle doit rester visible quand la zone de configuration est
+   repliée. */
+.pausebtn { font-size: 12.5px; padding: 6px 10px; white-space: nowrap; }
+@media (max-width: 520px) {
+  .pausebtn { font-size: 0; padding: 6px 8px; }        /* pictogramme seul */
+  .pausebtn::first-letter { font-size: 14px; }
+}
+/* Carte choisie comme destination d'ajout : ce que la barre du haut vise. */
+.chart-card.cible, .table-card.cible {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+  box-shadow: var(--shadow), 0 0 0 2px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
 </style>
 <div class="wrap">
   <header class="topbar">
@@ -1089,12 +1108,14 @@ body.cfg-hidden .tabActions { display: none; }
     </div>
 
     <div class="topIcons">
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">4e784b7 · #87</span>
+      <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" title="Figer ou reprendre d’un coup tous les graphiques de l’onglet actif">⏸ Figer</button>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">52f62f5 · #89</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
         <button id="skinBtn" type="button" title="Apparence : logo de l’installation et couleurs de l’interface — réglages partagés par tous les postes quand la page est servie par le contrôleur">Apparence — logo et couleurs…</button>
+        <button id="logBtn" type="button" title="Journal de données : enregistrer tous les échantillons des variables de l’onglet actif (dans le navigateur ou sur le contrôleur), puis les télécharger en CSV/JSON">Journal de données…<i id="logInd" class="recdot hide"></i></button>
         <button id="helpBtn" type="button" title="Récapitulatif des commandes et des gestes (utile sur écran tactile, où les infobulles n’apparaissent pas)">Aide — commandes et gestes…</button>
         <button id="netBtn" type="button" title="Liens réseau : déclarer des équipements Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen, SNMP ou OPC UA et choisir les variables à lire">Liens réseau…</button>
         <button id="aboutBtn" type="button" title="Version affichée, mode de fonctionnement et source de données">À propos de Diagweb…</button>
@@ -1126,8 +1147,6 @@ body.cfg-hidden .tabActions { display: none; }
     <button id="addTableBtn" class="btn" type="button" title="Créer un tableau numérique vide dans cet onglet ; il devient la destination d’ajout. Plusieurs tableaux peuvent cohabiter avec les graphiques — tableau, graphique, tableau…">+ Tableau</button>
     <button id="addChartBtn" class="btn" type="button" title="Créer un graphique vide dans cet onglet ; il devient la destination d’ajout">+ Graphique</button>
     <button id="layoutsBtn" class="btn" type="button" title="Configurations : enregistrer, télécharger (JSON/CSV), charger, copier la configuration de cet onglet">Configs</button>
-    <button id="logBtn" class="btn" type="button" title="Journal de données : enregistrer tous les échantillons des variables de cet onglet (navigateur ou contrôleur), puis les télécharger en CSV/JSON">Journal<i id="logInd" class="recdot hide"></i></button>
-    <button id="pauseAllBtn" class="btn" type="button" title="Figer ou reprendre d’un coup tous les graphiques de cet onglet">⏸ Figer</button>
   </div>
 
   <section id="emptyState" class="empty hide">
@@ -5132,16 +5151,313 @@ body.cfg-hidden .tabActions { display: none; }
 
 </script>
 <script>
+/* Diagweb — back-end simulé des pages réseau (audit, capture, LLDP).
+ *
+ * Les trois pages réseau interrogent le serveur de diagnostic du contrôleur.
+ * Hors serveur — Artifact, page publiée, copie hors ligne — il n'y a personne
+ * pour répondre. Plutôt que de fermer la porte, ce module répond à la place du
+ * serveur, avec **exactement les mêmes routes et les mêmes formes de JSON**
+ * (`server/src/main.cpp`) : l'interface de gestion reste visible et
+ * manipulable, on peut démarrer une capture, la voir grossir, l'arrêter, régler
+ * un quota, armer un déclencheur.
+ *
+ * Deux règles, pour que la simulation ne se fasse jamais passer pour la
+ * réalité :
+ *   1. chaque réponse porte `simule: true`, et les pages affichent un bandeau ;
+ *   2. rien n'est inventé qui prétende venir du matériel : les fichiers pcap
+ *      simulés ne se téléchargent pas (il n'y a pas de trame derrière).
+ *
+ * Ce module est au serveur de diagnostic ce que `sim.js` est à la source de
+ * données : le bouchon qui permet de travailler l'interface sans contrôleur.
+ */
+(function () {
+  "use strict";
+  const DW = (window.DW = window.DW || {});
+
+  const CLE = 'diagweb.netsim.v1';   // réglages simulés (quota, déclencheur)
+  const t0 = Date.now() / 1000;
+  const now = () => Date.now() / 1000;
+
+  // --------------------------------------------------------- état simulé
+  // Un contrôleur plausible : deux ports Ethernet, un bus CAN, la boucle.
+  const INTERFACES = [
+    { name: 'eth0', kind: 'ethernet', mac: '02:1c:42:a7:10:01',
+      ips: ['192.168.10.24/24', 'fe80::1c:42ff:fea7:1001/64'], mtu: 1500, up: true, oper: 'up' },
+    { name: 'eth1', kind: 'ethernet', mac: '02:1c:42:a7:10:02',
+      ips: ['10.20.0.7/24'], mtu: 1500, up: true, oper: 'up' },
+    { name: 'eth2', kind: 'ethernet', mac: '02:1c:42:a7:10:03',
+      ips: [], mtu: 1500, up: false, oper: 'down' },
+    { name: 'can0', kind: 'can', mac: '', ips: [], mtu: 16, up: true, oper: 'unknown' },
+    { name: 'lo', kind: 'boucle', mac: '00:00:00:00:00:00', ips: ['127.0.0.1/8'], mtu: 65536, up: true, oper: 'unknown' },
+  ];
+
+  const VOISINS = [
+    { iface: 'eth0', chassis: '00:1b:1b:44:0a:21', chassisKind: 'adresse MAC',
+      port: 'Gi1/0/12', portDesc: 'vers armoire de commande', sysName: 'commutateur-atelier-1',
+      sysDesc: 'Commutateur industriel 8 ports, gestion niveau 2', mgmtIp: '192.168.10.1',
+      caps: 'pont (actif)', vlan: '10', srcMac: '00:1b:1b:44:0a:21', ttl: 120, frames: 0, _p: 30 },
+    { iface: 'eth0', chassis: 'passerelle-io-3', chassisKind: 'nom local',
+      port: 'port-1', portDesc: '', sysName: 'passerelle-io-3',
+      sysDesc: 'Passerelle d’entrées/sorties déportées', mgmtIp: '192.168.10.42',
+      caps: 'station (actif)', vlan: '', srcMac: '00:0e:8c:71:33:5a', ttl: 120, frames: 0, _p: 30 },
+    { iface: 'eth1', chassis: '00:60:35:12:c4:07', chassisKind: 'adresse MAC',
+      port: 'eth3', portDesc: 'liaison de supervision', sysName: 'routeur-supervision',
+      sysDesc: 'Routeur d’usine, filtrage entre ateliers', mgmtIp: '10.20.0.1',
+      caps: 'pont (actif), routeur (actif)', vlan: '200', srcMac: '00:60:35:12:c4:07',
+      ttl: 120, frames: 0, _p: 60 },
+  ];
+
+  const etat = {
+    quotaBytes: 100 * 1048576,
+    trigger: { enabled: false, addr: '', mode: 'nonzero', threshold: 0, iface: 'eth0', durationS: 60, armed: false },
+    lldpTimeoutS: 600,
+    runs: [],
+    seq: 1,
+    message: '',
+  };
+
+  try {
+    const brut = localStorage.getItem(CLE);
+    if (brut) {
+      const j = JSON.parse(brut);
+      if (j && typeof j.quotaBytes === 'number') etat.quotaBytes = j.quotaBytes;
+      if (j && j.trigger) Object.assign(etat.trigger, j.trigger, { armed: false });
+      if (j && typeof j.lldpTimeoutS === 'number') etat.lldpTimeoutS = j.lldpTimeoutS;
+    }
+  } catch (e) { /* stockage indisponible : réglages par défaut */ }
+
+  // Les réglages simulés survivent au rechargement, comme ceux du serveur
+  // survivent au redémarrage : c'est la propriété qu'on veut pouvoir montrer.
+  function retenir() {
+    try {
+      localStorage.setItem(CLE, JSON.stringify({
+        quotaBytes: etat.quotaBytes, trigger: etat.trigger, lldpTimeoutS: etat.lldpTimeoutS,
+      }));
+    } catch (e) { /* stockage indisponible : la session en cours suffit */ }
+  }
+
+  // --------------------------------------------------------------- capture
+  /** Débit simulé, par interface : une capture grossit de façon crédible. */
+  const debit = (iface) => (iface === 'can0' ? 3500 : iface === 'eth0' ? 42000 : 9000);
+
+  function tailleDe(r) {
+    const fin = r.state === 'en cours' ? now() : r.end_t;
+    return Math.round(24 + debit(r.iface) * Math.max(0, fin - r.start_t));
+  }
+
+  function occupe() {
+    return etat.runs.reduce((s, r) => s + tailleDe(r), 0);
+  }
+
+  function demarrer(iface, dureeS, filtre) {
+    if (!INTERFACES.some((i) => i.name === iface)) return 'interface inconnue : ' + iface;
+    if (etat.runs.some((r) => r.state === 'en cours' && r.iface === iface)) {
+      return 'une capture est déjà en cours sur ' + iface;
+    }
+    if (occupe() >= etat.quotaBytes) return 'quota de disque atteint';
+    const n = etat.seq++;
+    etat.runs.push({
+      id: iface + '-sim' + String(n).padStart(3, '0'),
+      iface, filter: filtre || '', state: 'en cours', detail: 'capture simulée',
+      start_t: now(), end_t: 0, duration_s: dureeS || 0,
+    });
+    return '';
+  }
+
+  function terminer(r, etatFin, detail) {
+    r.state = etatFin;
+    r.end_t = now();
+    r.detail = detail;
+  }
+
+  /** Applique durée, quota et déclencheur — l'équivalent de `service()`. */
+  function service() {
+    for (const r of etat.runs) {
+      if (r.state !== 'en cours') continue;
+      if (r.duration_s > 0 && now() - r.start_t >= r.duration_s) terminer(r, 'terminée', 'durée atteinte');
+    }
+    if (occupe() >= etat.quotaBytes) {
+      for (const r of etat.runs) {
+        if (r.state === 'en cours') terminer(r, 'arrêtée', 'quota de disque atteint');
+      }
+    }
+    const t = etat.trigger;
+    if (!t.enabled || !t.addr) { t.armed = false; return; }
+    const v = DW.source && DW.source.latest ? DW.source.latest(t.addr) : null;
+    if (!v || typeof v.v !== 'number') return;
+    const vrai = t.mode === 'above' ? v.v > t.threshold
+               : t.mode === 'below' ? v.v < t.threshold
+               : v.v !== 0;
+    if (vrai && !t.armed) {
+      t.armed = true;
+      const err = demarrer(t.iface, t.durationS, '');
+      etat.message = err ? 'déclenchement refusé : ' + err
+                         : 'capture déclenchée par « ' + t.addr +' »';
+    } else if (!vrai && t.armed) {
+      t.armed = false;
+      for (const r of etat.runs) {
+        if (r.state === 'en cours' && r.detail === 'capture simulée') {
+          terminer(r, 'terminée', 'fin de la condition de déclenchement');
+        }
+      }
+    }
+  }
+
+  function captureJson() {
+    service();
+    return {
+      simule: true,
+      tool: '/usr/bin/tcpdump (simulé)',
+      quotaBytes: etat.quotaBytes,
+      usedBytes: occupe(),
+      message: etat.message,
+      trigger: Object.assign({}, etat.trigger),
+      runs: etat.runs.map((r) => ({
+        id: r.id, iface: r.iface, filter: r.filter, state: r.state, detail: r.detail,
+        bytes: tailleDe(r), ageS: now() - r.start_t, durationS: r.duration_s, simule: true,
+      })),
+    };
+  }
+
+  // ----------------------------------------------------------------- audit
+  const liens = () => (DW.protocols && DW.protocols.links ? DW.protocols.links() : []);
+
+  /** Cible d'un lien, comme le serveur la compose pour l'audit. */
+  function cible(k) {
+    const p = k.params || {};
+    if (p.host) return p.host + ':' + (p.port || 0);
+    return p.iface || p.device || p.endpoint || '';
+  }
+
+  /** Sockets plausibles : le serveur en écoute, plus un client par lien actif. */
+  function sockets() {
+    const l = [
+      { proto: 'tcp', local: '0.0.0.0:8080', remote: '', state: 'écoute', direction: 'entrante' },
+      { proto: 'tcp', local: '192.168.10.24:8080', remote: '192.168.10.60:51422',
+        state: 'établie', direction: 'entrante' },
+    ];
+    let p = 40000;
+    for (const k of liens()) {
+      if (k.enabled === false) continue;
+      const par = k.params || {};
+      if (!par.host) continue;                 // liens sur bus : pas de socket IP
+      l.push({
+        proto: (k.protocol === 'snmp' ? 'udp' : 'tcp'),
+        local: '192.168.10.24:' + (p++), remote: par.host + ':' + (par.port || 0),
+        state: 'établie', direction: 'sortante',
+      });
+    }
+    return l;
+  }
+
+  function auditJson() {
+    const st = (DW.protocols && DW.protocols.status) || {};
+    return {
+      simule: true, listenPort: 8080, pid: 0, source: 'simulation',
+      sockets: sockets(),
+      interfaces: INTERFACES,
+      links: liens().map((k) => ({
+        id: k.id, protocol: k.protocol, target: cible(k),
+        points: (k.points || []).length, enabled: k.enabled !== false,
+        secretRef: (k.params && k.params.secretRef) || '',
+      })),
+      status: Object.keys(st).map((id) => ({
+        id, state: st[id].state || '', detail: st[id].detail || '',
+      })),
+    };
+  }
+
+  // ------------------------------------------------------------------ LLDP
+  function lldpJson() {
+    const age = (v) => (now() - t0) % v._p;     // annonce répétée toutes les _p s
+    return {
+      simule: true, active: true, error: '', timeoutS: etat.lldpTimeoutS,
+      interfaces: INTERFACES,
+      neighbors: VOISINS.map((v) => Object.assign({}, v, {
+        ageS: age(v),
+        seenS: now() - t0,
+        frames: Math.max(1, Math.floor((now() - t0) / v._p) + 1),
+      })),
+    };
+  }
+
+  // ------------------------------------------------- aiguillage des routes
+  /**
+   * Même contrat que `fetch` côté appelant : le chemin et le corps sont ceux
+   * du serveur. Toute route inconnue échoue, comme elle échouerait là-bas.
+   */
+  function appel(chemin, options) {
+    const opt = options || {};
+    const corps = opt.body ? JSON.parse(opt.body) : {};
+    const route = chemin.split('?')[0];
+
+    if (route === '/api/interfaces') return INTERFACES;
+    if (route === '/api/audit') return auditJson();
+    if (route === '/api/lldp') {
+      if (opt.method === 'PUT') {
+        etat.lldpTimeoutS = Math.max(10, Math.min(86400, corps.timeoutS || 600));
+        retenir();
+      }
+      return lldpJson();
+    }
+    if (route === '/api/capture') return captureJson();
+    if (route === '/api/capture/start') {
+      const err = demarrer(corps.iface, corps.durationS, corps.filter);
+      if (err) throw new Error(err);
+      return { ok: true, state: captureJson() };
+    }
+    if (route === '/api/capture/stop') {
+      const r = etat.runs.find((x) => x.id === corps.id);
+      if (!r || r.state !== 'en cours') throw new Error('capture inconnue ou déjà arrêtée');
+      terminer(r, 'arrêtée', 'arrêt demandé');
+      return { ok: true, state: captureJson() };
+    }
+    if (route === '/api/capture/delete') {
+      const i = etat.runs.findIndex((x) => x.id === corps.id);
+      if (i < 0) throw new Error('capture inconnue');
+      if (etat.runs[i].state === 'en cours') throw new Error('capture en cours : l’arrêter d’abord');
+      etat.runs.splice(i, 1);
+      return { ok: true, state: captureJson() };
+    }
+    if (route === '/api/capture/config') {
+      // Bornes identiques au serveur. `4096 << 20` déborderait le décalage
+      // 32 bits de JavaScript et retournerait 0 : la multiplication s'impose.
+      etat.quotaBytes = Math.max(1048576,
+          Math.min(4096 * 1048576, Math.round((corps.quotaMB || 100) * 1048576)));
+      const t = corps.trigger || {};
+      const arme = etat.trigger.armed;
+      etat.trigger = {
+        enabled: !!t.enabled, addr: t.addr || '', mode: t.mode || 'nonzero',
+        threshold: t.threshold || 0, iface: t.iface || 'eth0',
+        durationS: t.durationS || 60, armed: arme,
+      };
+      // Une variable observée doit être abonnée, sinon le déclencheur est
+      // aveugle — exactement comme côté serveur.
+      if (etat.trigger.enabled && etat.trigger.addr && DW.source && DW.source.subscribe) {
+        DW.source.subscribe(etat.trigger.addr, { periodMs: 200 });
+      }
+      retenir();
+      return { ok: true, state: captureJson() };
+    }
+    throw new Error('point d’entrée inconnu : ' + route);
+  }
+
+  DW.netsim = { appel, interfaces: INTERFACES };
+})();
+
+</script>
+<script>
 /* Diagweb — trois pages réseau : audit, capture d'interfaces, voisinage LLDP.
  *
  * Elles s'ouvrent depuis le menu ☰ et s'affichent en pleine page par-dessus
  * l'espace de travail, qui continue de tourner derrière : ce sont des vues de
  * diagnostic du CONTRÔLEUR, pas des onglets de travail.
  *
- * Toutes trois sont servies par le serveur de diagnostic et n'existent donc
- * pas hors de lui : une page ouverte en fichier local (Artifact, copie hors
- * ligne) le dit franchement plutôt que d'afficher un tableau vide, qui se
- * lirait comme « rien à signaler ».
+ * Toutes trois interrogent le serveur de diagnostic. Hors serveur — Artifact,
+ * page publiée, copie hors ligne — c'est `netsim.js` qui répond à sa place,
+ * avec les mêmes routes : l'interface de gestion reste visible et
+ * manipulable. Un bandeau le dit sans ambiguïté, et rien de ce qui vient de
+ * la simulation ne se fait passer pour une mesure du matériel.
  */
 (function () {
   "use strict";
@@ -5174,11 +5490,14 @@ body.cfg-hidden .tabActions { display: none; }
     root.appendChild(back);
 
     if (!surServeur()) {
-      corps.innerHTML = '<p class="page-vide">Cette page interroge le serveur de ' +
-        'diagnostic du contrôleur. La page est ouverte hors serveur : il n’y a ' +
-        'rien à observer ici, et afficher un tableau vide laisserait croire le ' +
-        'contraire.</p>';
-      return;
+      const b = document.createElement('p');
+      b.className = 'net-sim';
+      b.title = 'Aucun serveur de diagnostic joignable : cette page fonctionne ' +
+        'sur des données simulées, pour découvrir et régler l’interface.';
+      b.innerHTML = '<b>Données simulées.</b> Aucun serveur de diagnostic n’est ' +
+        'joignable : cette page montre un contrôleur fictif, pour découvrir et ' +
+        'régler l’interface. Rien de ce qui s’affiche ici ne vient d’un matériel.';
+      back.querySelector('.modal').insertBefore(b, corps);
     }
     const maj = () => construire(corps).catch((e) => {
       corps.innerHTML = '<p class="page-vide">Serveur injoignable : ' +
@@ -5190,7 +5509,16 @@ body.cfg-hidden .tabActions { display: none; }
     return { corps, maj, fermer };
   }
 
+  /**
+   * Un seul point d'appel pour les trois pages. Hors serveur, la requête part
+   * vers le back-end simulé : mêmes routes, mêmes formes de réponse, si bien
+   * que le reste de ce fichier ignore laquelle des deux répond.
+   */
   async function api(chemin, options) {
+    if (!surServeur()) {
+      if (!DW.netsim) throw new Error('simulation réseau indisponible');
+      return DW.netsim.appel(chemin, options);
+    }
     const r = await fetch(chemin, options);
     const txt = await r.text();
     let j = null;
@@ -5292,6 +5620,7 @@ body.cfg-hidden .tabActions { display: none; }
   function rapportTexte(d) {
     const l = [];
     l.push('Diagweb — audit des communications');
+    if (d.simule) l.push('*** DONNÉES SIMULÉES — aucun contrôleur interrogé ***');
     l.push('Processus ' + d.pid + ', port d’écoute ' + d.listenPort);
     l.push('');
     l.push('ENTRANT');
@@ -5460,7 +5789,12 @@ body.cfg-hidden .tabActions { display: none; }
           (r.state === 'en cours'
             ? '<button class="btn sm cap-stop" data-id="' + DW.escapeHtml(r.id) + '" ' +
               'title="Arrêter cette capture ; le fichier est refermé proprement">Arrêter</button>'
-            : (r.bytes > 24
+            : (r.simule
+               // Une capture simulée n'a pas de trames derrière elle : offrir un
+               // fichier reviendrait à en inventer.
+               ? '<span class="cap-detail" title="Capture simulée : il n’y a pas ' +
+                 'de trames derrière, donc pas de fichier à télécharger.">simulé</span> '
+               : r.bytes > 24
                ? '<a class="btn sm" href="/api/capture/file?name=' + encodeURIComponent(r.id) +
                  '" title="Télécharger le fichier pcap">pcap</a> '
                : '') +
@@ -6367,7 +6701,8 @@ body.cfg-hidden .tabActions { display: none; }
           'title="Ajouter des variables à ce tableau : ouvre le catalogue complet, ' +
           'avec filtres et sélection multiple">+</button>' +
         '<button class="iconbtn table-more" type="button" ' +
-          'title="Options du tableau : vider, taille automatique, déplacer, fermer">⋮</button>' +
+          'title="Options du tableau : vider, taille automatique, dupliquer, déplacer ' +
+          'vers un autre onglet ou une nouvelle fenêtre, fermer">⋮</button>' +
       '</h3>' +
       '<div class="trows"></div>' +
       '<span class="resize-grip table-grip" role="separator" ' +
@@ -6409,6 +6744,7 @@ body.cfg-hidden .tabActions { display: none; }
       openTableMenu(tbl, e.currentTarget));
     tab.chartsGridEl.appendChild(card);
     tab.tables.push(tbl);
+    bindCible(card, tbl);
     bindTableResize(tbl);
     bindTableReorder(tbl);
     applyTableSize(tbl);
@@ -6432,11 +6768,19 @@ body.cfg-hidden .tabActions { display: none; }
           onChange();
         }, null, 'Annuler le dimensionnement fait à la poignée');
       }
+      mk('Dupliquer ce tableau', () => duplicateTable(tbl), null,
+        'Créer une copie avec les mêmes variables, juste après celui-ci');
+      // Déplacements : indispensables au tact, où le glisser-déposer HTML5
+      // n'existe pas.
       for (const t of state.tabs.filter((x) => x !== tbl.tab)) {
         mk('Déplacer vers l’onglet « ' + DW.escapeHtml(t.name) + ' »', () => {
           moveTableToTab(tbl, t);
         }, null, 'Transférer ce tableau et ses variables dans « ' + t.name + ' »');
       }
+      mk('Ouvrir dans une nouvelle fenêtre', () => {
+        DW.dnd.openInNewWindow({ kind: 'table', title: tbl.name, table: serializeTable(tbl) },
+          () => removeTable(tbl));
+      }, null, 'Sortir ce tableau dans une fenêtre séparée, à poser sur un autre écran');
       mk('Fermer le tableau', () => removeTable(tbl), 'danger',
         'Supprimer ce tableau et libérer ses variables');
     });
@@ -6467,6 +6811,21 @@ body.cfg-hidden .tabActions { display: none; }
     }
     toast('Tableau « ' + nom + ' » déplacé vers « ' + cible.name + ' ».');
     onChange();
+  }
+
+  /** Duplique un tableau (mêmes variables) juste après lui. */
+  function duplicateTable(tbl) {
+    const copie = serializeTable(tbl);
+    const neuf = createTable(tbl.tab, { name: tbl.name + ' (copie)', h: tbl.h, cols: tbl.cols });
+    for (const e of copie) {
+      const p = DW.parseAddr(e.addr);
+      if (p.ok) addToTable(neuf, p.addr, e.periodMs, e.name);
+    }
+    tbl.cardEl.after(neuf.cardEl);
+    setCible(neuf);
+    onChange();
+    toast('« ' + neuf.name + ' » créé.');
+    return neuf;
   }
 
   /** Premier tableau de l'onglet, créé au besoin (destination par défaut). */
@@ -6849,6 +7208,7 @@ body.cfg-hidden .tabActions { display: none; }
     });
     tab.charts.push(chart);
     tab.chartsGridEl.appendChild(chart.root);
+    bindCible(chart.root, chart);
     chart.applyHeightMode();   // la largeur en colonnes dépend de la grille d'accueil
     if (tab === state.active) refreshTargets();
     onChange();
@@ -6856,6 +7216,39 @@ body.cfg-hidden .tabActions { display: none; }
   }
 
   // ---------- Cible d'ajout -------------------------------------------
+  /**
+   * Carte VISÉE par la barre du haut : un clic sur un tableau ou un graphique
+   * en fait la destination d'ajout, et elle se signale par un liseré. Sans ce
+   * repère, avec plusieurs cartes à l'écran, « Ajouter » devient un pari.
+   */
+  function setCible(carte) {
+    const sel = $('targetSel');
+    if (!carte) { majCible(); return; }
+    sel.value = carte.entries ? 'table:' + carte.id : 'chart:' + carte.id;
+    majCible();
+  }
+
+  /** Applique le liseré à la carte désignée par le sélecteur de destination. */
+  function majCible() {
+    const v = $('targetSel').value;
+    const tab = state.active;
+    if (!tab) return;
+    for (const t of tab.tables) t.cardEl.classList.toggle('cible', v === 'table:' + t.id);
+    for (const c of tab.charts) c.root.classList.toggle('cible', v === 'chart:' + c.id);
+  }
+
+  /**
+   * Rend une carte cliquable pour la désigner. Le clic est ignoré sur les
+   * commandes de la carte (boutons, champs, poignées) : on ne veut pas qu'un
+   * changement d'échelle ou un renommage change aussi la destination.
+   */
+  function bindCible(el, carte) {
+    el.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button, input, select, textarea, .resize-grip, .drag-handle')) return;
+      setCible(carte);
+    });
+  }
+
   function refreshTargets() {
     const sel = $('targetSel');
     const prev = sel.value;
@@ -6883,6 +7276,7 @@ body.cfg-hidden .tabActions { display: none; }
                  : (state.active && state.active.charts[0]
                     ? 'chart:' + state.active.charts[0].id : 'newtable');
     sel.value = (!action && [...sel.options].some((o) => o.value === prev)) ? prev : defaut;
+    majCible();
   }
 
   // ---------- Ajout d'une variable ------------------------------------
@@ -6912,7 +7306,7 @@ body.cfg-hidden .tabActions { display: none; }
            defaultTable(state.active));
       const r = addToTable(tbl, p.addr, periodMs);
       if (!r.ok) { toast(r.error, 'err'); return false; }
-      if (target === 'newtable') $('targetSel').value = 'table:' + tbl.id;
+      if (target === 'newtable') setCible(tbl);
       destLabel = tbl.name;
     } else {
       let chart = null;
@@ -6929,7 +7323,7 @@ body.cfg-hidden .tabActions { display: none; }
         if (target === 'new') appApi.removeChart(chart);
         return false;
       }
-      if (target === 'new') $('targetSel').value = 'chart:' + chart.id;
+      if (target === 'new') setCible(chart);
       destLabel = chart.title;
     }
     $('searchInput').value = '';
@@ -8210,16 +8604,17 @@ body.cfg-hidden .tabActions { display: none; }
     });
 
     $('addBtn').addEventListener('click', () => addVariable());
+    $('targetSel').addEventListener('change', majCible);
     $('addTableBtn').addEventListener('click', () => {
       const tbl = createTable(state.active, {});
-      $('targetSel').value = 'table:' + tbl.id;
+      setCible(tbl);
       onChange();
       toast('Tableau « ' + tbl.name + ' » créé — il est la destination d’ajout.');
     });
     $('addChartBtn').addEventListener('click', () => {
       const c = createChart();
       if (c) {
-        $('targetSel').value = 'chart:' + c.id;
+        setCible(c);
         toast('« ' + c.title + ' » ajouté — c’est la cible d’ajout actuelle.');
       }
     });
@@ -8267,7 +8662,7 @@ body.cfg-hidden .tabActions { display: none; }
             ['Bouton ＋', 'Sur le tableau et sur chaque graphique : ouvre le catalogue complet dans une grande fenêtre — filtres par famille, recherche, et <b>sélection multiple</b>. La destination est celle du bouton, il n’y a rien à choisir.'],
             ['Barre de recherche', 'Le chemin rapide, au clavier. Adresse : <b>I1.2.3.4</b>, <b>Q14.15</b>, <b>M1.14</b>, <b>S0.4</b> (bits), <b>MB414</b> (mot de bus), <b>Modele.signal</b> (C API). Les suggestions se filtrent à la frappe ; les boutons Toutes / PLC / Modbus / Simulink / Réseau restreignent la liste.'],
             ['Étiquettes', 'Elles disent d’où vient la valeur : <b>PLC</b> (entrées, sorties, bits mémoire, système), <b>MB</b> (registre de bus par le canal interne), <b>Simulink</b> (signal de modèle, C API), <b>ext.…</b> (point lu à l’extérieur par le serveur de diagnostic : ext.MB, ext.61850, ext.OPCUA, ext.SNMP…). MB et ext.MB, ce n’est pas le même chemin ni la même latence.'],
-            ['Destination', 'Tableau numérique, un graphique existant, ou un nouveau graphique.'],
+            ['Destination', 'Tableau numérique, un graphique existant, ou un nouveau graphique. <b>Un clic sur une carte</b> (tableau ou graphique, hors ses boutons) la désigne : elle prend un liseré et devient la destination, sans dérouler la liste.'],
             ['Période', 'Rafraîchissement propre à la variable, 10 ms par défaut.'],
             ['Forcer une valeur', 'Suffixe <b>= valeur</b> dans la barre : <b>Q0.3 = 1</b>, <b>MB400 = 12500</b> impose la valeur côté serveur (diagnostic). La ligne du tableau est surlignée ; ⏻ relâche. Les points réseau (@lien.point) restent en lecture seule.'],
           ]) +
@@ -8292,14 +8687,17 @@ body.cfg-hidden .tabActions { display: none; }
             ['Plusieurs tableaux', '<b>+ Tableau</b> crée un tableau de plus dans l’onglet. Un tableau est une carte comme un graphique : on peut donc alterner <b>tableau, graphique, tableau, graphique</b>, en glissant leur poignée ⠿ sur une autre carte pour les ranger. Chaque tableau a son nom (cliquez-le), son bouton ＋ et son menu ⋮.'],
             ['Poignée ◢ (coin bas-droit)', 'Redimensionner une carte à la souris : ↕ hauteur libre (<b>vers le bas pour agrandir</b>, vers le haut pour réduire, avec défilement interne), ↔ largeur en nombre de colonnes. Le réduire en largeur laisse la place à une autre carte <b>à côté</b>. Double-clic pour revenir à la taille automatique.'],
             ['Renommer', 'Bouton ✎ sur une ligne du tableau, ou « Renommer la courbe… » dans le menu d’une pastille : un nom d’affichage remplace le libellé du catalogue (vide = valeur d’origine). Le nom appartient à la <b>variable</b> : il s’applique partout où elle figure — tous les tableaux, toutes les courbes, tous les onglets, et les autres fenêtres ouvertes.'],
-            ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
+            ['Menu ⋮ d’un graphique', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
+            ['Menu ⋮ d’un tableau', 'Les mêmes gestes : ajouter des variables, vider, taille automatique, <b>dupliquer ce tableau</b>, <b>déplacer vers un onglet</b>, <b>ouvrir dans une nouvelle fenêtre</b>, fermer.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
+            ['Barre du haut', '<b>⏸ Figer</b> arrête d’un coup tous les graphiques de l’onglet actif. Le <b>journal de données</b> a rejoint le menu ☰, avec les autres fonctions qui ne dépendent pas de l’onglet.'],
           ]) +
           S('Pages réseau (☰)') +
           L([
             ['Audit des communications', 'Tout ce que le processus échange avec l’extérieur : les sockets <b>réellement ouvertes</b> (lues dans le noyau), les liens déclarés, les interfaces. Le rapport se copie en texte pour un compte rendu d’audit.'],
-            ['Capture d’interfaces', 'tcpdump sur le contrôleur, format pcap relisible dans Wireshark, interfaces Ethernet et CAN. Quota de disque (100 Mo par défaut), durée maximale, et <b>déclenchement par une variable</b> de diagnostic pour attraper un incident rare.'],
+            ['Capture d’interfaces', 'tcpdump sur le contrôleur, format pcap relisible dans Wireshark, interfaces Ethernet et CAN. Quota de disque (100 Mo par défaut), durée maximale, et <b>déclenchement par une variable</b> de diagnostic pour attraper un incident rare. Le quota et le déclencheur sont <b>persistants</b> : ils survivent au redémarrage du contrôleur — c’est parfois la coupure elle-même qu’on cherche à comprendre.'],
             ['Voisinage LLDP', 'Ce qu’annoncent les équipements voisins sur chaque interface : produit, port, adresse d’administration, VLAN. Écoute passive — Diagweb n’émet rien. Un voisin muet disparaît après le délai d’oubli (dix minutes par défaut).'],
+            ['Sans serveur', 'Les trois pages fonctionnent aussi hors contrôleur, sur un <b>contrôleur fictif</b> : l’interface se découvre et se règle sans matériel. Un bandeau le dit sur chaque page, et une capture simulée n’offre aucun fichier — il n’y a pas de trames derrière.'],
           ]) +
           S('Apparence (☰ → Apparence)') +
           L([
