@@ -104,6 +104,7 @@
       label: 'Modbus TCP',
       transport: 'TCP/IP',
       state: 'live',
+      badge: 'ext.MB',
       help: 'Lecture cyclique de registres et de bits sur un équipement Modbus TCP. ' +
             'Les registres consécutifs sont regroupés en une seule requête.',
       linkFields: [
@@ -123,6 +124,7 @@
       label: 'Modbus RTU (série)',
       transport: 'Liaison série',
       state: 'live',
+      badge: 'ext.MB',
       help: 'Même adressage que Modbus TCP, sur une liaison série RS-485/RS-232 ' +
             '(trame RTU avec contrôle CRC-16).',
       linkFields: [
@@ -148,6 +150,7 @@
       label: 'IEC 60870-5-104',
       transport: 'TCP/IP',
       state: 'live',
+      badge: 'ext.104',
       help: 'Client (maître) télécontrôle : le serveur de diagnostic se connecte, ' +
             'lance une interrogation générale puis reçoit les données spontanées.',
       linkFields: [
@@ -183,6 +186,7 @@
       label: 'IEC 61850',
       transport: 'Ethernet niveau 2 (GOOSE, SV) · ISO sur TCP (MMS)',
       state: 'live',
+      badge: 'ext.61850',
       help: 'Quatre mécanismes cohabitent dans la norme, tous implémentés. GOOSE et ' +
             'Sampled Values sont des trames Ethernet diffusées, écoutées en niveau 2. ' +
             'La lecture MMS et les rapports (BRCB, URCB) passent par la pile ISO sur ' +
@@ -302,6 +306,7 @@
       label: 'Bus CAN (trames brutes)',
       transport: 'SocketCAN (Linux)',
       state: 'live',
+      badge: 'ext.CAN',
       help: 'Écoute strictement passive d’une interface CAN du contrôleur : un point ' +
             'est un champ de bits extrait d’un identifiant de trame donné. Le serveur ' +
             'n’émet jamais sur le bus dans ce mode.',
@@ -323,6 +328,7 @@
       label: 'J1939 (CAN, PGN mono-trame)',
       transport: 'SocketCAN (Linux)',
       state: 'live',
+      badge: 'ext.J1939',
       help: 'Décodage J1939 au-dessus de CAN : l’identifiant 29 bits est découpé en ' +
             'priorité, PGN et adresse source ; un point est un SPN extrait d’un PGN. ' +
             'Les PGN de plus de 8 octets (DM1, par exemple) sont réassemblés par le ' +
@@ -363,6 +369,7 @@
       label: 'CANopen',
       transport: 'SocketCAN (Linux)',
       state: 'live',
+      badge: 'ext.CANopen',
       help: 'Deux modes : écoute des TPDO déjà émis par le nœud (sans rien demander), ' +
             'ou lecture à la demande d’une entrée du dictionnaire d’objets par SDO — ' +
             'ce second mode est le seul où le serveur émet sur le bus. À savoir : un ' +
@@ -402,6 +409,7 @@
       label: 'SNMP',
       transport: 'UDP (port 161)',
       state: 'live',
+      badge: 'ext.SNMP',
       help: 'Gestionnaire SNMP en lecture seule : interrogation cyclique d’OID par ' +
             'GetRequest. Les trois versions sont lues — v1, v2c et v3 (USM : ' +
             'authentification MD5, SHA-1 ou SHA-256, chiffrement DES ou AES-128). ' +
@@ -477,6 +485,7 @@
       label: 'OPC UA (IEC 62541)',
       transport: 'UA-TCP binaire (opc.tcp, port 4840)',
       state: 'live',
+      badge: 'ext.OPCUA',
       help: 'Client OPC UA d’un serveur de supervision ou d’un équipement : lecture ' +
             'de nœuds désignés par leur NodeId, par abonnement (MonitoredItems) ou ' +
             'par interrogation cyclique (Read). S’appuie sur open62541. Lecture seule ' +

@@ -20,9 +20,11 @@
   const state = { tabs: [], active: null, tabSeq: 0 };
 
   /** Intitulé complet d'une famille d'adresses, pour les infobulles. */
-  function famTitle(family) {
+  /** Infobulle d'une étiquette de famille : ce qu'elle désigne, et son sigle. */
+  function famTitle(family, meta) {
     const f = DW.FAMILIES[family];
-    return f ? f.label + ' (' + family + ')' : family;
+    const sigle = meta ? DW.famBadge(meta) : family;
+    return f ? f.label + ' (' + sigle + ')' : sigle;
   }
 
   const FILTER_TITLES = {
@@ -84,20 +86,29 @@
     state.tabSeq++;
     const pane = document.createElement('div');
     pane.className = 'tabpane';
+    // Le tableau vit DANS la grille des graphiques : c'est ce qui permet de
+    // lui donner moins que toute la largeur et de poser un graphique à côté,
+    // à sa gauche comme à sa droite (poignée ↔, puis glisser sa poignée ⠿ sur
+    // une carte pour changer son rang).
     pane.innerHTML =
+      '<div class="charts-grid">' +
       '<section class="card table-card hide">' +
         '<h3 title="Valeurs instantanées des variables suivies dans cet onglet">' +
           '<span class="drag-handle" draggable="true" ' +
           'title="Glisser le tableau entier (avec ses variables) vers un onglet ou une autre fenêtre">⠿</span>' +
           'Valeurs numériques <span class="tcount" ' +
-          'title="Nombre de variables dans ce tableau"></span></h3>' +
+          'title="Nombre de variables dans ce tableau"></span>' +
+          '<button class="iconbtn card-add" type="button" ' +
+            'title="Ajouter des variables à ce tableau : ouvre le catalogue complet, ' +
+            'avec filtres et sélection multiple">+</button></h3>' +
         '<div class="trows"></div>' +
         '<span class="resize-grip table-grip" role="separator" ' +
           'aria-label="Redimensionner le tableau" ' +
-          'title="Glisser ↕ pour fixer la hauteur du tableau (défilement interne) — ' +
-          'double-clic pour revenir à la hauteur automatique"></span>' +
+          'title="Glisser pour redimensionner le tableau : ↕ hauteur (défilement interne), ' +
+          '↔ largeur en nombre de colonnes de la grille — double-clic pour revenir à la ' +
+          'taille automatique"></span>' +
       '</section>' +
-      '<div class="charts-grid"></div>';
+      '</div>';
     $('panes').appendChild(pane);
 
     const tab = {
@@ -119,9 +130,12 @@
     // Le tableau numérique entier (avec ses variables) est déplaçable
     pane.querySelector('.table-card .drag-handle').addEventListener('dragstart', (e) => {
       if (!DW.dnd || !tab.table.length) { e.preventDefault(); return; }
-      DW.dnd.startDrag(e, { kind: 'table', table: serializeTable(tab) }, () => {
+      DW.dnd.startDrag(e, { kind: 'table', tabId: tab.id, table: serializeTable(tab) }, () => {
         for (const entry of [...tab.table]) removeFromTable(tab, entry.addr);
       });
+    });
+    pane.querySelector('.table-card .card-add').addEventListener('click', () => {
+      openVarPicker({ kind: 'table', tab });
     });
     bindTableResize(tab);
     bindTableReorder(tab);
@@ -403,7 +417,8 @@
       });
       row.addEventListener('dragend', () => { rangement = null; });
       row.innerHTML =
-        '<span class="badge fam-' + e.meta.family + '">' + e.meta.family + '</span>' +
+        '<span class="badge fam-' + e.meta.family + '">' +
+          DW.escapeHtml(DW.famBadge(e.meta)) + '</span>' +
         '<div class="v-id"><span class="v-addr"></span><span class="v-label"></span></div>' +
         '<div class="v-val"><button class="v-forced hide" type="button" ' +
           'title="Valeur forcée — cliquer pour relâcher">⏻</button>' +
@@ -423,7 +438,7 @@
         ' · glissez cette ligne pour la ranger dans le tableau, ' +
         'ou vers un onglet ou une autre fenêtre';
       const badge = row.querySelector('.badge');
-      badge.title = famTitle(e.meta.family);
+      badge.title = famTitle(e.meta.family, e.meta);
       row.querySelector('.v-val').title = 'Valeur instantanée' +
         (e.meta.kind === 'bit' ? ' (0 ou 1)' : '') +
         (e.meta.family === 'MB' ? ' — décimal et hexadécimal' : '') +
@@ -448,7 +463,7 @@
   const TABLE_MIN_H = 90;
   const TABLE_MAX_H = 1400;
 
-  /** Applique la hauteur libre du tableau (défilement interne) ou l'annule. */
+  /** Applique la taille libre du tableau (hauteur et largeur) ou l'annule. */
   function applyTableSize(tab) {
     const card = tab.tableCardEl;
     if (!card) return;
@@ -459,6 +474,17 @@
       card.classList.remove('has-th');
       card.style.removeProperty('--table-h');
     }
+    // Sans largeur choisie, le tableau prend toute la grille — la disposition
+    // d'origine, et celle des configurations enregistrées avant cette version.
+    // Même mécanisme que les graphiques : la classe laisse la feuille de style
+    // décider (sur mobile, la grille reste à une colonne).
+    if (tab.tableCols) {
+      card.classList.add('has-span');
+      card.style.setProperty('--col-span', tab.tableCols);
+    } else {
+      card.classList.remove('has-span');
+      card.style.removeProperty('--col-span');
+    }
   }
 
   function bindTableResize(tab) {
@@ -467,7 +493,14 @@
     let g = null;
     grip.addEventListener('pointerdown', (e) => {
       if (e.button > 0) return;
-      g = { id: e.pointerId, y: e.clientY, h: rows.getBoundingClientRect().height };
+      const m = DW.gridMetrics(tab.chartsGridEl);
+      g = {
+        id: e.pointerId, y: e.clientY, x: e.clientX,
+        h: rows.getBoundingClientRect().height,
+        w: tab.tableCardEl.getBoundingClientRect().width,
+        cols: tab.tableCols || (m ? m.count : 1),
+        m,
+      };
       try { grip.setPointerCapture(e.pointerId); } catch (err) { /* capture facultative */ }
       tab.tableCardEl.classList.add('resizing');
       e.preventDefault();
@@ -476,6 +509,13 @@
       if (!g || e.pointerId !== g.id) return;
       const h = Math.round(g.h + (e.clientY - g.y));
       tab.tableH = Math.max(TABLE_MIN_H, Math.min(TABLE_MAX_H, h));
+      // ↔ : largeur en colonnes de la grille, comme pour un graphique. En
+      // deçà de toute la largeur, les graphiques viennent se ranger à côté.
+      if (g.m && g.m.count > 1) {
+        const unit = g.m.colW + g.m.gap;
+        const span = Math.round((g.w + (e.clientX - g.x) + g.m.gap) / unit);
+        tab.tableCols = Math.max(1, Math.min(g.m.count, span));
+      }
       applyTableSize(tab);
       e.preventDefault();
     });
@@ -489,11 +529,12 @@
     grip.addEventListener('pointercancel', end);
     grip.addEventListener('dblclick', (e) => {
       e.preventDefault();
-      if (tab.tableH == null) return;
+      if (tab.tableH == null && tab.tableCols == null) return;
       tab.tableH = undefined;
+      tab.tableCols = undefined;
       applyTableSize(tab);
       onChange();
-      toast('Hauteur automatique du tableau rétablie.');
+      toast('Taille automatique du tableau rétablie (pleine largeur).');
     });
   }
 
@@ -702,12 +743,13 @@
     b.type = 'button';
     b.className = 'sug';
     b.innerHTML =
-      '<span class="badge fam-' + entry.family + '">' + entry.family + '</span>' +
+      '<span class="badge fam-' + entry.family + '">' +
+        DW.escapeHtml(DW.famBadge(entry)) + '</span>' +
       '<span class="sug-addr"></span><span class="sug-label"></span><span class="sug-unit"></span>';
     b.querySelector('.sug-addr').textContent = entry.addr;
     b.querySelector('.sug-label').textContent = entry.label || '';
     b.querySelector('.sug-unit').textContent = entry.unit || '';
-    b.querySelector('.badge').title = famTitle(entry.family);
+    b.querySelector('.badge').title = famTitle(entry.family, entry);
     b.title = entry.addr + ' — ' + (entry.label || '') +
       (entry.unit ? ' (' + entry.unit + ')' : '') + ' · appuyez pour ajouter';
     // pointerdown pour devancer le blur de l'input
@@ -813,6 +855,8 @@
       version: 1,
       table: serializeTable(tab),
       tableH: tab.tableH || undefined,
+      tableCols: tab.tableCols || undefined,
+      tableAfter: tab.tableAfter || undefined,
       charts: tab.charts.map((c) => c.serialize()),
     };
   }
@@ -865,6 +909,32 @@
     onChange();
   }
 
+  /**
+   * Range la carte du tableau dans la grille : `tab.tableAfter` est le nombre
+   * de graphiques placés AVANT lui (0 = en tête, comme avant l'existence de ce
+   * réglage). C'est ce qui permet d'avoir un graphique à sa gauche.
+   */
+  function applyTablePlace(tab) {
+    const grid = tab.chartsGridEl, card = tab.tableCardEl;
+    if (!grid || !card) return;
+    const cartes = [...grid.children].filter((el) => el !== card);
+    const n = Math.max(0, Math.min(cartes.length, tab.tableAfter || 0));
+    if (n >= cartes.length) grid.appendChild(card);
+    else grid.insertBefore(card, cartes[n]);
+  }
+
+  /** Dépose la carte du tableau avant ou après une autre carte de la grille. */
+  function placeTable(tab, place) {
+    const anchor = place.anchorEl;
+    const card = tab.tableCardEl;
+    if (!anchor || anchor === card || !tab.chartsGridEl.contains(anchor)) return;
+    if (place.after) anchor.after(card); else anchor.before(card);
+    // Tous les autres enfants de la grille sont des graphiques : ceux qui
+    // précèdent la carte donnent directement son rang.
+    tab.tableAfter = [...tab.chartsGridEl.children].indexOf(card) || undefined;
+    onChange();
+  }
+
   /** Duplique un graphique (courbes, échelles, couleurs) juste après lui. */
   function duplicateChart(chart) {
     const tab = state.tabs.find((t) => t.charts.includes(chart)) || state.active;
@@ -912,6 +982,13 @@
    */
   function receiveWidget(o, tab, place, sameWindow) {
     const target = tab || state.active;
+    // Tableau de CET onglet lâché sur une carte : simple rangement dans la
+    // grille (un graphique passe alors à sa gauche ou à sa droite), surtout
+    // pas un déplacement de ses variables.
+    if (o.kind === 'table' && sameWindow && place && o.tabId === target.id) {
+      placeTable(target, place);
+      return 'reordered';
+    }
     if (o.kind === 'chart' && o.chart) {
       // Graphique déjà présent dans cet onglet : simple réorganisation
       if (sameWindow && o.chartId) {
@@ -951,6 +1028,12 @@
     const tab = state.active;
     clearTab(tab);
     tab.tableH = (data && isFinite(data.tableH) && data.tableH > 0) ? data.tableH : undefined;
+    tab.tableCols = (data && isFinite(data.tableCols) && data.tableCols > 0)
+      ? Math.min(8, Math.round(data.tableCols)) : undefined;
+    // Rang du tableau dans la grille : nombre de graphiques placés AVANT lui
+    // (0 = en tête, comme avant l'existence de ce réglage).
+    tab.tableAfter = (data && isFinite(data.tableAfter) && data.tableAfter > 0)
+      ? Math.round(data.tableAfter) : undefined;
     applyTableSize(tab);
     for (const entry of data.table || []) {
       // Rétro-compatibilité : entrée sous forme de chaîne (format initial)
@@ -977,6 +1060,7 @@
         }
       }
     }
+    applyTablePlace(tab);      // rang du tableau parmi les graphiques
     refreshTargets();
     updateEmptyState();
     onChange();
@@ -1473,6 +1557,169 @@
     } catch (e) { return false; }
   }
 
+  // ---------- Sélecteur de variables (bouton « + ») --------------------
+  /**
+   * Grande fenêtre d'ajout, ouverte par le « + » d'un tableau ou d'un
+   * graphique. La barre de recherche du haut reste le chemin rapide, au
+   * clavier ; celle-ci est le chemin confortable : on voit le catalogue, on
+   * filtre, et on ajoute PLUSIEURS variables d'un coup — la destination étant
+   * déjà connue, puisqu'on est parti de son bouton.
+   *
+   * @param dest {kind:'table', tab} ou {kind:'chart', chart}
+   */
+  function openVarPicker(dest) {
+    const root = $('modalRoot');
+    root.innerHTML = '';
+    const nom = dest.kind === 'table' ? 'Tableau numérique' : dest.chart.title;
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    back.innerHTML =
+      '<div class="modal wide vpick" role="dialog" aria-label="Ajouter des variables">' +
+        '<header class="m-head"><h3></h3>' +
+          '<button class="iconbtn m-close" type="button" title="Fermer sans ajouter">✕</button>' +
+        '</header>' +
+        '<div class="vp-bar">' +
+          '<input class="vp-q" type="search" placeholder="Filtrer par adresse ou libellé…" ' +
+            'title="Filtrer le catalogue ; une adresse hors catalogue peut aussi être saisie ici">' +
+          '<select class="vp-period" title="Période de rafraîchissement des variables ajoutées"></select>' +
+        '</div>' +
+        '<div class="vp-filters" role="group" aria-label="Familles"></div>' +
+        '<div class="vp-list" role="listbox" aria-multiselectable="true"></div>' +
+        '<footer class="m-actions">' +
+          '<span class="vp-count" title="Nombre de variables cochées"></span>' +
+          '<button class="btn vp-cancel" type="button" title="Fermer sans rien ajouter">Annuler</button>' +
+          '<button class="btn primary vp-ok" type="button" ' +
+            'title="Ajouter les variables cochées à cette destination">Ajouter</button>' +
+        '</footer>' +
+      '</div>';
+    back.querySelector('h3').textContent = 'Ajouter des variables → ' + nom;
+
+    const q = back.querySelector('.vp-q');
+    const list = back.querySelector('.vp-list');
+    const countEl = back.querySelector('.vp-count');
+    const perSel = back.querySelector('.vp-period');
+    for (const o of $('periodSel').options) {
+      const c = document.createElement('option');
+      c.value = o.value; c.textContent = o.textContent;
+      perSel.appendChild(c);
+    }
+    perSel.value = $('periodSel').value;
+
+    const choix = new Set();
+    let filtre = 'all';
+
+    const dejaLa = (addr) => (dest.kind === 'table'
+      ? inTable(dest.tab, addr)
+      : dest.chart.series.some((s) => s.addr === addr));
+
+    const majCompte = () => {
+      countEl.textContent = choix.size
+        ? choix.size + ' variable' + (choix.size > 1 ? 's' : '') + ' cochée' + (choix.size > 1 ? 's' : '')
+        : 'Aucune variable cochée';
+      back.querySelector('.vp-ok').disabled = choix.size === 0;
+    };
+
+    const dessiner = () => {
+      const filtres = back.querySelector('.vp-filters');
+      filtres.innerHTML = '';
+      for (const [key, label] of FAM_FILTERS) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'fbtn' + (filtre === key ? ' on' : '');
+        b.textContent = label;
+        b.title = FILTER_TITLES[key];
+        b.addEventListener('click', () => { filtre = key; dessiner(); });
+        filtres.appendChild(b);
+      }
+
+      const texte = q.value.trim().toLowerCase();
+      const garde = (e) => {
+        if (filtre !== 'all' && !(filtre === 'PLC'
+          ? ['I', 'Q', 'M', 'S'].includes(e.family) : e.family === filtre)) return false;
+        if (!texte) return true;
+        return e.addr.toLowerCase().includes(texte) ||
+               (e.label || '').toLowerCase().includes(texte);
+      };
+      const pool = suggestPool().filter(garde);
+
+      list.innerHTML = '';
+      // Adresse valide absente du catalogue : proposée telle quelle, comme
+      // dans la barre de recherche — le catalogue n'est pas exhaustif.
+      if (texte) {
+        const p = DW.parseAddr(q.value.trim());
+        if (p.ok && !pool.some((e) => e.addr.toUpperCase() === p.addr.toUpperCase())) {
+          pool.unshift({ addr: p.addr, family: p.family,
+                         label: DW.FAMILIES[p.family].label + ' — hors catalogue', unit: '' });
+        }
+      }
+      if (!pool.length) {
+        const vide = document.createElement('p');
+        vide.className = 'm-note';
+        vide.textContent = 'Aucune variable ne correspond.';
+        list.appendChild(vide);
+      }
+      for (const e of pool.slice(0, 400)) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'vp-row' + (choix.has(e.addr) ? ' on' : '') + (dejaLa(e.addr) ? ' dup' : '');
+        b.setAttribute('role', 'option');
+        b.setAttribute('aria-selected', choix.has(e.addr) ? 'true' : 'false');
+        b.innerHTML =
+          '<span class="vp-check" aria-hidden="true"></span>' +
+          '<span class="badge fam-' + e.family + '">' +
+            DW.escapeHtml(DW.famBadge(e)) + '</span>' +
+          '<span class="vp-addr"></span><span class="vp-label"></span>' +
+          '<span class="vp-unit"></span>';
+        b.querySelector('.vp-addr').textContent = e.addr;
+        b.querySelector('.vp-label').textContent =
+          (e.label || '') + (dejaLa(e.addr) ? ' · déjà présente' : '');
+        b.querySelector('.vp-unit').textContent = e.unit || '';
+        b.querySelector('.badge').title = famTitle(e.family, e);
+        b.title = e.addr + ' — ' + (e.label || '') + (e.unit ? ' (' + e.unit + ')' : '') +
+          ' · cocher pour l’ajouter à « ' + nom + ' »';
+        b.addEventListener('click', () => {
+          if (choix.has(e.addr)) choix.delete(e.addr); else choix.add(e.addr);
+          b.classList.toggle('on', choix.has(e.addr));
+          b.setAttribute('aria-selected', choix.has(e.addr) ? 'true' : 'false');
+          majCompte();
+        });
+        list.appendChild(b);
+      }
+      majCompte();
+    };
+
+    const ajouter = () => {
+      const periodMs = parseInt(perSel.value, 10) || CFG.defaultPeriodMs;
+      let ok = 0;
+      const refus = [];
+      for (const addr of choix) {
+        const net = DW.protocols ? DW.protocols.periodOf(addr) : null;
+        const r = dest.kind === 'table'
+          ? addToTable(addr, net || periodMs)
+          : dest.chart.addSeries(addr, { periodMs: net || periodMs });
+        if (r && r.ok) ok++; else refus.push(addr + ' : ' + ((r && r.error) || 'refusée'));
+      }
+      root.innerHTML = '';
+      onChange();
+      refreshTargets();
+      if (ok) toast(ok + ' variable' + (ok > 1 ? 's' : '') + ' → ' + nom);
+      // Un refus n'est jamais silencieux : une variable qu'on croit ajoutée et
+      // qui manque se cherche longtemps.
+      if (refus.length) toast(refus.join(' · '), 'err');
+    };
+
+    q.addEventListener('input', dessiner);
+    q.addEventListener('keydown', (e) => { if (e.key === 'Enter') ajouter(); });
+    back.querySelector('.vp-ok').addEventListener('click', ajouter);
+    back.querySelector('.vp-cancel').addEventListener('click', () => { root.innerHTML = ''; });
+    back.querySelector('.m-close').addEventListener('click', () => { root.innerHTML = ''; });
+    back.addEventListener('pointerdown', (e) => { if (e.target === back) root.innerHTML = ''; });
+    root.appendChild(back);
+    dessiner();
+    q.focus();
+  }
+  DW.openVarPicker = openVarPicker;
+
   function showTextModal(title, text) {
     const root = $('modalRoot');
     root.innerHTML = '';
@@ -1586,7 +1833,9 @@
           '(survol à la souris).</p>' +
           S('Ajouter des variables') +
           L([
-            ['Barre de recherche', 'Adresse : <b>I1.2.3.4</b>, <b>Q14.15</b>, <b>M1.14</b>, <b>S0.4</b> (bits), <b>MB414</b> (mot de bus), <b>Modele.signal</b> (C API). Les suggestions se filtrent à la frappe ; les boutons Toutes / PLC / Modbus / Simulink / Réseau restreignent la liste.'],
+            ['Bouton ＋', 'Sur le tableau et sur chaque graphique : ouvre le catalogue complet dans une grande fenêtre — filtres par famille, recherche, et <b>sélection multiple</b>. La destination est celle du bouton, il n’y a rien à choisir.'],
+            ['Barre de recherche', 'Le chemin rapide, au clavier. Adresse : <b>I1.2.3.4</b>, <b>Q14.15</b>, <b>M1.14</b>, <b>S0.4</b> (bits), <b>MB414</b> (mot de bus), <b>Modele.signal</b> (C API). Les suggestions se filtrent à la frappe ; les boutons Toutes / PLC / Modbus / Simulink / Réseau restreignent la liste.'],
+            ['Étiquettes', 'Elles disent d’où vient la valeur : <b>PLC</b> (entrées, sorties, bits mémoire, système), <b>MB</b> (registre de bus par le canal interne), <b>Simulink</b> (signal de modèle, C API), <b>ext.…</b> (point lu à l’extérieur par le serveur de diagnostic : ext.MB, ext.61850, ext.OPCUA, ext.SNMP…). MB et ext.MB, ce n’est pas le même chemin ni la même latence.'],
             ['Destination', 'Tableau numérique, un graphique existant, ou un nouveau graphique.'],
             ['Période', 'Rafraîchissement propre à la variable, 10 ms par défaut.'],
             ['Forcer une valeur', 'Suffixe <b>= valeur</b> dans la barre : <b>Q0.3 = 1</b>, <b>MB400 = 12500</b> impose la valeur côté serveur (diagnostic). La ligne du tableau est surlignée ; ⏻ relâche. Les points réseau (@lien.point) restent en lecture seule.'],
@@ -1609,7 +1858,7 @@
           L([
             ['Poignée ⠿', 'Glisser un graphique ou le tableau vers un onglet, une autre fenêtre, ou sur un autre graphique pour le ranger.'],
             ['Ligne du tableau', 'Se glisse <b>dans le tableau</b> pour changer son rang (un repère montre où elle se posera), ou vers un autre onglet ou une autre fenêtre.'],
-            ['Poignée ◢ (coin bas-droit)', 'Redimensionner un graphique à la souris : ↕ hauteur libre, ↔ largeur en nombre de colonnes. Sur le tableau numérique : ↕ fixe sa hauteur (défilement interne). Double-clic pour revenir à la taille automatique.'],
+            ['Poignée ◢ (coin bas-droit)', 'Redimensionner une carte à la souris : ↕ hauteur libre, ↔ largeur en nombre de colonnes. Le <b>tableau numérique</b> se règle de la même façon : le réduire en largeur laisse la place à un graphique <b>à côté</b> (glisser sa poignée ⠿ sur une carte le range à gauche ou à droite). Double-clic pour revenir à la taille automatique.'],
             ['Renommer', 'Bouton ✎ sur une ligne du tableau, ou « Renommer la courbe… » dans le menu d’une pastille : un nom d’affichage remplace le libellé du catalogue (vide = valeur d’origine). Le nom appartient à la <b>variable</b> : il s’applique partout où elle figure — tous les tableaux, toutes les courbes, tous les onglets, et les autres fenêtres ouvertes.'],
             ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],

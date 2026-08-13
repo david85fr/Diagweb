@@ -53,6 +53,7 @@
       dragId, origin: winId,
       kind: payload.kind,
       chartId: payload.chartId,
+      tabId: payload.tabId,
       chart: payload.chart,
       table: payload.table,
       title: payload.title,
@@ -118,7 +119,8 @@
   // -------------------------------------------------------------- réception
   function clearHighlight() {
     document.querySelectorAll('.tab.dnd-over').forEach((el) => el.classList.remove('dnd-over'));
-    document.querySelectorAll('.chart-card.drop-before, .chart-card.drop-after')
+    document.querySelectorAll('.chart-card.drop-before, .chart-card.drop-after, ' +
+                              '.table-card.drop-before, .table-card.drop-after')
       .forEach((el) => el.classList.remove('drop-before', 'drop-after'));
     document.body.classList.remove('dnd-over-pane');
   }
@@ -128,7 +130,10 @@
    * Permet de ranger les graphiques dans l'ordre voulu.
    */
   function placeAt(e) {
-    const card = e.target.closest && e.target.closest('.chart-card');
+    // Le tableau numérique vit dans la même grille que les graphiques : il est
+    // un point d'insertion comme eux, sans quoi rien ne pourrait se ranger à
+    // sa gauche.
+    const card = e.target.closest && e.target.closest('.chart-card, .table-card');
     if (!card) return null;
     const r = card.getBoundingClientRect();
     return { anchorEl: card, after: (e.clientX - r.left) > r.width / 2 };

@@ -14,6 +14,39 @@
   };
   DW.FAMILIES = FAMILIES;
 
+  /**
+   * Étiquette affichée d'une variable : d'où vient la valeur, en un coup d'œil.
+   *
+   * Ce que l'utilisateur a besoin de distinguer, ce n'est pas la lettre de
+   * l'adresse, c'est l'ORIGINE de la donnée :
+   *   PLC       entrées, sorties, bits mémoire et variables système (I/Q/M/S) ;
+   *   MB        registres de bus, par le canal interne du contrôleur ;
+   *   Simulink  signaux des modèles, via la C API ;
+   *   ext.…     point lu à l'EXTÉRIEUR par un client du serveur de diagnostic,
+   *             suffixé du protocole (ext.MB, ext.61850, ext.OPCUA…).
+   *
+   * La distinction MB / ext.MB est la plus importante des cinq : le même
+   * registre, vu par le contrôleur ou vu par un client Modbus, n'a ni le même
+   * chemin, ni la même latence, ni les mêmes causes de panne.
+   */
+  const BADGE_PLC = { I: true, Q: true, M: true, S: true };
+  DW.famBadge = function (meta) {
+    if (!meta) return '';
+    const f = meta.family;
+    if (BADGE_PLC[f]) return 'PLC';
+    if (f === 'MB') return 'MB';
+    if (f === 'CAPI') return 'Simulink';
+    if (f !== 'NET') return f || '';
+    // Point réseau : le protocole du lien fournit le suffixe.
+    let proto = meta.protocol;
+    if (!proto && DW.protocols && meta.addr) {
+      const m = DW.protocols.meta(meta.addr);
+      proto = m && m.protocol;
+    }
+    const desc = proto && DW.PROTO_INDEX ? DW.PROTO_INDEX.get(proto) : null;
+    return (desc && desc.badge) || 'ext.';
+  };
+
   // Identifiant d'un lien ou d'un point réseau (voir web/js/protocols.js)
   const NET_ID = '[A-Za-z][A-Za-z0-9_-]{0,23}';
 

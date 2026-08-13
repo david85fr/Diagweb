@@ -273,9 +273,19 @@ button { font-family: var(--sans); }
   color: var(--muted); font-weight: 650;
 }
 .table-card h3 span { text-transform: none; letter-spacing: 0; color: var(--faint); font-weight: 500; margin-left: 6px; }
+/* Bouton « + » d'un tableau ou d'un graphique : ajoute des variables à CETTE
+   carte, sans passer par le sélecteur de destination de la barre du haut. */
+.card-add {
+  font-size: 17px; line-height: 1; font-weight: 600;
+  padding: 2px 8px; margin-left: 8px;
+}
+.table-card h3 .card-add { vertical-align: middle; }
 
 /* ---------- Tableau numérique ---------- */
-.table-card { margin-bottom: 12px; position: relative; }
+/* Le tableau est une carte de la grille des graphiques : sa largeur se règle
+   en colonnes (poignée ↔), ce qui laisse la place à un graphique à côté.
+   Sans réglage, il occupe toute la largeur — la disposition d'origine. */
+.table-card { position: relative; min-width: 0; grid-column: 1 / -1; }
 .trows { padding: 0 2px 2px; }
 /* Hauteur libre (poignée) : le tableau défile en interne au lieu de pousser
    les graphiques vers le bas. La poignée reste réservée aux écrans ≥ 700 px. */
@@ -721,6 +731,58 @@ body.dnd-over-pane #panes {
   margin-bottom: 10px;
 }
 .m-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---------- Sélecteur de variables (bouton « + ») ---------- */
+/* Grande fenêtre : on vient y VOIR le catalogue, pas deviner une adresse. */
+.modal.vpick { max-width: 900px; display: flex; flex-direction: column; max-height: 88vh; }
+.vp-bar { display: flex; gap: 8px; margin: 8px 0 6px; }
+.vp-q {
+  flex: 1; min-width: 0;
+  font: 15px var(--sans); color: var(--ink);
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 9px; padding: 9px 11px;
+}
+.vp-period {
+  font: 13px var(--sans); color: var(--ink);
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 9px; padding: 0 8px;
+}
+.vp-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.vp-list {
+  flex: 1; min-height: 200px; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: 10px;
+  padding: 4px; margin-bottom: 10px;
+}
+.vp-row {
+  display: grid; width: 100%;
+  grid-template-columns: 18px auto minmax(0, 1.1fr) minmax(0, 1.4fr) auto;
+  gap: 10px; align-items: center; text-align: left;
+  font: inherit; color: var(--ink);
+  background: none; border: 0; border-radius: 8px;
+  padding: 7px 8px; cursor: pointer;
+}
+.vp-row:hover { background: var(--panel-2); }
+.vp-check {
+  width: 15px; height: 15px; border-radius: 4px;
+  border: 1.5px solid var(--line); background: var(--panel-2);
+}
+.vp-row.on .vp-check {
+  background: var(--accent); border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--panel);
+}
+.vp-addr { font-family: var(--mono); font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vp-label, .vp-unit { color: var(--muted); font-size: 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Déjà présente à la destination : ajoutable quand même (le refus est dit),
+   mais signalée pour éviter le doublon involontaire. */
+.vp-row.dup .vp-addr { color: var(--muted); }
+.vp-count { flex: 1; align-self: center; font-size: 12px; color: var(--muted); }
+.btn.primary[disabled] { opacity: .45; cursor: default; }
+@media (max-width: 640px) {
+  .vp-row { grid-template-columns: 18px auto 1fr; }
+  .vp-label, .vp-unit { display: none; }
+}
 .acc-row { margin-top: 4px; }
 .acc-btn.on {
   color: #04201d;
@@ -851,6 +913,7 @@ body.dnd-over-pane #panes {
   .resize-grip { display: block; }
   .chart-card.has-custom-h .chart-body { height: var(--custom-h); }
   .chart-card.has-span { grid-column: span var(--col-span); }
+  .table-card.has-span { grid-column: span var(--col-span); }
 }
 
 /* Barre supérieure sur une seule ligne : uniquement quand tout tient */

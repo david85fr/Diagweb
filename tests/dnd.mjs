@@ -28,19 +28,31 @@ function findChromium() {
   return undefined;
 }
 
-/** Glisse un widget sur une carte de graphique (rangement dans la grille). */
+/**
+ * Glisse un widget sur une carte de la grille (rangement).
+ *
+ * Les sélecteurs acceptent la forme « sél#N » : la N-ième correspondance.
+ * Nécessaire depuis que le tableau numérique vit dans la même grille que les
+ * graphiques — « :nth-of-type » n'y désigne plus la carte attendue.
+ */
+const PICK = (s) => {
+  const i = s.lastIndexOf('#');
+  if (i < 0) return document.querySelector(s);
+  return document.querySelectorAll(s.slice(0, i))[parseInt(s.slice(i + 1), 10)];
+};
+
 async function dragOntoCard(page, srcSel, dstSel, right) {
-  const store = await page.evaluate((sel) => {
-    const el = document.querySelector(sel); const s = {};
+  const store = await page.evaluate(({ sel, pick }) => {
+    const el = new Function('s', 'return (' + pick + ')(s)')(sel); const s = {};
     const dt = { types: [], setData(t, v) { s[t] = v; this.types.push(t); },
       getData(t) { return s[t] || ''; }, setDragImage() {}, effectAllowed: '', dropEffect: '' };
     const ev = new Event('dragstart', { bubbles: true, cancelable: true });
     Object.defineProperty(ev, 'dataTransfer', { value: dt });
     el.dispatchEvent(ev);
     return s;
-  }, srcSel);
-  await page.evaluate(({ sel, store, right }) => {
-    const el = document.querySelector(sel);
+  }, { sel: srcSel, pick: PICK.toString() });
+  await page.evaluate(({ sel, store, right, pick }) => {
+    const el = new Function('s', 'return (' + pick + ')(s)')(sel);
     const r = el.getBoundingClientRect();
     const dt = { types: Object.keys(store), getData(t) { return store[t] || ''; },
       setData() {}, dropEffect: '', effectAllowed: '' };
@@ -50,7 +62,7 @@ async function dragOntoCard(page, srcSel, dstSel, right) {
       Object.defineProperty(ev, 'dataTransfer', { value: dt });
       el.dispatchEvent(ev);
     }
-  }, { sel: dstSel, store, right });
+  }, { sel: dstSel, store, right, pick: PICK.toString() });
   await page.evaluate(() => document.dispatchEvent(new Event('dragend', { bubbles: true })));
 }
 
@@ -161,13 +173,27 @@ console.log(`Cible : ${URL}\n`);
 
   // 0) Rangement des graphiques dans la grille (sans duplication)
   const ordre0 = await A.locator('.tabpane.on .chart-title').evaluateAll((e) => e.map((x) => x.value));
-  await dragOntoCard(A, '.tabpane.on .chart-card:nth-of-type(1) .drag-handle',
-    '.tabpane.on .chart-card:nth-of-type(2)', true);
+  await dragOntoCard(A, '.tabpane.on .chart-card .drag-handle',
+    '.tabpane.on .chart-card#1', true);
   await A.waitForTimeout(700);
   const ordre1 = await A.locator('.tabpane.on .chart-title').evaluateAll((e) => e.map((x) => x.value));
   check('graphiques rangés dans l’ordre voulu (aucune copie)',
     ordre1.length === ordre0.length && ordre1[0] === ordre0[1] && ordre1[1] === ordre0[0],
     ordre1.join(' · '));
+
+  // 0 ter) Le tableau vit dans la même grille que les graphiques : il se range
+  // comme eux, ce qui permet d'avoir un graphique à sa GAUCHE.
+  const rang = () => A.evaluate(() => [...document.querySelector('.tabpane.on .charts-grid').children]
+    .findIndex((c) => c.classList.contains('table-card')));
+  const rang0 = await rang();
+  await dragOntoCard(A, '.tabpane.on .table-card .drag-handle',
+    '.tabpane.on .chart-card#0', true);
+  await A.waitForTimeout(600);
+  const rang1 = await rang();
+  const varsIntactes = await A.locator('.tabpane.on .vrow').count();
+  check('tableau rangé après un graphique (un graphique passe à sa gauche)',
+    rang0 === 0 && rang1 > 0 && varsIntactes > 0,
+    'rang ' + rang0 + ' → ' + rang1 + ', ' + varsIntactes + ' variable(s) conservée(s)');
 
   // 0 bis) Rangement des lignes du tableau numérique
   const lignes = () => A.locator('.tabpane.on .vrow').evaluateAll(

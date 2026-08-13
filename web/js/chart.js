@@ -139,6 +139,24 @@
 
   const MAX_AXES = 4;
 
+  /**
+   * Géométrie d'une grille de cartes : nombre de colonnes « naturelles »,
+   * largeur de colonne et gouttière. Le compte est recalculé depuis
+   * `--col-min` (et non depuis le template résolu) pour rester indépendant des
+   * largeurs déjà imposées par les cartes élargies. Partagé par les graphiques
+   * et par le tableau numérique, qui vit dans la même grille.
+   */
+  DW.gridMetrics = function (grid) {
+    if (!grid || !grid.classList || !grid.classList.contains('charts-grid')) return null;
+    const cs = getComputedStyle(grid);
+    const gap = parseFloat(cs.columnGap) || 0;
+    const min = parseFloat(cs.getPropertyValue('--col-min')) || 0;
+    const w = grid.clientWidth;
+    if (!(w > 0)) return null;
+    const count = min > 0 ? Math.max(1, Math.floor((w + gap) / (min + gap))) : 1;
+    return { count, colW: (w - gap * (count - 1)) / count, gap };
+  };
+
   // ---------- Popover partagé (légende & menu ⋮) ----------------------
   let popEl = null, popOwner = null, popAnchor = null;
   // Bascule : un appui sur l'ancre du menu ouvert le ferme sans le rouvrir.
@@ -248,6 +266,9 @@
           '<input class="chart-title" maxlength="48" aria-label="Titre du graphique" ' +
             'title="Nom du graphique — cliquez pour le modifier ; il sert aussi de destination d’ajout">' +
           '<div class="chart-tools">' +
+            '<button class="iconbtn card-add" type="button" ' +
+              'title="Ajouter des courbes à ce graphique : ouvre le catalogue complet, ' +
+              'avec filtres et sélection multiple">+</button>' +
             '<select class="chart-window" aria-label="Fenêtre de temps" ' +
               'title="Durée affichée — modifiable aussi par pincement ou molette sur le tracé"></select>' +
             '<button class="iconbtn chart-pause" type="button" ' +
@@ -311,6 +332,9 @@
       });
       this.pauseBtn.addEventListener('click', () => this.setPaused(this.viewEnd === null));
       this.liveBtn.addEventListener('click', () => this.goLive());
+      this.root.querySelector('.card-add').addEventListener('click', () => {
+        if (DW.openVarPicker) DW.openVarPicker({ kind: 'chart', chart: this });
+      });
       this.root.querySelector('.chart-more').addEventListener('click', (e) =>
         this.openChartMenu(e.currentTarget));
       this.moveEl.querySelector('button').addEventListener('click', () => this.endMoveMode());
@@ -413,17 +437,7 @@
      * depuis le template résolu) pour rester indépendant des largeurs déjà
      * imposées par les graphiques élargis.
      */
-    gridMetrics() {
-      const grid = this.root.parentElement;
-      if (!grid || !grid.classList.contains('charts-grid')) return null;
-      const cs = getComputedStyle(grid);
-      const gap = parseFloat(cs.columnGap) || 0;
-      const min = parseFloat(cs.getPropertyValue('--col-min')) || 0;
-      const w = grid.clientWidth;
-      if (!(w > 0)) return null;
-      const count = min > 0 ? Math.max(1, Math.floor((w + gap) / (min + gap))) : 1;
-      return { count, colW: (w - gap * (count - 1)) / count, gap };
-    }
+    gridMetrics() { return DW.gridMetrics(this.root.parentElement); }
 
     /** Poignée bas-droite : redimensionnement libre à la souris (ou au doigt). */
     bindResizeGrip() {

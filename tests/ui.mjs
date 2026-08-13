@@ -316,9 +316,17 @@ await p2.waitForTimeout(200);
 const netOnly = await p2.locator('#suggestBox .sug .badge').allTextContents();
 await p2.keyboard.press('Escape');
 await p2.fill('#searchInput', '');
+// L'étiquette dit d'où vient la valeur, pas la lettre de l'adresse : un point
+// lu à l'extérieur par le client Modbus s'annonce « ext.MB », à distinguer du
+// « MB » d'un registre vu par le canal interne du contrôleur.
 check('le point réseau apparaît dans les suggestions (filtre « Réseau »)',
-  sugNet === 1 && netOnly.length > 0 && netOnly.every((t) => t === 'NET'),
+  sugNet === 1 && netOnly.length > 0 && netOnly.every((t) => t === 'ext.MB'),
   netOnly.join(', ') || 'aucune suggestion');
+const badgesTable = await p2.locator(PANE + '.vrow .badge').allTextContents();
+check('étiquettes de famille : PLC, MB, Simulink, ext.<protocole>',
+  badgesTable.includes('ext.MB') &&
+  badgesTable.every((t) => ['PLC', 'MB', 'Simulink'].includes(t) || t.startsWith('ext.')),
+  [...new Set(badgesTable)].join(' · '));
 
 // Nom d'affichage : renommer une variable du tableau, conservé au rechargement
 await p2.keyboard.press('Escape');            // fermer toute suggestion ouverte
