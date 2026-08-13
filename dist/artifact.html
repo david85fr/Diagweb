@@ -282,7 +282,23 @@ button { font-family: var(--sans); }
   font-size: 11px; text-transform: uppercase; letter-spacing: .11em;
   color: var(--muted); font-weight: 650;
 }
-.table-card h3 span { text-transform: none; letter-spacing: 0; color: var(--faint); font-weight: 500; margin-left: 6px; }
+.table-card h3 { display: flex; align-items: center; gap: 6px; }
+.table-card h3 span { text-transform: none; letter-spacing: 0; color: var(--faint); font-weight: 500; }
+/* Titre modifiable, comme celui d'un graphique : avec plusieurs tableaux dans
+   un onglet, « Valeurs numériques » ne suffit plus à les distinguer. */
+.table-title {
+  flex: 1; min-width: 0;
+  font: 650 11px var(--sans); text-transform: uppercase; letter-spacing: .11em;
+  color: var(--muted);
+  background: none; border: 1px solid transparent; border-radius: 7px;
+  padding: 3px 6px;
+}
+.table-title:hover { border-color: var(--line); }
+.table-title:focus {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  outline: none; background: var(--panel-2); color: var(--ink);
+}
+.table-card h3 .card-add, .table-card h3 .table-more { margin-left: 0; flex: none; }
 /* Bouton « + » d'un tableau ou d'un graphique : ajoute des variables à CETTE
    carte, sans passer par le sélecteur de destination de la barre du haut. */
 .card-add {
@@ -304,7 +320,10 @@ button { font-family: var(--sans); }
 .trows { padding: 0 2px 2px; }
 /* Hauteur libre (poignée) : le tableau défile en interne au lieu de pousser
    les graphiques vers le bas. La poignée reste réservée aux écrans ≥ 700 px. */
-.table-card.has-th .trows { max-height: var(--table-h); overflow-y: auto; }
+/* height, pas max-height : « max » ne sait que rétrécir. Avec elle, tirer la
+   poignée vers le bas ne faisait rien du tout — le tableau ne pouvait que
+   diminuer. */
+.table-card.has-th .trows { height: var(--table-h); overflow-y: auto; }
 .table-card.resizing { outline: 1px solid color-mix(in srgb, var(--accent) 60%, transparent); }
 .table-card.resizing .resize-grip { opacity: 1; }
 .table-grip { bottom: 4px; right: 4px; }
@@ -1070,7 +1089,7 @@ body.cfg-hidden .tabActions { display: none; }
     </div>
 
     <div class="topIcons">
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">e9bb762 · #85</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">4e784b7 · #87</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
@@ -1104,6 +1123,7 @@ body.cfg-hidden .tabActions { display: none; }
   </header>
 
   <div class="tabActions">
+    <button id="addTableBtn" class="btn" type="button" title="Créer un tableau numérique vide dans cet onglet ; il devient la destination d’ajout. Plusieurs tableaux peuvent cohabiter avec les graphiques — tableau, graphique, tableau…">+ Tableau</button>
     <button id="addChartBtn" class="btn" type="button" title="Créer un graphique vide dans cet onglet ; il devient la destination d’ajout">+ Graphique</button>
     <button id="layoutsBtn" class="btn" type="button" title="Configurations : enregistrer, télécharger (JSON/CSV), charger, copier la configuration de cet onglet">Configs</button>
     <button id="logBtn" class="btn" type="button" title="Journal de données : enregistrer tous les échantillons des variables de cet onglet (navigateur ou contrôleur), puis les télécharger en CSV/JSON">Journal<i id="logInd" class="recdot hide"></i></button>
@@ -3021,6 +3041,13 @@ body.cfg-hidden .tabActions { display: none; }
     popEl.style.top = (top + window.scrollY) + 'px';
   }
 
+  /**
+   * Menu contextuel réutilisable, ancré sur un bouton. Exposé parce que les
+   * tableaux numériques ont le même besoin que les graphiques : un menu ⋮ au
+   * même endroit, avec la même mécanique de fermeture.
+   */
+  DW.popup = function (anchorEl, build) { openPopover(anchorEl, anchorEl, build); };
+
   // ---------- Classe Chart --------------------------------------------
   let uid = 0;
 
@@ -4362,10 +4389,23 @@ body.cfg-hidden .tabActions { display: none; }
   }
   function writeLayouts(obj) { return lsSet(KEY_LAYOUTS, JSON.stringify(obj)); }
 
+  /**
+   * Contrôle de structure d'une disposition, dans les DEUX formats :
+   *   v1 — un seul tableau, champ « table » ;
+   *   v2 — plusieurs tableaux, champ « tables » (chacun avec ses « entries »).
+   * Refuser l'un des deux reviendrait à jeter la disposition en silence et à
+   * repartir sur la démonstration, ce qui se lit comme une perte de travail.
+   */
   function validateLayout(data) {
     if (!data || typeof data !== 'object') return 'structure absente';
     if (!Array.isArray(data.charts)) return 'liste de graphiques absente';
-    if (!Array.isArray(data.table)) return 'liste du tableau absente';
+    if (Array.isArray(data.tables)) {
+      for (const t of data.tables) {
+        if (!t || !Array.isArray(t.entries)) return 'tableau sans liste de variables';
+      }
+    } else if (!Array.isArray(data.table)) {
+      return 'liste du tableau absente';
+    }
     for (const c of data.charts) {
       if (!Array.isArray(c.series)) return 'graphique sans liste de courbes';
     }
@@ -4610,6 +4650,7 @@ body.cfg-hidden .tabActions { display: none; }
       kind: payload.kind,
       chartId: payload.chartId,
       tabId: payload.tabId,
+      tableId: payload.tableId,
       chart: payload.chart,
       table: payload.table,
       title: payload.title,
@@ -6173,39 +6214,17 @@ body.cfg-hidden .tabActions { display: none; }
     state.tabSeq++;
     const pane = document.createElement('div');
     pane.className = 'tabpane';
-    // Le tableau vit DANS la grille des graphiques : c'est ce qui permet de
-    // lui donner moins que toute la largeur et de poser un graphique à côté,
-    // à sa gauche comme à sa droite (poignée ↔, puis glisser sa poignée ⠿ sur
-    // une carte pour changer son rang).
-    pane.innerHTML =
-      '<div class="charts-grid">' +
-      '<section class="card table-card hide">' +
-        '<h3 title="Valeurs instantanées des variables suivies dans cet onglet">' +
-          '<span class="drag-handle" draggable="true" ' +
-          'title="Glisser le tableau entier (avec ses variables) vers un onglet ou une autre fenêtre">⠿</span>' +
-          'Valeurs numériques <span class="tcount" ' +
-          'title="Nombre de variables dans ce tableau"></span>' +
-          '<button class="iconbtn card-add" type="button" ' +
-            'title="Ajouter des variables à ce tableau : ouvre le catalogue complet, ' +
-            'avec filtres et sélection multiple">+</button></h3>' +
-        '<div class="trows"></div>' +
-        '<span class="resize-grip table-grip" role="separator" ' +
-          'aria-label="Redimensionner le tableau" ' +
-          'title="Glisser pour redimensionner le tableau : ↕ hauteur (défilement interne), ' +
-          '↔ largeur en nombre de colonnes de la grille — double-clic pour revenir à la ' +
-          'taille automatique"></span>' +
-      '</section>' +
-      '</div>';
+    // Les tableaux vivent DANS la grille des graphiques : c'est ce qui permet
+    // d'en poser plusieurs, de leur donner moins que toute la largeur, et
+    // d'alterner tableau / graphique / tableau / graphique.
+    pane.innerHTML = '<div class="charts-grid"></div>';
     $('panes').appendChild(pane);
 
     const tab = {
       id: 't' + state.tabSeq,
       name: name || 'Onglet ' + state.tabSeq,
-      table: [], charts: [], chartSeq: 0,
+      tables: [], charts: [], chartSeq: 0, tableSeq: 0,
       paneEl: pane,
-      tableCardEl: pane.querySelector('.table-card'),
-      tableRowsEl: pane.querySelector('.trows'),
-      tableCountEl: pane.querySelector('.tcount'),
       chartsGridEl: pane.querySelector('.charts-grid'),
       log: {
         // dest 'browser' : accumulation en mémoire de la page ;
@@ -6214,19 +6233,6 @@ body.cfg-hidden .tabActions { display: none; }
         rows: [], lastT: {}, enableT: 0, truncated: false,
       },
     };
-    // Le tableau numérique entier (avec ses variables) est déplaçable
-    pane.querySelector('.table-card .drag-handle').addEventListener('dragstart', (e) => {
-      if (!DW.dnd || !tab.table.length) { e.preventDefault(); return; }
-      DW.dnd.startDrag(e, { kind: 'table', tabId: tab.id, table: serializeTable(tab) }, () => {
-        for (const entry of [...tab.table]) removeFromTable(tab, entry.addr);
-      });
-    });
-    pane.querySelector('.table-card .card-add').addEventListener('click', () => {
-      openVarPicker({ kind: 'table', tab });
-    });
-    bindTableResize(tab);
-    bindTableReorder(tab);
-
     state.tabs.push(tab);
     switchTab(tab);
     if (data) applyConfigToActive(data);
@@ -6272,10 +6278,10 @@ body.cfg-hidden .tabActions { display: none; }
   function clearTab(tab) {
     for (const c of [...tab.charts]) c.destroy();
     tab.charts = [];
-    for (const e of tab.table) appApi.release(e.addr);
-    tab.table = [];
+    for (const tbl of [...tab.tables]) removeTable(tbl);
+    tab.tables = [];
     tab.chartSeq = 0;
-    renderTable(tab);
+    tab.tableSeq = 0;
   }
 
   function rebuildTabbar() {
@@ -6333,16 +6339,152 @@ body.cfg-hidden .tabActions { display: none; }
     input.addEventListener('click', (e) => e.stopPropagation());
   }
 
-  // ---------- Tableau numérique (onglet actif) ------------------------
-  function inTable(tab, addr) { return tab.table.some((e) => e.addr === addr); }
+  // ---------- Tableaux numériques -------------------------------------
+  // Un onglet porte AUTANT DE TABLEAUX qu'on veut, chacun étant une carte de
+  // la grille au même titre qu'un graphique : on peut donc alterner tableau,
+  // graphique, tableau, graphique, et donner à chacun sa largeur et sa
+  // hauteur. Un tableau regroupe ce qui se lit ensemble ; deux tableaux
+  // séparent deux sujets, ce qu'une seule liste ne sait pas faire.
+  const TABLE_MIN_H = 90;
+  const TABLE_MAX_H = 1400;
 
-  function addToTable(addr, periodMs, name) {
-    const tab = state.active;
-    if (inTable(tab, addr)) return { ok: false, error: addr + ' est déjà dans le tableau de cet onglet.' };
+  /** Crée un tableau dans l'onglet et l'ajoute à la grille. */
+  function createTable(tab, opts) {
+    opts = opts || {};
+    tab.tableSeq++;
+    const card = document.createElement('section');
+    card.className = 'card table-card';
+    card.innerHTML =
+      '<h3>' +
+        '<span class="drag-handle" draggable="true" ' +
+          'title="Glisser ce tableau (avec ses variables) vers un onglet, une autre ' +
+          'fenêtre, ou sur une autre carte pour le ranger dans la grille">⠿</span>' +
+        '<input class="table-title" maxlength="32" aria-label="Nom du tableau" ' +
+          'title="Nom du tableau — cliquez pour le modifier ; il sert aussi de ' +
+          'destination d’ajout dans la barre du haut">' +
+        '<span class="tcount" title="Nombre de variables dans ce tableau"></span>' +
+        '<button class="iconbtn card-add" type="button" ' +
+          'title="Ajouter des variables à ce tableau : ouvre le catalogue complet, ' +
+          'avec filtres et sélection multiple">+</button>' +
+        '<button class="iconbtn table-more" type="button" ' +
+          'title="Options du tableau : vider, taille automatique, déplacer, fermer">⋮</button>' +
+      '</h3>' +
+      '<div class="trows"></div>' +
+      '<span class="resize-grip table-grip" role="separator" ' +
+        'aria-label="Redimensionner le tableau" ' +
+        'title="Glisser pour redimensionner le tableau : ↕ hauteur (défilement interne), ' +
+        '↔ largeur en nombre de colonnes de la grille — double-clic pour revenir à la ' +
+        'taille automatique"></span>';
+
+    const tbl = {
+      id: 'tb' + tab.tableSeq,
+      tab,
+      name: opts.name || (tab.tables.length ? 'Tableau ' + (tab.tables.length + 1)
+                                            : 'Valeurs numériques'),
+      entries: [],
+      h: opts.h, cols: opts.cols,
+      cardEl: card,
+      rowsEl: card.querySelector('.trows'),
+      countEl: card.querySelector('.tcount'),
+      titleEl: card.querySelector('.table-title'),
+    };
+    tbl.titleEl.value = tbl.name;
+    tbl.titleEl.addEventListener('change', () => {
+      tbl.name = tbl.titleEl.value.trim() || 'Tableau';
+      tbl.titleEl.value = tbl.name;
+      refreshTargets();
+      onChange();
+    });
+    card.querySelector('.drag-handle').addEventListener('dragstart', (e) => {
+      if (!DW.dnd || !tbl.entries.length) { e.preventDefault(); return; }
+      DW.dnd.startDrag(e, { kind: 'table', tabId: tab.id, tableId: tbl.id,
+                            title: tbl.name, table: serializeTable(tbl) }, () => {
+        for (const entry of [...tbl.entries]) removeFromTable(tbl, entry.addr);
+      });
+    });
+    card.querySelector('.card-add').addEventListener('click', () => {
+      openVarPicker({ kind: 'table', table: tbl });
+    });
+    card.querySelector('.table-more').addEventListener('click', (e) =>
+      openTableMenu(tbl, e.currentTarget));
+    tab.chartsGridEl.appendChild(card);
+    tab.tables.push(tbl);
+    bindTableResize(tbl);
+    bindTableReorder(tbl);
+    applyTableSize(tbl);
+    renderTable(tbl);
+    refreshTargets();
+    return tbl;
+  }
+
+  /** Menu ⋮ d'un tableau (le pendant de celui d'un graphique). */
+  function openTableMenu(tbl, anchor) {
+    DW.popup(anchor, (mk) => {
+      mk('Ajouter des variables…', () => openVarPicker({ kind: 'table', table: tbl }), null,
+        'Ouvrir le catalogue complet, filtres et sélection multiple');
+      mk('Vider le tableau', () => {
+        for (const e of [...tbl.entries]) removeFromTable(tbl, e.addr);
+      }, null, 'Retirer toutes les variables sans supprimer le tableau');
+      if (tbl.h != null || tbl.cols != null) {
+        mk('Taille automatique', () => {
+          tbl.h = undefined; tbl.cols = undefined;
+          applyTableSize(tbl);
+          onChange();
+        }, null, 'Annuler le dimensionnement fait à la poignée');
+      }
+      for (const t of state.tabs.filter((x) => x !== tbl.tab)) {
+        mk('Déplacer vers l’onglet « ' + DW.escapeHtml(t.name) + ' »', () => {
+          moveTableToTab(tbl, t);
+        }, null, 'Transférer ce tableau et ses variables dans « ' + t.name + ' »');
+      }
+      mk('Fermer le tableau', () => removeTable(tbl), 'danger',
+        'Supprimer ce tableau et libérer ses variables');
+    });
+  }
+
+  /** Retire un tableau de son onglet (et libère ses abonnements). */
+  function removeTable(tbl) {
+    const tab = tbl.tab;
+    for (const e of tbl.entries) appApi.release(e.addr);
+    tbl.entries = [];
+    tbl.cardEl.remove();
+    const i = tab.tables.indexOf(tbl);
+    if (i >= 0) tab.tables.splice(i, 1);
+    refreshTargets();
+    updateEmptyState();
+    onChange();
+  }
+
+  /** Déplace un tableau entier vers un autre onglet (menu ⋮, chemin tactile). */
+  function moveTableToTab(tbl, cible) {
+    const copie = serializeTable(tbl);
+    const nom = tbl.name;
+    removeTable(tbl);
+    const neuf = createTable(cible, { name: nom });
+    for (const e of copie) {
+      const p = DW.parseAddr(e.addr);
+      if (p.ok) addToTable(neuf, p.addr, e.periodMs, e.name);
+    }
+    toast('Tableau « ' + nom + ' » déplacé vers « ' + cible.name + ' ».');
+    onChange();
+  }
+
+  /** Premier tableau de l'onglet, créé au besoin (destination par défaut). */
+  function defaultTable(tab) {
+    return tab.tables[0] || createTable(tab, {});
+  }
+
+  function inTable(tbl, addr) { return tbl.entries.some((e) => e.addr === addr); }
+  function inAnyTable(tab, addr) { return tab.tables.some((t) => inTable(t, addr)); }
+
+  function addToTable(tbl, addr, periodMs, name) {
+    if (inTable(tbl, addr)) {
+      return { ok: false, error: addr + ' est déjà dans « ' + tbl.name + ' ».' };
+    }
     const meta = appApi.acquire(addr, periodMs);
     if (!meta) return { ok: false, error: 'Adresse invalide : ' + addr };
-    tab.table.push({ addr, meta, periodMs: periodMs || undefined, name: name || undefined });
-    renderTable(tab);
+    tbl.entries.push({ addr, meta, periodMs: periodMs || undefined, name: name || undefined });
+    renderTable(tbl);
     return { ok: true };
   }
 
@@ -6361,11 +6503,13 @@ body.cfg-hidden .tabActions { display: none; }
   function renameVariable(addr, name, distant) {
     const nom = (name || '').trim() || undefined;
     for (const tab of state.tabs) {
-      let touche = false;
-      for (const e of tab.table) {
-        if (e.addr === addr && e.name !== nom) { e.name = nom; touche = true; }
+      for (const tbl of tab.tables) {
+        let touche = false;
+        for (const e of tbl.entries) {
+          if (e.addr === addr && e.name !== nom) { e.name = nom; touche = true; }
+        }
+        if (touche) renderTable(tbl);
       }
-      if (touche) renderTable(tab);
       for (const chart of tab.charts) {
         let legende = false;
         for (const s of chart.series) {
@@ -6381,7 +6525,7 @@ body.cfg-hidden .tabActions { display: none; }
   }
 
   /** Renommage en place du nom d'affichage d'une variable du tableau. */
-  function renameTableEntry(tab, e, labelEl) {
+  function renameTableEntry(tbl, e, labelEl) {
     if (labelEl.querySelector('input')) return;
     const input = document.createElement('input');
     input.className = 'v-rename';
@@ -6398,7 +6542,7 @@ body.cfg-hidden .tabActions { display: none; }
       if (done) return;
       done = true;
       renameVariable(e.addr, input.value);
-      renderTable(tab);        // la ligne éditée retrouve son affichage normal
+      renderTable(tbl);        // la ligne éditée retrouve son affichage normal
     };
     input.addEventListener('blur', commit);
     input.addEventListener('keydown', (ev) => {
@@ -6409,12 +6553,12 @@ body.cfg-hidden .tabActions { display: none; }
     input.addEventListener('pointerdown', (ev) => ev.stopPropagation());
   }
 
-  function removeFromTable(tab, addr) {
-    const i = tab.table.findIndex((e) => e.addr === addr);
+  function removeFromTable(tbl, addr) {
+    const i = tbl.entries.findIndex((e) => e.addr === addr);
     if (i < 0) return;
     appApi.release(addr);
-    tab.table.splice(i, 1);
-    renderTable(tab);
+    tbl.entries.splice(i, 1);
+    renderTable(tbl);
     onChange();
   }
 
@@ -6425,15 +6569,15 @@ body.cfg-hidden .tabActions { display: none; }
   let rangement = null;
 
   /** Déplace une variable devant ou derrière une autre, dans le même tableau. */
-  function moveTableEntry(tab, addr, refAddr, after) {
+  function moveTableEntry(tbl, addr, refAddr, after) {
     if (addr === refAddr) return;
-    const from = tab.table.findIndex((x) => x.addr === addr);
+    const from = tbl.entries.findIndex((x) => x.addr === addr);
     if (from < 0) return;
-    const [entry] = tab.table.splice(from, 1);
-    const ref = tab.table.findIndex((x) => x.addr === refAddr);
-    if (ref < 0) { tab.table.splice(from, 0, entry); return; }   // repère envolé
-    tab.table.splice(after ? ref + 1 : ref, 0, entry);
-    renderTable(tab);
+    const [entry] = tbl.entries.splice(from, 1);
+    const ref = tbl.entries.findIndex((x) => x.addr === refAddr);
+    if (ref < 0) { tbl.entries.splice(from, 0, entry); return; }   // repère envolé
+    tbl.entries.splice(after ? ref + 1 : ref, 0, entry);
+    renderTable(tbl);
     onChange();
   }
 
@@ -6446,12 +6590,16 @@ body.cfg-hidden .tabActions { display: none; }
    * variable venue d'un AUTRE onglet ou d'une autre fenêtre, elle, n'est pas
    * arrêtée : elle suit son chemin habituel.
    */
-  function bindTableReorder(tab) {
-    const rows = tab.tableRowsEl;
+  function bindTableReorder(tbl) {
+    const rows = tbl.rowsEl;
     const efface = () => rows.querySelectorAll('.vrow.drop-before, .vrow.drop-after')
       .forEach((el) => el.classList.remove('drop-before', 'drop-after'));
-    const interne = () => !!rangement && rangement.tab === tab &&
-      tab.table.some((x) => x.addr === rangement.addr);
+    // Rangement interne = la ligne vient de CE tableau. Venue d'un autre
+    // tableau, d'un autre onglet ou d'une autre fenêtre, elle suit le chemin
+    // habituel de dnd.js — ce qui permet justement de déplacer une variable
+    // d'un tableau à l'autre.
+    const interne = () => !!rangement && rangement.tbl === tbl &&
+      tbl.entries.some((x) => x.addr === rangement.addr);
     const viser = (ev) => {
       const row = ev.target.closest && ev.target.closest('.vrow');
       if (!row || !rows.contains(row)) return null;
@@ -6481,15 +6629,16 @@ body.cfg-hidden .tabActions { display: none; }
       ev.preventDefault();
       ev.stopPropagation();
       efface();
-      moveTableEntry(tab, rangement.addr, c.row.dataset.addr, c.after);
+      moveTableEntry(tbl, rangement.addr, c.row.dataset.addr, c.after);
       rangement = null;
     });
   }
 
-  function renderTable(tab) {
-    const rows = tab.tableRowsEl;
+  function renderTable(tbl) {
+    const tab = tbl.tab;
+    const rows = tbl.rowsEl;
     rows.innerHTML = '';
-    for (const e of tab.table) {
+    for (const e of tbl.entries) {
       const row = document.createElement('div');
       row.className = 'vrow';
       row.dataset.addr = e.addr;
@@ -6498,9 +6647,10 @@ body.cfg-hidden .tabActions { display: none; }
       row.draggable = true;
       row.addEventListener('dragstart', (ev) => {
         if (!DW.dnd) { ev.preventDefault(); return; }
-        rangement = { tab, addr: e.addr };
-        DW.dnd.startDrag(ev, { kind: 'vars', table: [{ addr: e.addr, periodMs: e.periodMs }] },
-          () => removeFromTable(tab, e.addr));
+        rangement = { tbl, addr: e.addr };
+        DW.dnd.startDrag(ev, { kind: 'vars', tabId: tab.id, tableId: tbl.id,
+                               table: [{ addr: e.addr, periodMs: e.periodMs }] },
+          () => removeFromTable(tbl, e.addr));
       });
       row.addEventListener('dragend', () => { rangement = null; });
       row.innerHTML =
@@ -6534,29 +6684,28 @@ body.cfg-hidden .tabActions { display: none; }
         'Tendance sur les 2,5 dernières secondes (↗ hausse, ↘ baisse, → stable)';
       const edit = row.querySelector('.v-edit');
       edit.title = 'Nom d’affichage de ' + e.addr + ' (vide = libellé du catalogue)';
-      edit.addEventListener('click', () => renameTableEntry(tab, e, labelEl));
+      edit.addEventListener('click', () => renameTableEntry(tbl, e, labelEl));
       row.querySelector('.v-forced').addEventListener('click', () => releaseVariable(e.addr));
       const del = row.querySelector('.v-del');
       del.title = 'Retirer ' + e.addr + ' du tableau';
-      del.addEventListener('click', () => removeFromTable(tab, e.addr));
+      del.addEventListener('click', () => removeFromTable(tbl, e.addr));
       rows.appendChild(row);
     }
-    tab.tableCountEl.textContent = tab.table.length ? tab.table.length + ' variable' + (tab.table.length > 1 ? 's' : '') : '';
-    tab.tableCardEl.classList.toggle('hide', tab.table.length === 0);
+    const n = tbl.entries.length;
+    tbl.countEl.textContent = n ? n + ' variable' + (n > 1 ? 's' : '') : 'vide';
+    // Un tableau vide RESTE affiché : c'est une carte qu'on vient de créer et
+    // dans laquelle on va déposer quelque chose. Le masquer donnerait
+    // l'impression que le bouton n'a rien fait.
     updateEmptyState();
   }
 
-  // ---------- Redimensionnement du tableau numérique ------------------
-  const TABLE_MIN_H = 90;
-  const TABLE_MAX_H = 1400;
-
-  /** Applique la taille libre du tableau (hauteur et largeur) ou l'annule. */
-  function applyTableSize(tab) {
-    const card = tab.tableCardEl;
+  /** Applique la taille libre d'un tableau (hauteur et largeur) ou l'annule. */
+  function applyTableSize(tbl) {
+    const card = tbl.cardEl;
     if (!card) return;
-    if (tab.tableH) {
+    if (tbl.h) {
       card.classList.add('has-th');
-      card.style.setProperty('--table-h', tab.tableH + 'px');
+      card.style.setProperty('--table-h', tbl.h + 'px');
     } else {
       card.classList.remove('has-th');
       card.style.removeProperty('--table-h');
@@ -6565,18 +6714,19 @@ body.cfg-hidden .tabActions { display: none; }
     // d'origine, et celle des configurations enregistrées avant cette version.
     // Même mécanisme que les graphiques : la classe laisse la feuille de style
     // décider (sur mobile, la grille reste à une colonne).
-    if (tab.tableCols) {
+    if (tbl.cols) {
       card.classList.add('has-span');
-      card.style.setProperty('--col-span', tab.tableCols);
+      card.style.setProperty('--col-span', tbl.cols);
     } else {
       card.classList.remove('has-span');
       card.style.removeProperty('--col-span');
     }
   }
 
-  function bindTableResize(tab) {
-    const grip = tab.tableCardEl.querySelector('.table-grip');
-    const rows = tab.tableRowsEl;
+  function bindTableResize(tbl) {
+    const tab = tbl.tab;
+    const grip = tbl.cardEl.querySelector('.table-grip');
+    const rows = tbl.rowsEl;
     let g = null;
     grip.addEventListener('pointerdown', (e) => {
       if (e.button > 0) return;
@@ -6584,42 +6734,42 @@ body.cfg-hidden .tabActions { display: none; }
       g = {
         id: e.pointerId, y: e.clientY, x: e.clientX,
         h: rows.getBoundingClientRect().height,
-        w: tab.tableCardEl.getBoundingClientRect().width,
-        cols: tab.tableCols || (m ? m.count : 1),
+        w: tbl.cardEl.getBoundingClientRect().width,
+        cols: tbl.cols || (m ? m.count : 1),
         m,
       };
       try { grip.setPointerCapture(e.pointerId); } catch (err) { /* capture facultative */ }
-      tab.tableCardEl.classList.add('resizing');
+      tbl.cardEl.classList.add('resizing');
       e.preventDefault();
     });
     grip.addEventListener('pointermove', (e) => {
       if (!g || e.pointerId !== g.id) return;
       const h = Math.round(g.h + (e.clientY - g.y));
-      tab.tableH = Math.max(TABLE_MIN_H, Math.min(TABLE_MAX_H, h));
+      tbl.h = Math.max(TABLE_MIN_H, Math.min(TABLE_MAX_H, h));
       // ↔ : largeur en colonnes de la grille, comme pour un graphique. En
       // deçà de toute la largeur, les graphiques viennent se ranger à côté.
       if (g.m && g.m.count > 1) {
         const unit = g.m.colW + g.m.gap;
         const span = Math.round((g.w + (e.clientX - g.x) + g.m.gap) / unit);
-        tab.tableCols = Math.max(1, Math.min(g.m.count, span));
+        tbl.cols = Math.max(1, Math.min(g.m.count, span));
       }
-      applyTableSize(tab);
+      applyTableSize(tbl);
       e.preventDefault();
     });
     const end = (e) => {
       if (!g || (e && e.pointerId !== g.id)) return;
       g = null;
-      tab.tableCardEl.classList.remove('resizing');
+      tbl.cardEl.classList.remove('resizing');
       onChange();
     };
     grip.addEventListener('pointerup', end);
     grip.addEventListener('pointercancel', end);
     grip.addEventListener('dblclick', (e) => {
       e.preventDefault();
-      if (tab.tableH == null && tab.tableCols == null) return;
-      tab.tableH = undefined;
-      tab.tableCols = undefined;
-      applyTableSize(tab);
+      if (tbl.h == null && tbl.cols == null) return;
+      tbl.h = undefined;
+      tbl.cols = undefined;
+      applyTableSize(tbl);
       onChange();
       toast('Taille automatique du tableau rétablie (pleine largeur).');
     });
@@ -6628,11 +6778,16 @@ body.cfg-hidden .tabActions { display: none; }
   function updateTableValues() {
     const tab = state.active;
     if (!tab) return;
-    const rows = tab.tableRowsEl.children;
     const nowT = DW.source.now();
     const canForce = typeof DW.source.forced === 'function';
-    for (let i = 0; i < tab.table.length && i < rows.length; i++) {
-      const e = tab.table[i];
+    for (const tbl of tab.tables) majValeurs(tbl, nowT, canForce);
+  }
+
+  /** Valeurs vivantes d'un tableau (~5 Hz). */
+  function majValeurs(tbl, nowT, canForce) {
+    const rows = tbl.rowsEl.children;
+    for (let i = 0; i < tbl.entries.length && i < rows.length; i++) {
+      const e = tbl.entries[i];
       // Marquage « forcé » : valeur imposée côté serveur (diagnostic)
       if (canForce) {
         const f = DW.source.forced(e.addr);
@@ -6710,10 +6865,24 @@ body.cfg-hidden .tabActions { display: none; }
       o.value = v; o.textContent = label;
       sel.appendChild(o);
     };
-    opt('table', '→ Tableau numérique');
-    if (state.active) for (const c of state.active.charts) opt('chart:' + c.id, '→ ' + c.title);
+    // Un choix par tableau et par graphique : avec plusieurs tableaux, « le »
+    // tableau ne veut plus rien dire.
+    if (state.active) {
+      for (const t of state.active.tables) opt('table:' + t.id, '→ ' + t.name);
+      for (const c of state.active.charts) opt('chart:' + c.id, '→ ' + c.title);
+    }
+    opt('newtable', '→ Nouveau tableau');
     opt('new', '→ Nouveau graphique');
-    sel.value = [...sel.options].some((o) => o.value === prev) ? prev : 'table';
+    // « Nouveau tableau » et « Nouveau graphique » sont des ACTIONS, pas des
+    // destinations : les laisser collants ferait créer une carte de plus à
+    // chaque ajout — au démarrage, la liste est reconstruite avant que les
+    // cartes n'existent, et le choix serait resté sur « Nouveau ».
+    const action = prev === 'new' || prev === 'newtable' || !prev;
+    const premier = state.active && state.active.tables[0];
+    const defaut = premier ? 'table:' + premier.id
+                 : (state.active && state.active.charts[0]
+                    ? 'chart:' + state.active.charts[0].id : 'newtable');
+    sel.value = (!action && [...sel.options].some((o) => o.value === prev)) ? prev : defaut;
   }
 
   // ---------- Ajout d'une variable ------------------------------------
@@ -6736,10 +6905,15 @@ body.cfg-hidden .tabActions { display: none; }
     const periodMs = forcePeriodMs || netPeriod ||
       parseInt($('periodSel').value, 10) || CFG.defaultPeriodMs;
     let destLabel = '';
-    if (target === 'table') {
-      const r = addToTable(p.addr, periodMs);
+    if (target === 'newtable' || target.startsWith('table:')) {
+      const tbl = target === 'newtable'
+        ? createTable(state.active, {})
+        : (state.active.tables.find((t) => 'table:' + t.id === target) ||
+           defaultTable(state.active));
+      const r = addToTable(tbl, p.addr, periodMs);
       if (!r.ok) { toast(r.error, 'err'); return false; }
-      destLabel = 'Tableau numérique';
+      if (target === 'newtable') $('targetSel').value = 'table:' + tbl.id;
+      destLabel = tbl.name;
     } else {
       let chart = null;
       if (target === 'new') {
@@ -6779,8 +6953,8 @@ body.cfg-hidden .tabActions { display: none; }
       return false;
     }
     // Rendre la variable visible pour que l'effet du forçage se voie.
-    if (!inTable(state.active, p.addr) && !chartsHave(state.active, p.addr)) {
-      addToTable(p.addr, undefined);
+    if (!inAnyTable(state.active, p.addr) && !chartsHave(state.active, p.addr)) {
+      addToTable(defaultTable(state.active), p.addr, undefined);
     }
     const shown = p.kind === 'bit' ? (value >= 0.5 ? '1' : '0') : DW.fmtVal(value, { kind: p.kind });
     Promise.resolve(DW.source.write(p.addr, value)).then((res) => {
@@ -6933,18 +7107,30 @@ body.cfg-hidden .tabActions { display: none; }
   }
 
   // ---------- Sérialisation -------------------------------------------
-  function serializeTable(tab) {
-    return tab.table.map((e) => ({ addr: e.addr, periodMs: e.periodMs, name: e.name }));
+  function serializeTable(tbl) {
+    return tbl.entries.map((e) => ({ addr: e.addr, periodMs: e.periodMs, name: e.name }));
   }
 
+  /** Rang d'une carte dans la grille : c'est lui qui fait l'alternance. */
+  function gridPos(tab, el) {
+    return [...tab.chartsGridEl.children].indexOf(el);
+  }
+
+  /**
+   * Format v2 : PLUSIEURS tableaux, chacun avec son nom, sa taille et son rang
+   * dans la grille. Le format v1 (un seul tableau, champs « table », « tableH »,
+   * « tableCols », « tableAfter ») reste lu — voir applyConfigToActive.
+   */
   function serializeConfig(tab) {
     return {
-      version: 1,
-      table: serializeTable(tab),
-      tableH: tab.tableH || undefined,
-      tableCols: tab.tableCols || undefined,
-      tableAfter: tab.tableAfter || undefined,
-      charts: tab.charts.map((c) => c.serialize()),
+      version: 2,
+      tables: tab.tables.map((t) => ({
+        name: t.name, h: t.h || undefined, cols: t.cols || undefined,
+        pos: gridPos(tab, t.cardEl),
+        entries: serializeTable(t),
+      })),
+      charts: tab.charts.map((c) => Object.assign(c.serialize(),
+        { pos: gridPos(tab, c.root) })),
     };
   }
 
@@ -6996,29 +7182,12 @@ body.cfg-hidden .tabActions { display: none; }
     onChange();
   }
 
-  /**
-   * Range la carte du tableau dans la grille : `tab.tableAfter` est le nombre
-   * de graphiques placés AVANT lui (0 = en tête, comme avant l'existence de ce
-   * réglage). C'est ce qui permet d'avoir un graphique à sa gauche.
-   */
-  function applyTablePlace(tab) {
-    const grid = tab.chartsGridEl, card = tab.tableCardEl;
-    if (!grid || !card) return;
-    const cartes = [...grid.children].filter((el) => el !== card);
-    const n = Math.max(0, Math.min(cartes.length, tab.tableAfter || 0));
-    if (n >= cartes.length) grid.appendChild(card);
-    else grid.insertBefore(card, cartes[n]);
-  }
-
-  /** Dépose la carte du tableau avant ou après une autre carte de la grille. */
-  function placeTable(tab, place) {
+  /** Dépose la carte d'un tableau avant ou après une autre carte de la grille. */
+  function placeTable(tbl, place) {
     const anchor = place.anchorEl;
-    const card = tab.tableCardEl;
-    if (!anchor || anchor === card || !tab.chartsGridEl.contains(anchor)) return;
+    const card = tbl.cardEl;
+    if (!anchor || anchor === card || !tbl.tab.chartsGridEl.contains(anchor)) return;
     if (place.after) anchor.after(card); else anchor.before(card);
-    // Tous les autres enfants de la grille sont des graphiques : ceux qui
-    // précèdent la carte donnent directement son rang.
-    tab.tableAfter = [...tab.chartsGridEl.children].indexOf(card) || undefined;
     onChange();
   }
 
@@ -7030,25 +7199,6 @@ body.cfg-hidden .tabActions { display: none; }
     const copy = addChartFromConfig(cfg, tab, { anchorEl: chart.root, after: true });
     if (copy) toast('« ' + cfg.title +' » créé.');
     return copy;
-  }
-
-  /** Ajoute des variables au tableau de `tab` ; renvoie le nombre ajouté. */
-  function addVarsToTab(list, tab) {
-    const target = tab || state.active;
-    let n = 0;
-    for (const entry of list || []) {
-      const addr = typeof entry === 'string' ? entry : entry.addr;
-      const periodMs = typeof entry === 'string' ? undefined : entry.periodMs;
-      const name = typeof entry === 'string' ? undefined : entry.name;
-      const p = DW.parseAddr(addr);
-      if (!p.ok || inTable(target, p.addr)) continue;
-      const meta = appApi.acquire(p.addr, periodMs);
-      if (!meta) continue;
-      target.table.push({ addr: p.addr, meta, periodMs: periodMs || undefined, name: name || undefined });
-      n++;
-    }
-    if (n) renderTable(target);
-    return n;
   }
 
   function moveChartToTab(chart, tab) {
@@ -7073,8 +7223,8 @@ body.cfg-hidden .tabActions { display: none; }
     // grille (un graphique passe alors à sa gauche ou à sa droite), surtout
     // pas un déplacement de ses variables.
     if (o.kind === 'table' && sameWindow && place && o.tabId === target.id) {
-      placeTable(target, place);
-      return 'reordered';
+      const tbl = target.tables.find((t) => t.id === o.tableId);
+      if (tbl) { placeTable(tbl, place); return 'reordered'; }
     }
     if (o.kind === 'chart' && o.chart) {
       // Graphique déjà présent dans cet onglet : simple réorganisation
@@ -7086,9 +7236,29 @@ body.cfg-hidden .tabActions { display: none; }
         }
       }
       if (!addChartFromConfig(o.chart, target, place)) return false;
-    } else if ((o.kind === 'table' || o.kind === 'vars') && o.table) {
-      const n = addVarsToTab(o.table, target);
-      if (!n) { toast('Ces variables sont déjà présentes dans « ' + target.name + ' ».', 'err'); return false; }
+    } else if (o.kind === 'table' && o.table) {
+      // Un tableau déposé ailleurs arrive comme un NOUVEAU tableau : c'est le
+      // regroupement qui fait sens, pas la fusion avec un tableau existant.
+      const tbl = createTable(target, { name: o.title });
+      let n = 0;
+      for (const e of o.table) {
+        const p = DW.parseAddr(e.addr);
+        if (p.ok && addToTable(tbl, p.addr, e.periodMs, e.name).ok) n++;
+      }
+      if (!n) { removeTable(tbl); toast('Ces variables sont déjà présentes.', 'err'); return false; }
+      if (place) placeTable(tbl, place);
+    } else if (o.kind === 'vars' && o.table) {
+      // Variable seule : elle va dans le tableau visé s'il y en a un sous le
+      // curseur, sinon dans le premier de l'onglet.
+      const vise = place && place.anchorEl &&
+        target.tables.find((t) => t.cardEl === place.anchorEl);
+      const tbl = vise || defaultTable(target);
+      let n = 0;
+      for (const e of o.table) {
+        const p = DW.parseAddr(e.addr);
+        if (p.ok && addToTable(tbl, p.addr, e.periodMs, e.name).ok) n++;
+      }
+      if (!n) { toast('Ces variables sont déjà présentes dans « ' + tbl.name + ' ».', 'err'); return false; }
     } else {
       return false;
     }
@@ -7114,22 +7284,46 @@ body.cfg-hidden .tabActions { display: none; }
   function applyConfigToActive(data) {
     const tab = state.active;
     clearTab(tab);
-    tab.tableH = (data && isFinite(data.tableH) && data.tableH > 0) ? data.tableH : undefined;
-    tab.tableCols = (data && isFinite(data.tableCols) && data.tableCols > 0)
-      ? Math.min(8, Math.round(data.tableCols)) : undefined;
-    // Rang du tableau dans la grille : nombre de graphiques placés AVANT lui
-    // (0 = en tête, comme avant l'existence de ce réglage).
-    tab.tableAfter = (data && isFinite(data.tableAfter) && data.tableAfter > 0)
-      ? Math.round(data.tableAfter) : undefined;
-    applyTableSize(tab);
-    for (const entry of data.table || []) {
-      // Rétro-compatibilité : entrée sous forme de chaîne (format initial)
-      const addr = typeof entry === 'string' ? entry : entry.addr;
-      const periodMs = typeof entry === 'string' ? undefined : entry.periodMs;
-      const name = typeof entry === 'string' ? undefined : entry.name;
-      const p = DW.parseAddr(addr);
-      if (p.ok) addToTable(p.addr, periodMs, name);
+    data = data || {};
+
+    // Format v1 : un seul tableau, décrit par « table » et ses trois réglages.
+    // Il est traduit en v2 plutôt que traité à part : une seule route dans le
+    // code, et les dispositions enregistrées avant cette version s'ouvrent à
+    // l'identique.
+    let tables;
+    if (Array.isArray(data.tables)) {
+      tables = data.tables;
+    } else {
+      // v1 : un seul tableau. Sans variable, on n'en crée aucun — une carte
+      // vide surgie d'une ancienne disposition n'aurait aucun sens.
+      const anciennes = data.table || [];
+      tables = anciennes.length ? [{
+        name: 'Valeurs numériques',
+        h: data.tableH, cols: data.tableCols, pos: data.tableAfter || 0,
+        entries: anciennes,
+      }] : [];
     }
+
+    const cartes = [];        // {pos, el} — l'ordre final dans la grille
+    for (const t of tables) {
+      if (!t) continue;
+      const tbl = createTable(tab, {
+        name: t.name,
+        h: (isFinite(t.h) && t.h > 0) ? t.h : undefined,
+        cols: (isFinite(t.cols) && t.cols > 0) ? Math.min(8, Math.round(t.cols)) : undefined,
+      });
+      for (const entry of t.entries || []) {
+        // Rétro-compatibilité : entrée sous forme de chaîne (format initial)
+        const addr = typeof entry === 'string' ? entry : entry.addr;
+        const periodMs = typeof entry === 'string' ? undefined : entry.periodMs;
+        const name = typeof entry === 'string' ? undefined : entry.name;
+        const p = DW.parseAddr(addr);
+        if (p.ok) addToTable(tbl, p.addr, periodMs, name);
+      }
+      applyTableSize(tbl);
+      cartes.push({ pos: isFinite(t.pos) ? t.pos : cartes.length, el: tbl.cardEl });
+    }
+
     for (const c of data.charts || []) {
       const chart = createChart({
         title: c.title, windowS: c.windowS, heightMode: c.heightMode,
@@ -7146,8 +7340,14 @@ body.cfg-hidden .tabActions { display: none; }
           });
         }
       }
+      cartes.push({ pos: isFinite(c.pos) ? c.pos : cartes.length, el: chart.root });
     }
-    applyTablePlace(tab);      // rang du tableau parmi les graphiques
+
+    // Rangement final : c'est lui qui restitue l'alternance voulue —
+    // tableau, graphique, tableau, graphique.
+    cartes.sort((a, b) => a.pos - b.pos);
+    for (const c of cartes) tab.chartsGridEl.appendChild(c.el);
+
     refreshTargets();
     updateEmptyState();
     onChange();
@@ -7156,7 +7356,7 @@ body.cfg-hidden .tabActions { display: none; }
   // ---------- Journalisation des données ------------------------------
   function tabAddrs(tab) {
     const set = new Set();
-    for (const e of tab.table) set.add(e.addr);
+    for (const tbl of tab.tables) for (const e of tbl.entries) set.add(e.addr);
     for (const c of tab.charts) for (const s of c.series) set.add(s.addr);
     return set;
   }
@@ -7188,7 +7388,8 @@ body.cfg-hidden .tabActions { display: none; }
       return;
     }
     const addrs = [...tabAddrs(tab)].map((addr) => {
-      const src = tab.table.find((e) => e.addr === addr);
+      let src = null;
+      for (const tbl of tab.tables) src = src || tbl.entries.find((e) => e.addr === addr);
       let periodMs = src && src.periodMs;
       for (const c of tab.charts) for (const s of c.series) if (s.addr === addr && s.periodMs) {
         periodMs = periodMs ? Math.min(periodMs, s.periodMs) : s.periodMs;
@@ -7435,7 +7636,7 @@ body.cfg-hidden .tabActions { display: none; }
   // ---------- État vide ------------------------------------------------
   function updateEmptyState() {
     const tab = state.active;
-    const empty = !tab || (tab.table.length === 0 && tab.charts.length === 0);
+    const empty = !tab || (tab.tables.every((t) => !t.entries.length) && tab.charts.length === 0);
     $('emptyState').classList.toggle('hide', !empty);
   }
 
@@ -7794,7 +7995,7 @@ body.cfg-hidden .tabActions { display: none; }
   function openVarPicker(dest) {
     const root = $('modalRoot');
     root.innerHTML = '';
-    const nom = dest.kind === 'table' ? 'Tableau numérique' : dest.chart.title;
+    const nom = dest.kind === 'table' ? dest.table.name : dest.chart.title;
     const back = document.createElement('div');
     back.className = 'modal-back';
     back.innerHTML =
@@ -7833,7 +8034,7 @@ body.cfg-hidden .tabActions { display: none; }
     let filtre = 'all';
 
     const dejaLa = (addr) => (dest.kind === 'table'
-      ? inTable(dest.tab, addr)
+      ? inTable(dest.table, addr)
       : dest.chart.series.some((s) => s.addr === addr));
 
     const majCompte = () => {
@@ -7919,7 +8120,7 @@ body.cfg-hidden .tabActions { display: none; }
       for (const addr of choix) {
         const net = DW.protocols ? DW.protocols.periodOf(addr) : null;
         const r = dest.kind === 'table'
-          ? addToTable(addr, net || periodMs)
+          ? addToTable(dest.table, addr, net || periodMs)
           : dest.chart.addSeries(addr, { periodMs: net || periodMs });
         if (r && r.ok) ok++; else refus.push(addr + ' : ' + ((r && r.error) || 'refusée'));
       }
@@ -8009,6 +8210,12 @@ body.cfg-hidden .tabActions { display: none; }
     });
 
     $('addBtn').addEventListener('click', () => addVariable());
+    $('addTableBtn').addEventListener('click', () => {
+      const tbl = createTable(state.active, {});
+      $('targetSel').value = 'table:' + tbl.id;
+      onChange();
+      toast('Tableau « ' + tbl.name + ' » créé — il est la destination d’ajout.');
+    });
     $('addChartBtn').addEventListener('click', () => {
       const c = createChart();
       if (c) {
@@ -8082,7 +8289,8 @@ body.cfg-hidden .tabActions { display: none; }
           L([
             ['Poignée ⠿', 'Glisser un graphique ou le tableau vers un onglet, une autre fenêtre, ou sur un autre graphique pour le ranger.'],
             ['Ligne du tableau', 'Se glisse <b>dans le tableau</b> pour changer son rang (un repère montre où elle se posera), ou vers un autre onglet ou une autre fenêtre.'],
-            ['Poignée ◢ (coin bas-droit)', 'Redimensionner une carte à la souris : ↕ hauteur libre, ↔ largeur en nombre de colonnes. Le <b>tableau numérique</b> se règle de la même façon : le réduire en largeur laisse la place à un graphique <b>à côté</b> (glisser sa poignée ⠿ sur une carte le range à gauche ou à droite). Double-clic pour revenir à la taille automatique.'],
+            ['Plusieurs tableaux', '<b>+ Tableau</b> crée un tableau de plus dans l’onglet. Un tableau est une carte comme un graphique : on peut donc alterner <b>tableau, graphique, tableau, graphique</b>, en glissant leur poignée ⠿ sur une autre carte pour les ranger. Chaque tableau a son nom (cliquez-le), son bouton ＋ et son menu ⋮.'],
+            ['Poignée ◢ (coin bas-droit)', 'Redimensionner une carte à la souris : ↕ hauteur libre (<b>vers le bas pour agrandir</b>, vers le haut pour réduire, avec défilement interne), ↔ largeur en nombre de colonnes. Le réduire en largeur laisse la place à une autre carte <b>à côté</b>. Double-clic pour revenir à la taille automatique.'],
             ['Renommer', 'Bouton ✎ sur une ligne du tableau, ou « Renommer la courbe… » dans le menu d’une pastille : un nom d’affichage remplace le libellé du catalogue (vide = valeur d’origine). Le nom appartient à la <b>variable</b> : il s’applique partout où elle figure — tous les tableaux, toutes les courbes, tous les onglets, et les autres fenêtres ouvertes.'],
             ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
