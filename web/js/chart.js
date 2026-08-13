@@ -1167,11 +1167,13 @@
         for (const s of g.series) this._axisBadge[s.addr] = tag;
       });
 
+      // Toutes les règles du MÊME côté, à gauche : en alternant gauche et
+      // droite, lire une valeur demandait de chercher de quel bord venait
+      // l'échelle de la courbe qu'on suit. Empilées à gauche, elles se lisent
+      // dans l'ordre des badges Én, et le tracé garde toute la droite.
       const shown = groups.slice(0, maxShown);
-      const leftAxes = shown.filter((_, i) => i % 2 === 0);
-      const rightAxes = shown.filter((_, i) => i % 2 === 1);
-      const mL = 8 + (leftAxes.length ? leftAxes.length * axisW : 26);
-      const mR = 8 + rightAxes.length * axisW;
+      const mL = 8 + (shown.length ? shown.length * axisW : 26);
+      const mR = 8;
       const mT = 18, mB = 22;
       const pw = Math.max(10, cw - mL - mR), ph = Math.max(10, chh - mT - mB);
       this._plot = {
@@ -1181,12 +1183,11 @@
       const X = (t) => mL + ((t - tStart) / this.windowS) * pw;
       const yOf = (g) => (v) => mT + ph * (1 - (v - g.min) / (g.max - g.min));
 
-      // Zones des règles (hit-test des gestes d'axe)
+      // Zones des règles (hit-test des gestes d'axe) : la première règle est
+      // collée au tracé, les suivantes s'empilent vers le bord gauche.
       this._bands = shown.map((g, i) => {
-        const side = i % 2 === 0 ? 'L' : 'R';
-        const slot = Math.floor(i / 2);
-        const x0 = side === 'L' ? mL - (slot + 1) * axisW : cw - mR + slot * axisW;
-        return { key: g.key, x0: Math.max(0, x0), x1: x0 + axisW, side };
+        const x0 = mL - (i + 1) * axisW;
+        return { key: g.key, x0: Math.max(0, x0), x1: x0 + axisW, side: 'L' };
       });
 
       this._yFns = {};
@@ -1230,20 +1231,18 @@
         }
       }
 
-      // Règles d'axes
+      // Règles d'axes, toutes à gauche
       shown.forEach((g, i) => {
-        const side = i % 2 === 0 ? 'L' : 'R';
-        const slot = Math.floor(i / 2);
-        const xr = side === 'L' ? mL - slot * axisW : cw - mR + slot * axisW;
+        const xr = mL - i * axisW;
         const yG = yOf(g);
         ctx.strokeStyle = g.color; ctx.globalAlpha = 0.55; ctx.lineWidth = 1;
-        const xl = Math.round(xr) + (side === 'L' ? -0.5 : 0.5);
+        const xl = Math.round(xr) - 0.5;
         ctx.beginPath(); ctx.moveTo(xl, mT); ctx.lineTo(xl, mT + ph); ctx.stroke();
         ctx.globalAlpha = 1;
         ctx.fillStyle = g.color;
-        ctx.textAlign = side === 'L' ? 'right' : 'left';
+        ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
-        const tx = side === 'L' ? xr - 4 : xr + 4;
+        const tx = xr - 4;
         for (const v of g.ticks) {
           const y = yG(v);
           if (y < mT - 2 || y > mT + ph + 2) continue;

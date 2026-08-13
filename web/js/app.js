@@ -2249,7 +2249,7 @@
             ['Menu ⋮ d’un graphique', 'Dupliquer, échelles automatiques, taille de départ, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
             ['Menu ⋮ d’un tableau', 'Les mêmes gestes : ajouter des variables, vider, taille de départ, <b>dupliquer ce tableau</b>, <b>déplacer vers un onglet</b>, <b>ouvrir dans une nouvelle fenêtre</b>, fermer.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
-            ['Barre du haut', 'Elle ne porte que ce qui sert à chaque instant : les onglets, la saisie d’une variable avec sa destination, et <b>⏸ Figer</b>, qui arrête d’un coup tous les graphiques de l’onglet actif. <b>Journal de données</b> et <b>Configurations</b> sont dans le menu ☰, avec les autres fonctions qui ne dépendent pas de ce qui est affiché.'],
+            ['Barre du haut', 'Elle ne porte que ce qui sert à chaque instant : les onglets, la saisie d’une variable avec sa destination, et <b>⏸ Figer</b>, qui arrête d’un coup tous les graphiques de l’onglet actif. Elle <b>s’escamote quand on descend</b> dans la page et revient dès qu’on remonte : la place gagnée va aux courbes. <b>Journal de données</b> et <b>Configurations</b> sont dans le menu ☰, avec les autres fonctions qui ne dépendent pas de ce qui est affiché.'],
           ]) +
           S('Pages réseau (☰)') +
           L([
@@ -2275,7 +2275,7 @@
           L([
             ['Pastille de légende', 'Couleur (palette ou teinte libre), masquer, échelle dédiée, décalage vertical, retrait.'],
             ['Badge Én', 'Numéro de l’échelle utilisée ; 🔒 signale un réglage manuel.'],
-            ['Échelles verticales', 'Clic sur une <b>règle d’axe</b> (les graduations, curseur ↕) : saisir le minimum et le maximum exacts, pour cette échelle seule ou pour <b>toutes</b> celles du graphique. Glisser ou molette sur la règle : réglage à la volée ; double-clic : retour à l’automatique. Même réglage depuis le menu d’une pastille (« Bornes de l’échelle… »).'],
+            ['Échelles verticales', 'Toutes les règles sont <b>à gauche</b>, empilées dans l’ordre des badges Én : on lit une valeur sans chercher de quel bord vient son échelle. Clic sur une <b>règle d’axe</b> (les graduations, curseur ↕) : saisir le minimum et le maximum exacts, pour cette échelle seule ou pour <b>toutes</b> celles du graphique. Glisser ou molette sur la règle : réglage à la volée ; double-clic : retour à l’automatique. Même réglage depuis le menu d’une pastille (« Bornes de l’échelle… »).'],
           ]) +
         '</div>';
       back.querySelector('.m-close').addEventListener('click', () => { root.innerHTML = ''; });
@@ -2305,22 +2305,33 @@
       root.appendChild(back);
     });
 
-    // Repli de la zone de configuration : recherche + actions d'onglet (mémorisé)
-    const CFG_HIDDEN_KEY = 'diagweb.cfghidden.v1';
-    function setCfgHidden(hidden) {
-      document.body.classList.toggle('cfg-hidden', hidden);
-      const b = $('cfgToggle');
-      b.textContent = hidden ? '⌄' : '⌃';
-      b.title = hidden ? 'Afficher la zone de configuration' : 'Masquer la zone de configuration';
-      if (!hidden) return;
-      hideSuggest();
-    }
-    $('cfgToggle').addEventListener('click', () => {
-      const hidden = !document.body.classList.contains('cfg-hidden');
-      setCfgHidden(hidden);
-      try { window.localStorage.setItem(CFG_HIDDEN_KEY, hidden ? '1' : '0'); } catch (e) { /* stockage indisponible */ }
-    });
-    try { setCfgHidden(window.localStorage.getItem(CFG_HIDDEN_KEY) === '1'); } catch (e) { /* stockage indisponible */ }
+    // Barre du haut escamotable au défilement : sur un écran de supervision,
+    // la place gagnée va aux courbes. Elle revient dès qu'on remonte — le
+    // geste qu'on fait déjà pour chercher un réglage — et dès que la page est
+    // en haut, pour ne jamais rester introuvable. Un seuil de 8 px évite
+    // qu'un tremblement de molette la fasse clignoter.
+    let dernierY = 0;
+    let barreArmee = false;
+    const SEUIL = 8;
+    const suivreDefilement = () => {
+      barreArmee = false;
+      const y = Math.max(0, window.scrollY || window.pageYOffset || 0);
+      const haut = $('panes').getBoundingClientRect().height > window.innerHeight;
+      if (!haut) { document.body.classList.remove('topbar-off'); dernierY = y; return; }
+      const d = y - dernierY;
+      if (Math.abs(d) < SEUIL) return;
+      // Un menu ou une fenêtre ouverte garde la barre : la masquer sous le
+      // doigt de l'utilisateur serait une disparition inexpliquée.
+      const occupe = !$('menuPanel').classList.contains('hide') ||
+                     $('modalRoot').children.length > 0;
+      document.body.classList.toggle('topbar-off', d > 0 && y > 60 && !occupe);
+      dernierY = y;
+    };
+    window.addEventListener('scroll', () => {
+      if (barreArmee) return;
+      barreArmee = true;
+      requestAnimationFrame(suivreDefilement);
+    }, { passive: true });
 
     $('themeBtn').addEventListener('click', () => {
       const cur = document.documentElement.getAttribute('data-theme');

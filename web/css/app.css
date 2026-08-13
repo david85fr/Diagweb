@@ -69,8 +69,13 @@ button { font-family: var(--sans); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ---------- Barre supérieure ---------- */
+/* Elle s'escamote quand on descend et revient dès qu'on remonte : sur un écran
+   de supervision, la place gagnée va aux courbes, et le geste pour retrouver
+   la barre est celui qu'on fait déjà (remonter). Elle réapparaît aussi dès que
+   la page est en haut, pour ne jamais rester introuvable. */
 .topbar {
   position: sticky; top: 0; z-index: 40;
+  transition: transform .18s ease, opacity .18s ease;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
@@ -985,9 +990,8 @@ body.dnd-over-pane #panes {
     gap: 12px;
   }
   .searchrow .searchbox { grid-column: auto; }
-  body.cfg-hidden .topbar { grid-template-columns: minmax(180px, 1fr) auto; grid-template-areas: "tabs icons"; }
 }
-body.cfg-hidden .searchrow { display: none; }
+body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-events: none; }
 /* Grands écrans : les colonnes s'élargissent d'elles-mêmes (elles sont
    fractionnaires) ; seules les rangées gagnent en hauteur, pour que la même
    disposition ne s'écrase pas verticalement sur un 32 pouces. */

@@ -219,6 +219,10 @@ partagée par les deux natures de tuile.
   ⋮ → « Taille de départ » pour y revenir. Le tracé **remplit** la tuile : la
   hauteur tirée se voit sur le tracé, pas seulement sur la carte. **Plein
   écran** par graphique (menu ⋮, sortie par Échap ou le menu).
+- **Toutes les règles d'axes sont à gauche**, empilées dans l'ordre des badges
+  `Én`, la première collée au tracé. En alternant gauche et droite, lire une
+  valeur demandait de chercher de quel bord venait l'échelle de la courbe
+  suivie ; le tracé garde en outre toute la largeur à droite.
 - Sur canvas étroit (< 520 px) : règles d'axes compactes (38 px), 2 règles
   visibles au maximum (les groupes suivants gardent leur mise à l'échelle,
   badge « É· ») ; ≥ 1100 px : règles de 50 px, police 11 px.
@@ -572,6 +576,11 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
   graphique se fait dans la liste des destinations (§2), et les fonctions qui
   ne dépendent pas de ce qui est affiché sont dans le menu ☰. La barre du haut
   ne porte que ce qui sert à chaque instant.
+- **Barre escamotable** : elle disparaît dès qu'on descend dans la page et
+  revient dès qu'on remonte — la place gagnée va aux courbes, et le geste pour
+  la retrouver est celui qu'on fait déjà. Elle réapparaît aussi dès que la page
+  est en haut, et ne s'escamote jamais tant qu'un menu ou une fenêtre est
+  ouvert. Le bouton de masquage manuel a donc disparu.
 - **Carte visée** : un clic sur un tableau ou un graphique (hors ses boutons,
   champs et poignées) en fait la **destination d'ajout** de la barre du haut ;
   elle se signale par un liseré. Avec plusieurs cartes à l'écran, « Ajouter »
