@@ -60,6 +60,13 @@ meson setup build-arm --cross-file <sdk>/croix-controleur.ini
 | GET | `/api/protocols/status` | état courant des liens réseau |
 | POST | `/api/protocols/test` | test de connexion d'un lien |
 | GET/PUT | `/api/appearance` | logo et couleurs de l'installation, partagés par tous les postes (512 ko au plus ; un logo doit être une image incorporée `data:image/…`) |
+| GET | `/api/interfaces` | inventaire des interfaces (Ethernet, CAN, boucle) |
+| GET | `/api/audit` | audit des communications : sockets ouvertes, liens déclarés, interfaces |
+| GET/PUT | `/api/lldp` | voisinage LLDP et délai d'oubli (600 s par défaut) |
+| GET | `/api/capture` | état des captures, quota, déclencheur |
+| POST | `/api/capture/start\|stop\|delete` | pilotage d'une capture |
+| PUT | `/api/capture/config` | quota de disque et déclenchement par variable |
+| GET | `/api/capture/file?name=` | télécharge un fichier pcap |
 | GET | `/api/layouts` | configurations enregistrées |
 | GET/PUT | `/api/layouts/<nom>` | lecture / enregistrement d'une configuration |
 | GET | `/api/datalog` | état des campagnes de journalisation |

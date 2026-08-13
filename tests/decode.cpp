@@ -22,6 +22,7 @@
 #include "drivers/iec104/iec104.hpp"
 #include "drivers/iec61850/sv.hpp"
 #include "drivers/snmp/dateandtime.hpp"
+#include "lldp.hpp"
 #include "drivers/iec61850/time61850.hpp"
 #include "protocol.hpp"
 
@@ -601,6 +602,57 @@ int main() {
           time_ticks_utc(1000, 0, 1710513050.0) == 0);
     check("TimeTicks postérieur au sysUpTime refusé",
           time_ticks_utc(2000, 1500, 1710513050.0) == 0);
+  }
+
+  // ---- voisinage LLDP ---------------------------------------------------
+  {
+    // Une annonce complète, telle qu'un commutateur industriel l'émet.
+    std::vector<uint8_t> t;
+    auto put = [&](std::initializer_list<uint8_t> o) { for (uint8_t b : o) t.push_back(b); };
+    auto tlv = [&](uint8_t type, const std::vector<uint8_t>& v) {
+      const uint16_t e = static_cast<uint16_t>((type << 9) | v.size());
+      t.push_back(static_cast<uint8_t>(e >> 8));
+      t.push_back(static_cast<uint8_t>(e & 0xFF));
+      for (uint8_t b : v) t.push_back(b);
+    };
+    auto txt = [](const char* s2) {
+      return std::vector<uint8_t>(s2, s2 + std::strlen(s2));
+    };
+    put({0x01, 0x80, 0xC2, 0x00, 0x00, 0x0E});          // destination LLDP
+    put({0x00, 0x11, 0x22, 0x33, 0x44, 0x55});          // source
+    put({0x88, 0xCC});                                   // EtherType
+    tlv(1, {0x04, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55});  // châssis : MAC
+    tlv(2, {0x05, 'G', 'i', '1', '/', '7'});             // port : nom
+    tlv(3, {0x00, 0x78});                                // TTL 120 s
+    tlv(5, txt("sw-atelier-01"));                        // nom système
+    tlv(7, {0x00, 0x14, 0x00, 0x04});                    // capacités : pont activé
+    tlv(8, {0x05, 0x01, 10, 20, 30, 40, 0x02, 0, 0, 0, 1, 0});   // administration
+    tlv(127, {0x00, 0x80, 0xC2, 0x01, 0x00, 0x2A});      // VLAN natif 42
+    tlv(0, {});
+
+    LldpNeighbor v;
+    const bool ok = lldp_decode("eth0", t.data(), t.size(), v);
+    check("LLDP : annonce décodée", ok);
+    check("LLDP : châssis (MAC) et port", v.chassis == "00:11:22:33:44:55" && v.port == "Gi1/7",
+          v.chassis + " / " + v.port);
+    check("LLDP : nom système et TTL", v.sys_name == "sw-atelier-01" && v.ttl == 120,
+          v.sys_name + " / " + std::to_string(v.ttl));
+    check("LLDP : adresse d'administration", v.mgmt_ip == "10.20.30.40", v.mgmt_ip);
+    // Le bit 0 des capacités est « autre » : un décalage d'un rang ferait
+    // passer un pont pour un point d'accès.
+    check("LLDP : capacités activées", v.caps == "pont", v.caps);
+    check("LLDP : VLAN natif (extension 802.1)", v.vlan == "42", v.vlan);
+
+    // Trame tronquée en plein TLV : le décodage s'arrête sans lire hors du
+    // tampon, et rend ce qu'il a compris jusque-là.
+    LldpNeighbor court;
+    check("LLDP : trame tronquée sans débordement",
+          lldp_decode("eth0", t.data(), 30, court) || court.chassis.empty());
+    LldpNeighbor autre;
+    std::vector<uint8_t> pas_lldp = t;
+    pas_lldp[12] = 0x08; pas_lldp[13] = 0x00;            // IPv4, pas LLDP
+    check("LLDP : trame non LLDP ignorée",
+          !lldp_decode("eth0", pas_lldp.data(), pas_lldp.size(), autre));
   }
 
   // ---- adresses « @lien.point » ----------------------------------------

@@ -30,7 +30,9 @@
         <button id="helpBtn" type="button" title="Récapitulatif des commandes et des gestes (utile sur écran tactile, où les infobulles n’apparaissent pas)">Aide — commandes et gestes…</button>
         <button id="netBtn" type="button" title="Liens réseau : déclarer des équipements Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen, SNMP ou OPC UA et choisir les variables à lire">Liens réseau…</button>
         <button id="aboutBtn" type="button" title="Version affichée, mode de fonctionnement et source de données">À propos de Diagweb…</button>
-        <button type="button" disabled title="Fonction globale prévue : capture des interfaces réseau du contrôleur">Capture d’interfaces réseau (à venir)</button>
+        <button id="auditBtn" type="button" title="Audit des communications : tout ce que le processus échange avec l’extérieur — sockets réellement ouvertes, liens déclarés, interfaces — pour un audit de sécurité ou un architecte réseau">Audit des communications…</button>
+        <button id="captureBtn" type="button" title="Capture des trames sur les interfaces du contrôleur (Ethernet et CAN) au format pcap, avec quota de disque, durée et déclenchement par une variable">Capture d’interfaces réseau…</button>
+        <button id="lldpBtn" type="button" title="Voisinage LLDP : ce que les équipements voisins annoncent sur chaque interface — produit, port, adresse d’administration, VLAN">Voisinage réseau (LLDP)…</button>
         <button type="button" disabled title="Fonction globale prévue : historique des versions de l’application">Notes de version (à venir)</button>
       </div>
     </div>
@@ -91,6 +93,7 @@
 <script src="js/store.js"></script>
 <script src="js/dnd.js"></script>
 <script src="js/appearance.js"></script>
+<script src="js/network.js"></script>
 <script src="js/protocols-ui.js"></script>
 <script src="js/app.js"></script>
 </body>

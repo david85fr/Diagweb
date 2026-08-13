@@ -990,3 +990,67 @@ body.cfg-hidden .tabActions { display: none; }
 .help-list dt { color: var(--muted); font-weight: 600; }
 .help-list dd { margin: 0; color: var(--ink); }
 .help-list b { font-family: var(--mono); font-size: 12px; }
+
+/* ---------- Pages réseau (audit, capture, voisinage LLDP) ---------- */
+/* Vues de diagnostic du contrôleur, ouvertes par-dessus l'espace de travail
+   qui continue de tourner derrière : elles occupent la page, sans la
+   remplacer. */
+.page-back { align-items: flex-start; }
+.modal.page { max-width: 1180px; max-height: 92vh; display: flex; flex-direction: column; }
+.page-body { overflow-y: auto; padding-right: 4px; }
+.page-vide { color: var(--muted); font-size: 13px; margin: 8px 0; }
+.net-sec { padding: 12px 0; border-top: 1px solid var(--line); }
+.net-sec:first-child { border-top: 0; }
+.net-sec h4 { margin: 0 0 8px; font-size: 12.5px; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--muted); }
+.net-tab { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.net-tab th {
+  text-align: left; font-weight: 600; color: var(--muted);
+  padding: 4px 8px; border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+.net-tab td { padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.net-tab tr:last-child td { border-bottom: 0; }
+.net-tab td:first-child { font-family: var(--mono); }
+.net-list { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--ink); }
+.net-list li { margin-bottom: 4px; }
+.net-msg { align-self: center; font-size: 12px; color: var(--muted); }
+
+/* Capture */
+.cap-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.cap-row label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.cap-row label.pop-check { display: flex; align-items: center; gap: 6px; }
+.cap-row select, .cap-row input {
+  font: inherit; font-size: 13px; color: var(--ink);
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 8px;
+}
+.cap-row .cap-wide { flex: 1; min-width: 180px; }
+.cap-jauge {
+  height: 6px; border-radius: 3px; overflow: hidden;
+  background: var(--panel-2); border: 1px solid var(--line); margin: 6px 0 10px;
+}
+.cap-jauge i { display: block; height: 100%; background: var(--accent); }
+.cap-etat { font-weight: 600; }
+.cap-on { color: var(--good); }
+.cap-ko { color: var(--crit); }
+.cap-fin { color: var(--muted); }
+.cap-detail { color: var(--faint); }
+
+/* Voisinage LLDP */
+.lldp-if { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--faint); }
+.lldp-to { font-size: 12.5px; color: var(--ink); display: flex; align-items: center; gap: 6px; }
+.lldp-to select {
+  font: inherit; color: var(--ink); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px;
+}
+.lldp-card {
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 8px;
+}
+.lldp-name { font-weight: 640; font-size: 13.5px; margin-bottom: 6px; }
+.lldp-grid { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 12.5px; }
+.lldp-k { color: var(--muted); white-space: nowrap; }
+.lldp-v { color: var(--ink); overflow-wrap: anywhere; }
+@media (min-width: 900px) {
+  .lldp-grid { grid-template-columns: auto 1fr auto 1fr; }
+}

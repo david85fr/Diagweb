@@ -578,6 +578,68 @@ contrôleur.
   n'est pas une image incorporée est **refusé** — sans quoi la configuration
   deviendrait un moyen de faire appeler un hôte tiers par toutes les pages.
 
+## 8 ter. Pages réseau (audit, capture, voisinage)
+
+Trois vues de diagnostic du **contrôleur**, ouvertes depuis le menu ☰ par-dessus
+l'espace de travail — qui continue de tourner derrière. Elles sont servies par
+le serveur de diagnostic et n'existent pas hors de lui : une page ouverte en
+fichier local le dit franchement, plutôt que d'afficher un tableau vide qui se
+lirait « rien à signaler ».
+
+### Audit des communications
+
+Répond à trois questions sans lire le code ni brancher un analyseur : qu'est-ce
+qui entre, qu'est-ce qui sort, qui peut écrire quoi. **Deux vues, et c'est
+voulu** :
+
+- **observée** — les sockets que le processus a réellement ouvertes, lues dans
+  `/proc/self/fd` (nos descripteurs) recoupées avec
+  `/proc/self/net/{tcp,tcp6,udp,udp6,packet}`. Ne dépend d'aucune déclaration :
+  c'est l'état du noyau. Une socket ouverte par mégarde y apparaîtrait ;
+- **déclarée** — les liens configurés, leur protocole, leur cible, leurs points,
+  la référence de leurs secrets et leur état.
+
+Un écart entre les deux est une information, pas un défaut du rapport : un lien
+en défaut n'a pas de socket ouverte. Le **sens** est déterminé par le port
+local : une connexion acceptée sur un port où nous écoutons est *entrante*, pas
+sortante — l'inverse tromperait un pare-feu. Le rapport se copie en texte.
+
+### Capture d'interfaces réseau
+
+`tcpdump` sur le contrôleur, au plus près du câble ; fichier **pcap** relisible
+dans Wireshark. Une capture par interface (jamais `-i any`, qui mélangerait des
+types de liens dans un même fichier) — **Ethernet et CAN** indifféremment.
+
+Trois garde-fous, parce qu'une capture oubliée remplit un disque embarqué :
+
+1. **quota global**, 100 Mo par défaut : atteint, les captures en cours
+   s'arrêtent ; tcpdump lui-même est plafonné (`-C`) pour que même la chute du
+   service ne puisse pas remplir le disque ;
+2. **durée** maximale par capture ;
+3. **déclenchement par une variable** de diagnostic (front montant d'une
+   condition : non nulle, au-dessus, en dessous) — de quoi attraper l'incident
+   rare sans laisser tourner la capture des heures.
+
+L'arrêt se fait par `SIGINT` : tcpdump ferme proprement son fichier, là où un
+`SIGKILL` le laisserait tronqué, donc illisible. L'interface est vérifiée avant
+le lancement — une faute de frappe se dit tout de suite, pas dans un journal.
+
+### Voisinage réseau (LLDP)
+
+Ce qu'il y a **en face** de chaque interface : produit, port, description,
+adresse d'administration, VLAN natif, capacités, TTL annoncé. C'est la première
+question d'un architecte devant une installation qu'il ne connaît pas, et elle
+se répond sans plan de câblage à jour ni accès au commutateur.
+
+**Écoute passive** : Diagweb n'émet aucune trame LLDP et ne se déclare donc pas
+au voisinage. Une seule socket `AF_PACKET` sur l'EtherType 0x88CC suffit pour
+toutes les interfaces. Un voisin qui cesse d'émettre disparaît au bout du
+**délai d'oubli**, réglable, **dix minutes par défaut**.
+
+**Capacité requise** : capture et LLDP demandent `CAP_NET_RAW` au service. Sans
+elle, la page affiche le motif — jamais un tableau vide qu'on prendrait pour une
+absence de voisins.
+
 ## 9. État d'avancement
 
 - [x] Grammaire d'adresses + autocomplétion + gestion d'erreurs

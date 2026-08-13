@@ -2000,6 +2000,12 @@
             ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
           ]) +
+          S('Pages réseau (☰)') +
+          L([
+            ['Audit des communications', 'Tout ce que le processus échange avec l’extérieur : les sockets <b>réellement ouvertes</b> (lues dans le noyau), les liens déclarés, les interfaces. Le rapport se copie en texte pour un compte rendu d’audit.'],
+            ['Capture d’interfaces', 'tcpdump sur le contrôleur, format pcap relisible dans Wireshark, interfaces Ethernet et CAN. Quota de disque (100 Mo par défaut), durée maximale, et <b>déclenchement par une variable</b> de diagnostic pour attraper un incident rare.'],
+            ['Voisinage LLDP', 'Ce qu’annoncent les équipements voisins sur chaque interface : produit, port, adresse d’administration, VLAN. Écoute passive — Diagweb n’émet rien. Un voisin muet disparaît après le délai d’oubli (dix minutes par défaut).'],
+          ]) +
           S('Apparence (☰ → Apparence)') +
           L([
             ['Logo', 'Une image de l’installation remplace le logo Diagweb dans la barre du haut, et sert d’icône d’onglet. PNG, JPEG, SVG ou WebP : elle est réduite et <b>incorporée</b> à la configuration — aucune ressource extérieure n’est appelée, la page reste servable hors ligne.'],
@@ -2078,6 +2084,11 @@
 
     // (le menu ☰ se referme déjà sur le clic de n'importe lequel de ses boutons)
     $('skinBtn').addEventListener('click', openAppearance);
+    // Pages réseau (audit, capture, voisinage) : elles interrogent le serveur
+    // de diagnostic et vivent dans web/js/network.js.
+    $('auditBtn').addEventListener('click', () => DW.network.pageAudit());
+    $('captureBtn').addEventListener('click', () => DW.network.pageCapture());
+    $('lldpBtn').addEventListener('click', () => DW.network.pageLldp());
     // Couleurs changées (ici ou dans une autre fenêtre) : les légendes et les
     // tracés relisent la palette.
     document.addEventListener('dw:appearance', () => {
@@ -2113,6 +2124,7 @@
     addVariable: (addr, periodMs) => addVariable(addr, periodMs),
     toast,
     refreshTargets,
+    showText: showTextModal,
   };
 
   function boot() {

@@ -77,6 +77,7 @@ web/            sources de l'application (page de dev : web/index.html)
   js/source.js  choix de la source au démarrage (DW.sourceReady)
   js/dnd.js     déplacement de widgets entre onglets et fenêtres
   js/appearance.js logo de l'exploitant + couleurs (partagés par tous les postes)
+  js/network.js pages réseau : audit des communications, capture, voisinage LLDP
   js/store.js   configurations : localStorage, export/import JSON+CSV, stub
   js/app.js     onglets, recherche, tableau, journal, boucle de rendu
 server/         serveur de diagnostic C++20 (HTTP + WebSocket ; open62541 pour
@@ -90,9 +91,16 @@ server/         serveur de diagnostic C++20 (HTTP + WebSocket ; open62541 pour
                      canopen, snmp, iec61850, opcua — plus common/ (net,
                      can_socket, l2_socket, ber, declared) ; contrôlé par
                      tools/check-drivers.mjs
+  src/netif.hpp      inventaire des interfaces (/sys/class/net, CAN comprises)
+  src/audit.hpp      sockets réellement ouvertes (/proc/self/fd + /proc/self/net)
+  src/lldp.hpp       voisinage LLDP (AF_PACKET 0x88CC, écoute passive)
+  src/capture.hpp    capture tcpdump : quota, durée, déclenchement par variable
   src/jvalue.hpp     analyseur JSON complet (configuration imbriquée)
   src/main.cpp       HTTP/WS, REST, boucle d'émission
+meson.build     construction du serveur et des tests (Ninja, C++23)
 tools/build.py  assemble dist/ à partir de web/
+tools/gen-all.py régénère les en-têtes dérivés des sources web
+tools/run-server-tests.sh  serveur lancé + tests qui en dépendent (meson test)
 tools/check.sh  toutes les vérifications de la CI, en local (serveur|interface)
 tools/check-dist.py  dist/ à jour + page autonome (aucune ressource externe)
 tools/gen-catalog.mjs  régénère server/src/catalog.generated.hpp depuis config.js

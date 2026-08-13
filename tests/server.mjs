@@ -165,6 +165,103 @@ check('arrêt de la campagne', stop.status === 200 && stop.json.ok === true && !
   });
 }
 
+// ---- interfaces, audit, LLDP, capture -----------------------------------
+// Trois pages de diagnostic réseau, servies par le contrôleur. Ce qu'on
+// vérifie ici, c'est le CONTRAT : ce que le serveur expose et ce qu'il refuse.
+{
+  const ifs = await api('/api/interfaces');
+  const lo = (ifs.json || []).find((i) => i.name === 'lo');
+  check('inventaire des interfaces (type, MAC, MTU, adresses)',
+    Array.isArray(ifs.json) && ifs.json.length > 0 && lo && lo.kind === 'boucle' &&
+    lo.ips.includes('127.0.0.1'),
+    (ifs.json || []).map((i) => i.name + ':' + i.kind).join(' '));
+
+  // Audit : la vue « observée » vient du noyau. Le port d'écoute du serveur
+  // doit y figurer, en entrant — sinon le rapport ne vaut rien.
+  const a = await api('/api/audit');
+  const port = String(new URL(BASE).port || 80);
+  const ecoute = (a.json.sockets || []).find(
+    (s) => s.direction === 'entrante' && s.local.endsWith(':' + port));
+  check('audit : le port d’écoute apparaît en entrant',
+    a.status === 200 && !!ecoute, ecoute ? ecoute.local + ' · ' + ecoute.state : 'absent');
+  check('audit : les liens déclarés et les interfaces sont joints',
+    Array.isArray(a.json.links) && Array.isArray(a.json.interfaces) &&
+    a.json.interfaces.length > 0);
+  // Une connexion ACCEPTÉE n'est pas une connexion sortante : se tromper de
+  // sens dans un audit de sécurité serait pire que de ne rien afficher.
+  const fausseSortie = (a.json.sockets || []).some(
+    (s) => s.direction === 'sortante' && s.local.endsWith(':' + port));
+  check('audit : une connexion acceptée n’est pas comptée sortante', !fausseSortie);
+
+  // LLDP : écoute passive. Sans CAP_NET_RAW la socket ne s'ouvre pas, et le
+  // serveur doit le DIRE — un tableau vide se lirait « aucun voisin ».
+  const l = await api('/api/lldp');
+  check('voisinage LLDP : état annoncé sans ambiguïté',
+    l.status === 200 && typeof l.json.active === 'boolean' &&
+    (l.json.active || (l.json.error || '').length > 0),
+    l.json.active ? 'écoute active' : 'inactive : ' + l.json.error);
+  const l2 = await api('/api/lldp', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ timeoutS: 1800 }),
+  });
+  check('voisinage LLDP : délai d’oubli réglable (600 s par défaut)',
+    l2.json.timeoutS === 1800, 'réglé à ' + l2.json.timeoutS + ' s');
+  await api('/api/lldp', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ timeoutS: 600 }),
+  });
+
+  // Capture : tcpdump peut manquer sur la machine de test ; l'absence est
+  // dite, elle ne fait pas échouer ce qui n'en dépend pas.
+  const c = await api('/api/capture');
+  check('capture : quota de disque annoncé (100 Mo par défaut)',
+    c.status === 200 && c.json.quotaBytes === 100 * 1024 * 1024,
+    Math.round(c.json.quotaBytes / 1048576) + ' Mo · outil ' + (c.json.tool || 'absent'));
+
+  const inconnue = await api('/api/capture/start', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ iface: 'nexistepas', durationS: 1 }),
+  });
+  check('capture : interface inconnue refusée tout de suite',
+    inconnue.status === 400 && /inconnue/.test(inconnue.json.error || ''),
+    inconnue.json && inconnue.json.error);
+
+  if (c.json.tool) {
+    const dep = await api('/api/capture/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ iface: 'lo', durationS: 2 }),
+    });
+    const run = (dep.json.state && dep.json.state.runs || []).slice(-1)[0];
+    check('capture : démarrée sur une interface réelle',
+      dep.status === 200 && run && run.state === 'en cours',
+      run ? run.id + ' · ' + run.state : (dep.json.error || 'aucune'));
+    await sleep(2600);
+    const fin = await api('/api/capture');
+    const term = (fin.json.runs || []).find((r) => r.id === (run && run.id));
+    check('capture : arrêtée d’elle-même à la durée demandée',
+      term && term.state === 'terminée' && /durée/.test(term.detail || ''),
+      term ? term.state + ' · ' + term.detail : 'introuvable');
+    const pcap = await fetch(BASE + '/api/capture/file?name=' + encodeURIComponent(run.id));
+    const octets = Buffer.from(await pcap.arrayBuffer());
+    // 0xa1b2c3d4 : nombre magique d'un fichier pcap. Un fichier tronqué ou
+    // vide serait illisible dans Wireshark, ce qui viderait la fonction de
+    // son sens.
+    check('capture : fichier pcap valide au téléchargement',
+      pcap.status === 200 && octets.length >= 24 &&
+      [0xa1b2c3d4, 0xd4c3b2a1, 0xa1b23c4d, 0x4d3cb2a1].includes(octets.readUInt32BE(0)),
+      octets.length + ' octets');
+    const sup = await api('/api/capture/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: run.id }),
+    });
+    check('capture : fichier supprimé (quota libéré)',
+      sup.status === 200 && !(sup.json.state.runs || []).some((r) => r.id === run.id));
+  } else {
+    check('capture : tcpdump absent de cette machine — vérifications sautées', true,
+      'installer tcpdump pour les jouer');
+  }
+}
+
 // ------------------------------------------ robustesse aux entrées hostiles
 // Chacune de ces requêtes provoquait auparavant une exception non capturée
 // (std::sto*) qui faisait tomber tout le serveur. Il doit y survivre.

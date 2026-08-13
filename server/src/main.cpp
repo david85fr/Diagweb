@@ -47,8 +47,12 @@
 #include <thread>
 #include <vector>
 
+#include "audit.hpp"
+#include "capture.hpp"
 #include "catalog.generated.hpp"
 #include "json.hpp"
+#include "lldp.hpp"
+#include "netif.hpp"
 #include "jvalue.hpp"
 #include "protocol_source.hpp"
 #include "protocols.generated.hpp"
@@ -81,6 +85,10 @@ ProtocolSource* g_net = nullptr;
 
 /** Enregistreur de données autonome (journalisation navigateur fermé). */
 Recorder* g_rec = nullptr;
+
+/** Capture d'interfaces et voisinage LLDP : un seul objet de chaque. */
+CaptureManager* g_cap = nullptr;
+LldpCollector* g_lldp = nullptr;
 
 /** État des campagnes de journalisation, au format attendu par l'interface. */
 std::string datalog_status_json() {
@@ -331,6 +339,133 @@ bool handle_api(int fd, const Request& req, IVariableSource& src, const Options&
     std::ostringstream o;
     o << "{\"ok\":" << (ok ? "true" : "false") << ",\"detail\":\"" << jesc(detail) << "\"}";
     respond_json(fd, o.str());
+    return true;
+  }
+
+  // ---- inventaire des interfaces ------------------------------------
+  if (t == "/api/interfaces" && req.method == "GET") {
+    respond_json(fd, netif::to_json(netif::list()));
+    return true;
+  }
+
+  // ---- audit des communications -------------------------------------
+  // Deux vues : ce que le noyau montre (sockets réellement ouvertes) et ce
+  // que la configuration prévoit. Un écart entre les deux est une
+  // information, pas un défaut du rapport.
+  if (t == "/api/audit" && req.method == "GET") {
+    std::ostringstream o;
+    o << "{\"listenPort\":" << opt.port
+      << ",\"pid\":" << ::getpid()
+      << ",\"source\":\"" << jesc(g_net ? "protocoles + simulation" : "simulation")
+      << "\",\"sockets\":" << audit::sockets_json(audit::sockets())
+      << ",\"interfaces\":" << netif::to_json(netif::list())
+      << ",\"links\":";
+    // Vue déclarée : un lien par ligne, avec son sens et sa cible.
+    o << '[';
+    if (g_net) {
+      const ProtocolConfig& cfg = g_net->config();
+      bool first = true;
+      for (const LinkConfig& l : cfg.links) {
+        if (!first) o << ',';
+        first = false;
+        const std::string cible = !l.str("host").empty()
+            ? l.str("host") + ':' + std::to_string(static_cast<int>(l.num("port", 0)))
+            : (!l.str("iface").empty() ? l.str("iface")
+                                       : (!l.str("device").empty() ? l.str("device")
+                                                                   : l.str("endpoint")));
+        o << "{\"id\":\"" << jesc(l.id) << "\",\"protocol\":\"" << jesc(l.protocol)
+          << "\",\"target\":\"" << jesc(cible)
+          << "\",\"points\":" << l.points.size()
+          << ",\"enabled\":" << (l.enabled ? "true" : "false")
+          << ",\"secretRef\":\"" << jesc(l.str("secretRef")) << "\"}";
+      }
+    }
+    o << "],\"status\":" << statuses_json() << '}';
+    respond_json(fd, o.str());
+    return true;
+  }
+
+  // ---- voisinage LLDP ------------------------------------------------
+  if (t == "/api/lldp") {
+    if (!g_lldp) { respond_json(fd, "{\"error\":\"indisponible\"}", 503); return true; }
+    if (req.method == "PUT" || req.method == "POST") {
+      bool ok = false;
+      const JValue j = jparse(req.body, &ok);
+      if (!ok) { respond_json(fd, "{\"error\":\"JSON invalide\"}", 400); return true; }
+      g_lldp->set_timeout(j.num("timeoutS", 600));
+      g_lldp->perimer();
+    }
+    std::ostringstream o;
+    o << "{\"active\":" << (g_lldp->actif() ? "true" : "false")
+      << ",\"error\":\"" << jesc(g_lldp->erreur()) << "\",\"timeoutS\":"
+      << jnum(g_lldp->timeout(), 0)
+      << ",\"interfaces\":" << netif::to_json(netif::list())
+      << ",\"neighbors\":" << lldp_json(g_lldp->voisins(), utc_now()) << '}';
+    respond_json(fd, o.str());
+    return true;
+  }
+
+  // ---- capture d'interfaces ------------------------------------------
+  if (t.rfind("/api/capture", 0) == 0) {
+    if (!g_cap) { respond_json(fd, "{\"error\":\"indisponible\"}", 503); return true; }
+    if (t == "/api/capture" && req.method == "GET") {
+      respond_json(fd, capture_json(*g_cap, (g_net ? g_net->now() : 0.0)));
+      return true;
+    }
+    // Préfixe, pas égalité : la cible porte sa chaîne de requête (?name=…).
+    if (t.rfind("/api/capture/file", 0) == 0 && req.method == "GET") {
+      std::string name;
+      const size_t q = req.target.find("name=");
+      if (q != std::string::npos) name = req.target.substr(q + 5);
+      const fs::path file = g_cap->fichier(safe_name(name));
+      std::ifstream f(file, std::ios::binary);
+      if (file.empty() || !f) {
+        respond_json(fd, "{\"error\":\"capture inconnue\"}", 404);
+        return true;
+      }
+      std::ostringstream body;
+      body << f.rdbuf();
+      respond(fd, 200, "OK", "application/vnd.tcpdump.pcap", body.str(),
+              "Content-Disposition: attachment; filename=\"" + safe_name(name) + ".pcap\"\r\n");
+      return true;
+    }
+    if (req.method != "POST" && req.method != "PUT") {
+      respond_json(fd, "{\"error\":\"methode inattendue\"}", 405);
+      return true;
+    }
+    bool ok = false;
+    const JValue j = jparse(req.body, &ok);
+    if (!ok) { respond_json(fd, "{\"error\":\"JSON invalide\"}", 400); return true; }
+    std::string err;
+    if (t == "/api/capture/start") {
+      err = g_cap->demarrer(j.str("iface"), j.num("durationS", 60), j.str("filter"),
+                            (g_net ? g_net->now() : 0.0));
+    } else if (t == "/api/capture/stop") {
+      err = g_cap->arreter(j.str("id"), "arrêtée depuis l'interface");
+    } else if (t == "/api/capture/delete") {
+      err = g_cap->supprimer(safe_name(j.str("id")));
+    } else if (t == "/api/capture/config") {
+      g_cap->set_quota(static_cast<uintmax_t>(j.num("quotaMB", 100)) << 20);
+      static const JValue kVide;
+      const JValue* p = j.find("trigger");
+      const JValue& tr = p ? *p : kVide;
+      CaptureTrigger cfg;
+      cfg.enabled = tr.flag("enabled", false);
+      cfg.addr = tr.str("addr");
+      cfg.mode = tr.str("mode", "nonzero");
+      cfg.threshold = tr.num("threshold", 0);
+      cfg.iface = tr.str("iface");
+      cfg.duration_s = tr.num("durationS", 60);
+      g_cap->set_trigger(cfg);
+    } else {
+      respond_json(fd, "{\"error\":\"point d'entree inconnu\"}", 404);
+      return true;
+    }
+    if (!err.empty()) {
+      respond_json(fd, "{\"ok\":false,\"error\":\"" + jesc(err) + "\"}", 400);
+      return true;
+    }
+    respond_json(fd, "{\"ok\":true,\"state\":" + capture_json(*g_cap, (g_net ? g_net->now() : 0.0)) + '}');
     return true;
   }
 
@@ -692,6 +827,16 @@ int main(int argc, char** argv) {
   Recorder recorder(source, opt.data_dir);
   g_rec = &recorder;
 
+  // Capture d'interfaces (tcpdump) et voisinage LLDP. Les deux demandent la
+  // capacité CAP_NET_RAW ; sans elle, la page l'annonce plutôt que d'afficher
+  // un tableau vide qu'on prendrait pour « rien à voir ».
+  CaptureManager captures(fs::path(opt.data_dir) / "captures", source);
+  g_cap = &captures;
+  LldpCollector lldp([] { return utc_now(); });
+  const std::string lldp_err = lldp.start();
+  g_lldp = &lldp;
+  if (!lldp_err.empty()) std::cout << "  LLDP : " << lldp_err << std::endl;
+
   // Thread d'acquisition : rôle du lien avec le controller
   std::thread sampler([&controller] {
     while (!g_stop) {
@@ -708,6 +853,16 @@ int main(int argc, char** argv) {
     }
   });
 
+  // Entretien : durée des captures, quota de disque, déclencheur par variable,
+  // péremption des voisins LLDP. Quatre fois par seconde suffisent.
+  std::thread entretien([&captures, &lldp, &net] {
+    while (!g_stop) {
+      captures.service(net.now());
+      lldp.perimer();
+      std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    }
+  });
+
   const int srv = ::socket(AF_INET, SOCK_STREAM, 0);
   if (srv < 0) { std::cerr << "socket : " << std::strerror(errno) << "\n"; return 1; }
   int one = 1;
@@ -719,7 +874,7 @@ int main(int argc, char** argv) {
   addr.sin_port = htons(static_cast<uint16_t>(opt.port));
   if (::bind(srv, reinterpret_cast<sockaddr*>(&addr), sizeof addr) < 0) {
     std::cerr << "bind " << opt.port << " : " << std::strerror(errno) << "\n";
-    g_stop = true; sampler.join(); logger.join(); return 1;
+    g_stop = true; sampler.join(); logger.join(); entretien.join(); return 1;
   }
   ::listen(srv, 16);
 
@@ -751,6 +906,9 @@ int main(int argc, char** argv) {
   g_stop = true;
   sampler.join();
   logger.join();
+  entretien.join();
+  captures.tout_arreter("arrêt du serveur");
+  lldp.stop();
   g_rec = nullptr;
   for (auto& t : workers) if (t.joinable()) t.detach();
   std::cout << "Arret." << std::endl;
