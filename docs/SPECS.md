@@ -112,8 +112,16 @@ chaque onglet/fenêtre du navigateur — deux fenêtres affichent donc deux
 espaces différents sans se marcher dessus. Les **configurations nommées**
 restent partagées entre toutes les fenêtres (stockage local).
 
-## 3. Tableau numérique
+## 3. Tableaux numériques
 
+- Un onglet porte **autant de tableaux qu'on veut** (« + Tableau »), chacun
+  étant une **carte de la grille** au même titre qu'un graphique : on peut donc
+  alterner tableau, graphique, tableau, graphique, et donner à chacun sa
+  largeur (en colonnes) et sa hauteur. Un tableau regroupe ce qui se lit
+  ensemble ; deux tableaux séparent deux sujets, ce qu'une seule liste ne sait
+  pas faire. Chaque tableau a son **nom** (modifiable, il sert de destination
+  d'ajout), son bouton **＋** et son menu **⋮** (vider, taille automatique,
+  déplacer vers un onglet, fermer).
 - Colonnes : badge famille, adresse (mono), libellé, valeur vivante, unité,
   tendance (↗/↘/→ sur ~2,5 s, sauf bits), bouton **✎** (renommer), bouton
   retirer.
@@ -128,6 +136,10 @@ restent partagées entre toutes les fenêtres (stockage local).
   accentué qui s'estompe en ~1 s). Repère immédiat des variables qui
   bougent, même pour un changement d'un seul cycle. (Les grandeurs
   continues, qui changent en permanence, ne flashent donc pas.)
+- **Format des dispositions** : `{version: 2, tables: [{name, h, cols, pos,
+  entries}], charts: [{…, pos}]}`. `pos` est le rang de la carte dans la
+  grille — c'est lui qui restitue l'alternance. Le format v1 (`table`,
+  `tableH`, `tableCols`, `tableAfter`) reste **lu** et traduit à la volée.
 - **Redimensionnement** : une poignée ◢ (coin bas-droit, écrans ≥ 700 px) fixe
   la hauteur du tableau ; au-delà, il **défile en interne** au lieu de pousser
   les graphiques vers le bas. Double-clic sur la poignée = hauteur automatique.

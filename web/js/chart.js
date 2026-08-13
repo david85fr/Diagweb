@@ -225,6 +225,13 @@
     popEl.style.top = (top + window.scrollY) + 'px';
   }
 
+  /**
+   * Menu contextuel réutilisable, ancré sur un bouton. Exposé parce que les
+   * tableaux numériques ont le même besoin que les graphiques : un menu ⋮ au
+   * même endroit, avec la même mécanique de fermeture.
+   */
+  DW.popup = function (anchorEl, build) { openPopover(anchorEl, anchorEl, build); };
+
   // ---------- Classe Chart --------------------------------------------
   let uid = 0;
 

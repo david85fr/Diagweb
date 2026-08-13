@@ -65,6 +65,7 @@
       kind: payload.kind,
       chartId: payload.chartId,
       tabId: payload.tabId,
+      tableId: payload.tableId,
       chart: payload.chart,
       table: payload.table,
       title: payload.title,

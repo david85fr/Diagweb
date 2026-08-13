@@ -69,7 +69,7 @@ check('disposition de démonstration chargée',
   await p1.locator(PANE + '.vrow').count() === 6);
 
 await p1.fill('#searchInput', 'MB520');
-await p1.selectOption('#targetSel', 'table');
+await p1.selectOption('#targetSel', { index: 0 });
 await p1.click('#addBtn');
 await p1.waitForTimeout(300);
 check('ajout au tableau numérique', await p1.locator(PANE + '.vrow').count() === 7);
@@ -90,7 +90,7 @@ await p1.click('#tabAdd');
 await p1.waitForTimeout(300);
 const tab2Empty = await p1.locator(PANE + '.vrow').count() === 0;
 await p1.fill('#searchInput', 'S1.0');
-await p1.selectOption('#targetSel', 'table');
+await p1.selectOption('#targetSel', { index: 0 });
 await p1.click('#addBtn');
 await p1.waitForTimeout(300);
 const tab2One = await p1.locator(PANE + '.vrow').count() === 1;
@@ -331,7 +331,7 @@ check('étiquettes de famille : PLC, MB, Simulink, ext.<protocole>',
 // Nom d'affichage : renommer une variable du tableau, conservé au rechargement
 await p2.keyboard.press('Escape');            // fermer toute suggestion ouverte
 await p2.fill('#searchInput', 'Capteurs.debit_pompe');
-await p2.selectOption('#targetSel', 'table');
+await p2.selectOption('#targetSel', { index: 0 });
 await p2.click('#addBtn');
 await p2.waitForTimeout(250);
 const dpRow = () => p2.locator(PANE + '.vrow').filter({ hasText: 'Capteurs.debit_pompe' }).first();
@@ -376,23 +376,75 @@ check('forçage d’un point réseau refusé (lecture seule)',
 // La CARTE doit rétrécir, pas seulement sa zone de lignes : le tableau vit
 // dans la grille des graphiques, qui étirerait sinon chaque carte à la hauteur
 // de sa rangée — la réduction serait alors sans effet visible.
-const tgrip = p2.locator(PANE + '.table-card .table-grip');
+const tgrip = p2.locator(PANE + '.table-card .table-grip').first();
 await tgrip.scrollIntoViewIfNeeded();
-const hAvant = Math.round((await p2.locator(PANE + '.table-card').boundingBox()).height);
+const hAvant = Math.round((await p2.locator(PANE + '.table-card').first().boundingBox()).height);
 const tb = await tgrip.boundingBox();
 await p2.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2);
 await p2.mouse.down();
 await p2.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2 - 90, { steps: 8 });
 await p2.mouse.up();
 await p2.waitForTimeout(200);
-const tableSized = await p2.locator(PANE + '.table-card').evaluate((el) => ({
+const tableSized = await p2.locator(PANE + '.table-card').first().evaluate((el) => ({
   has: el.classList.contains('has-th'),
   overflow: getComputedStyle(el.querySelector('.trows')).overflowY,
 }));
-const hApres = Math.round((await p2.locator(PANE + '.table-card').boundingBox()).height);
+const hApres = Math.round((await p2.locator(PANE + '.table-card').first().boundingBox()).height);
 check('redimensionnement du tableau numérique (la carte rétrécit, défilement interne)',
   tableSized.has && tableSized.overflow === 'auto' && hApres < hAvant - 40,
   hAvant + ' → ' + hApres + ' px · ' + JSON.stringify(tableSized));
+
+// Plusieurs tableaux dans un onglet, alternés avec les graphiques : c'est ce
+// qui permet de séparer deux sujets au lieu d'une seule longue liste.
+const tablesAvant = await p2.locator(PANE + '.table-card').count();
+await p2.click('#addTableBtn');
+await p2.waitForTimeout(300);
+const cible = await p2.locator('#targetSel').inputValue();
+await p2.fill('#searchInput', 'Elec.frequence');
+await p2.click('#addBtn');
+await p2.waitForTimeout(300);
+const tablesApres = await p2.locator(PANE + '.table-card').count();
+const lignes2 = await p2.locator(PANE + '.table-card').last().locator('.vrow').count();
+check('plusieurs tableaux par onglet (le nouveau devient la destination)',
+  tablesApres === tablesAvant + 1 && /^table:/.test(cible) && lignes2 === 1,
+  tablesAvant + ' → ' + tablesApres + ' tableau(x), cible « ' + cible + ' »');
+
+// Ordre dans la grille : un tableau se range comme un graphique, donc on peut
+// alterner tableau / graphique / tableau.
+await p2.locator(PANE + '.table-card').last().locator('.drag-handle').evaluate((el) => {
+  const s2 = {};
+  const dt = { types: [], setData(t, v) { s2[t] = v; this.types.push(t); },
+    getData(t) { return s2[t] || ''; }, setDragImage() {}, effectAllowed: '', dropEffect: '' };
+  const ev = new Event('dragstart', { bubbles: true, cancelable: true });
+  Object.defineProperty(ev, 'dataTransfer', { value: dt });
+  el.dispatchEvent(ev);
+  window.__dw_drag = s2;
+});
+// Déposé sur la MOITIÉ DROITE du dernier graphique : le tableau passe après
+// lui — c'est la preuve de l'alternance, un tableau derrière un graphique.
+await p2.locator(PANE + '.chart-card').last().evaluate((el) => {
+  const r = el.getBoundingClientRect();
+  const store = window.__dw_drag;
+  const dt = { types: Object.keys(store), getData(t) { return store[t] || ''; },
+    setData() {}, dropEffect: '', effectAllowed: '' };
+  for (const type of ['dragover', 'drop']) {
+    const ev = new MouseEvent(type, { bubbles: true, cancelable: true,
+      clientX: r.left + r.width * 0.9, clientY: r.top + 20 });
+    Object.defineProperty(ev, 'dataTransfer', { value: dt });
+    el.dispatchEvent(ev);
+  }
+});
+await p2.waitForTimeout(400);
+const ordreCartes = () => p2.$$eval(PANE + '.charts-grid > *',
+  (c) => c.map((x) => (x.classList.contains('table-card') ? 'T' : 'G')).join(''));
+const ordre = await ordreCartes();
+await p2.waitForTimeout(700);                  // > debounce de sauvegarde
+await p2.reload();
+await p2.waitForSelector(PANE + '.chart-card', { timeout: 20000 });
+await p2.waitForTimeout(1200);
+const ordreApres = await ordreCartes();
+check('alternance tableau / graphique, conservée au rechargement',
+  /G.*T/.test(ordre) && ordreApres === ordre, ordre + ' → ' + ordreApres);
 
 // Apparence : logo de l'exploitant et couleurs. Page ouverte hors serveur ici,
 // donc réglages du navigateur — le tour serveur est couvert par tests/server.mjs.

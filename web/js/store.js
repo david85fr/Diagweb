@@ -52,10 +52,23 @@
   }
   function writeLayouts(obj) { return lsSet(KEY_LAYOUTS, JSON.stringify(obj)); }
 
+  /**
+   * Contrôle de structure d'une disposition, dans les DEUX formats :
+   *   v1 — un seul tableau, champ « table » ;
+   *   v2 — plusieurs tableaux, champ « tables » (chacun avec ses « entries »).
+   * Refuser l'un des deux reviendrait à jeter la disposition en silence et à
+   * repartir sur la démonstration, ce qui se lit comme une perte de travail.
+   */
   function validateLayout(data) {
     if (!data || typeof data !== 'object') return 'structure absente';
     if (!Array.isArray(data.charts)) return 'liste de graphiques absente';
-    if (!Array.isArray(data.table)) return 'liste du tableau absente';
+    if (Array.isArray(data.tables)) {
+      for (const t of data.tables) {
+        if (!t || !Array.isArray(t.entries)) return 'tableau sans liste de variables';
+      }
+    } else if (!Array.isArray(data.table)) {
+      return 'liste du tableau absente';
+    }
     for (const c of data.charts) {
       if (!Array.isArray(c.series)) return 'graphique sans liste de courbes';
     }

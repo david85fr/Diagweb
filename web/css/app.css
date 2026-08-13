@@ -281,7 +281,23 @@ button { font-family: var(--sans); }
   font-size: 11px; text-transform: uppercase; letter-spacing: .11em;
   color: var(--muted); font-weight: 650;
 }
-.table-card h3 span { text-transform: none; letter-spacing: 0; color: var(--faint); font-weight: 500; margin-left: 6px; }
+.table-card h3 { display: flex; align-items: center; gap: 6px; }
+.table-card h3 span { text-transform: none; letter-spacing: 0; color: var(--faint); font-weight: 500; }
+/* Titre modifiable, comme celui d'un graphique : avec plusieurs tableaux dans
+   un onglet, « Valeurs numériques » ne suffit plus à les distinguer. */
+.table-title {
+  flex: 1; min-width: 0;
+  font: 650 11px var(--sans); text-transform: uppercase; letter-spacing: .11em;
+  color: var(--muted);
+  background: none; border: 1px solid transparent; border-radius: 7px;
+  padding: 3px 6px;
+}
+.table-title:hover { border-color: var(--line); }
+.table-title:focus {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  outline: none; background: var(--panel-2); color: var(--ink);
+}
+.table-card h3 .card-add, .table-card h3 .table-more { margin-left: 0; flex: none; }
 /* Bouton « + » d'un tableau ou d'un graphique : ajoute des variables à CETTE
    carte, sans passer par le sélecteur de destination de la barre du haut. */
 .card-add {
@@ -303,7 +319,10 @@ button { font-family: var(--sans); }
 .trows { padding: 0 2px 2px; }
 /* Hauteur libre (poignée) : le tableau défile en interne au lieu de pousser
    les graphiques vers le bas. La poignée reste réservée aux écrans ≥ 700 px. */
-.table-card.has-th .trows { max-height: var(--table-h); overflow-y: auto; }
+/* height, pas max-height : « max » ne sait que rétrécir. Avec elle, tirer la
+   poignée vers le bas ne faisait rien du tout — le tableau ne pouvait que
+   diminuer. */
+.table-card.has-th .trows { height: var(--table-h); overflow-y: auto; }
 .table-card.resizing { outline: 1px solid color-mix(in srgb, var(--accent) 60%, transparent); }
 .table-card.resizing .resize-grip { opacity: 1; }
 .table-grip { bottom: 4px; right: 4px; }
