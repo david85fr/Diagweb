@@ -1018,6 +1018,11 @@ body.cfg-hidden .tabActions { display: none; }
 .modal.page { max-width: 1180px; max-height: 92vh; display: flex; flex-direction: column; }
 .page-body { overflow-y: auto; padding-right: 4px; }
 .page-vide { color: var(--muted); font-size: 13px; margin: 8px 0; }
+/* Bandeau des pages réseau servies par la simulation : il doit se voir sans
+   se lire deux fois, une page d'audit ne devant jamais passer pour réelle. */
+.net-sim { margin: 0 0 4px; padding: 8px 10px; font-size: 12.5px; line-height: 1.45;
+  border: 1px solid var(--warn); border-left-width: 4px; border-radius: 6px;
+  background: color-mix(in srgb, var(--warn) 12%, transparent); }
 .net-sec { padding: 12px 0; border-top: 1px solid var(--line); }
 .net-sec:first-child { border-top: 0; }
 .net-sec h4 { margin: 0 0 8px; font-size: 12.5px; text-transform: uppercase;
@@ -1072,4 +1077,18 @@ body.cfg-hidden .tabActions { display: none; }
 .lldp-v { color: var(--ink); overflow-wrap: anywhere; }
 @media (min-width: 900px) {
   .lldp-grid { grid-template-columns: auto 1fr auto 1fr; }
+}
+
+/* Figer/Reprendre monte dans la barre supérieure : c'est une commande qu'on
+   cherche vite, et elle doit rester visible quand la zone de configuration est
+   repliée. */
+.pausebtn { font-size: 12.5px; padding: 6px 10px; white-space: nowrap; }
+@media (max-width: 520px) {
+  .pausebtn { font-size: 0; padding: 6px 8px; }        /* pictogramme seul */
+  .pausebtn::first-letter { font-size: 14px; }
+}
+/* Carte choisie comme destination d'ajout : ce que la barre du haut vise. */
+.chart-card.cible, .table-card.cible {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+  box-shadow: var(--shadow), 0 0 0 2px color-mix(in srgb, var(--accent) 32%, transparent);
 }

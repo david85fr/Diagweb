@@ -239,7 +239,8 @@
           'title="Ajouter des variables à ce tableau : ouvre le catalogue complet, ' +
           'avec filtres et sélection multiple">+</button>' +
         '<button class="iconbtn table-more" type="button" ' +
-          'title="Options du tableau : vider, taille automatique, déplacer, fermer">⋮</button>' +
+          'title="Options du tableau : vider, taille automatique, dupliquer, déplacer ' +
+          'vers un autre onglet ou une nouvelle fenêtre, fermer">⋮</button>' +
       '</h3>' +
       '<div class="trows"></div>' +
       '<span class="resize-grip table-grip" role="separator" ' +
@@ -281,6 +282,7 @@
       openTableMenu(tbl, e.currentTarget));
     tab.chartsGridEl.appendChild(card);
     tab.tables.push(tbl);
+    bindCible(card, tbl);
     bindTableResize(tbl);
     bindTableReorder(tbl);
     applyTableSize(tbl);
@@ -304,11 +306,19 @@
           onChange();
         }, null, 'Annuler le dimensionnement fait à la poignée');
       }
+      mk('Dupliquer ce tableau', () => duplicateTable(tbl), null,
+        'Créer une copie avec les mêmes variables, juste après celui-ci');
+      // Déplacements : indispensables au tact, où le glisser-déposer HTML5
+      // n'existe pas.
       for (const t of state.tabs.filter((x) => x !== tbl.tab)) {
         mk('Déplacer vers l’onglet « ' + DW.escapeHtml(t.name) + ' »', () => {
           moveTableToTab(tbl, t);
         }, null, 'Transférer ce tableau et ses variables dans « ' + t.name + ' »');
       }
+      mk('Ouvrir dans une nouvelle fenêtre', () => {
+        DW.dnd.openInNewWindow({ kind: 'table', title: tbl.name, table: serializeTable(tbl) },
+          () => removeTable(tbl));
+      }, null, 'Sortir ce tableau dans une fenêtre séparée, à poser sur un autre écran');
       mk('Fermer le tableau', () => removeTable(tbl), 'danger',
         'Supprimer ce tableau et libérer ses variables');
     });
@@ -339,6 +349,21 @@
     }
     toast('Tableau « ' + nom + ' » déplacé vers « ' + cible.name + ' ».');
     onChange();
+  }
+
+  /** Duplique un tableau (mêmes variables) juste après lui. */
+  function duplicateTable(tbl) {
+    const copie = serializeTable(tbl);
+    const neuf = createTable(tbl.tab, { name: tbl.name + ' (copie)', h: tbl.h, cols: tbl.cols });
+    for (const e of copie) {
+      const p = DW.parseAddr(e.addr);
+      if (p.ok) addToTable(neuf, p.addr, e.periodMs, e.name);
+    }
+    tbl.cardEl.after(neuf.cardEl);
+    setCible(neuf);
+    onChange();
+    toast('« ' + neuf.name + ' » créé.');
+    return neuf;
   }
 
   /** Premier tableau de l'onglet, créé au besoin (destination par défaut). */
@@ -721,6 +746,7 @@
     });
     tab.charts.push(chart);
     tab.chartsGridEl.appendChild(chart.root);
+    bindCible(chart.root, chart);
     chart.applyHeightMode();   // la largeur en colonnes dépend de la grille d'accueil
     if (tab === state.active) refreshTargets();
     onChange();
@@ -728,6 +754,39 @@
   }
 
   // ---------- Cible d'ajout -------------------------------------------
+  /**
+   * Carte VISÉE par la barre du haut : un clic sur un tableau ou un graphique
+   * en fait la destination d'ajout, et elle se signale par un liseré. Sans ce
+   * repère, avec plusieurs cartes à l'écran, « Ajouter » devient un pari.
+   */
+  function setCible(carte) {
+    const sel = $('targetSel');
+    if (!carte) { majCible(); return; }
+    sel.value = carte.entries ? 'table:' + carte.id : 'chart:' + carte.id;
+    majCible();
+  }
+
+  /** Applique le liseré à la carte désignée par le sélecteur de destination. */
+  function majCible() {
+    const v = $('targetSel').value;
+    const tab = state.active;
+    if (!tab) return;
+    for (const t of tab.tables) t.cardEl.classList.toggle('cible', v === 'table:' + t.id);
+    for (const c of tab.charts) c.root.classList.toggle('cible', v === 'chart:' + c.id);
+  }
+
+  /**
+   * Rend une carte cliquable pour la désigner. Le clic est ignoré sur les
+   * commandes de la carte (boutons, champs, poignées) : on ne veut pas qu'un
+   * changement d'échelle ou un renommage change aussi la destination.
+   */
+  function bindCible(el, carte) {
+    el.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button, input, select, textarea, .resize-grip, .drag-handle')) return;
+      setCible(carte);
+    });
+  }
+
   function refreshTargets() {
     const sel = $('targetSel');
     const prev = sel.value;
@@ -755,6 +814,7 @@
                  : (state.active && state.active.charts[0]
                     ? 'chart:' + state.active.charts[0].id : 'newtable');
     sel.value = (!action && [...sel.options].some((o) => o.value === prev)) ? prev : defaut;
+    majCible();
   }
 
   // ---------- Ajout d'une variable ------------------------------------
@@ -784,7 +844,7 @@
            defaultTable(state.active));
       const r = addToTable(tbl, p.addr, periodMs);
       if (!r.ok) { toast(r.error, 'err'); return false; }
-      if (target === 'newtable') $('targetSel').value = 'table:' + tbl.id;
+      if (target === 'newtable') setCible(tbl);
       destLabel = tbl.name;
     } else {
       let chart = null;
@@ -801,7 +861,7 @@
         if (target === 'new') appApi.removeChart(chart);
         return false;
       }
-      if (target === 'new') $('targetSel').value = 'chart:' + chart.id;
+      if (target === 'new') setCible(chart);
       destLabel = chart.title;
     }
     $('searchInput').value = '';
@@ -2082,16 +2142,17 @@
     });
 
     $('addBtn').addEventListener('click', () => addVariable());
+    $('targetSel').addEventListener('change', majCible);
     $('addTableBtn').addEventListener('click', () => {
       const tbl = createTable(state.active, {});
-      $('targetSel').value = 'table:' + tbl.id;
+      setCible(tbl);
       onChange();
       toast('Tableau « ' + tbl.name + ' » créé — il est la destination d’ajout.');
     });
     $('addChartBtn').addEventListener('click', () => {
       const c = createChart();
       if (c) {
-        $('targetSel').value = 'chart:' + c.id;
+        setCible(c);
         toast('« ' + c.title + ' » ajouté — c’est la cible d’ajout actuelle.');
       }
     });
@@ -2139,7 +2200,7 @@
             ['Bouton ＋', 'Sur le tableau et sur chaque graphique : ouvre le catalogue complet dans une grande fenêtre — filtres par famille, recherche, et <b>sélection multiple</b>. La destination est celle du bouton, il n’y a rien à choisir.'],
             ['Barre de recherche', 'Le chemin rapide, au clavier. Adresse : <b>I1.2.3.4</b>, <b>Q14.15</b>, <b>M1.14</b>, <b>S0.4</b> (bits), <b>MB414</b> (mot de bus), <b>Modele.signal</b> (C API). Les suggestions se filtrent à la frappe ; les boutons Toutes / PLC / Modbus / Simulink / Réseau restreignent la liste.'],
             ['Étiquettes', 'Elles disent d’où vient la valeur : <b>PLC</b> (entrées, sorties, bits mémoire, système), <b>MB</b> (registre de bus par le canal interne), <b>Simulink</b> (signal de modèle, C API), <b>ext.…</b> (point lu à l’extérieur par le serveur de diagnostic : ext.MB, ext.61850, ext.OPCUA, ext.SNMP…). MB et ext.MB, ce n’est pas le même chemin ni la même latence.'],
-            ['Destination', 'Tableau numérique, un graphique existant, ou un nouveau graphique.'],
+            ['Destination', 'Tableau numérique, un graphique existant, ou un nouveau graphique. <b>Un clic sur une carte</b> (tableau ou graphique, hors ses boutons) la désigne : elle prend un liseré et devient la destination, sans dérouler la liste.'],
             ['Période', 'Rafraîchissement propre à la variable, 10 ms par défaut.'],
             ['Forcer une valeur', 'Suffixe <b>= valeur</b> dans la barre : <b>Q0.3 = 1</b>, <b>MB400 = 12500</b> impose la valeur côté serveur (diagnostic). La ligne du tableau est surlignée ; ⏻ relâche. Les points réseau (@lien.point) restent en lecture seule.'],
           ]) +
@@ -2164,14 +2225,17 @@
             ['Plusieurs tableaux', '<b>+ Tableau</b> crée un tableau de plus dans l’onglet. Un tableau est une carte comme un graphique : on peut donc alterner <b>tableau, graphique, tableau, graphique</b>, en glissant leur poignée ⠿ sur une autre carte pour les ranger. Chaque tableau a son nom (cliquez-le), son bouton ＋ et son menu ⋮.'],
             ['Poignée ◢ (coin bas-droit)', 'Redimensionner une carte à la souris : ↕ hauteur libre (<b>vers le bas pour agrandir</b>, vers le haut pour réduire, avec défilement interne), ↔ largeur en nombre de colonnes. Le réduire en largeur laisse la place à une autre carte <b>à côté</b>. Double-clic pour revenir à la taille automatique.'],
             ['Renommer', 'Bouton ✎ sur une ligne du tableau, ou « Renommer la courbe… » dans le menu d’une pastille : un nom d’affichage remplace le libellé du catalogue (vide = valeur d’origine). Le nom appartient à la <b>variable</b> : il s’applique partout où elle figure — tous les tableaux, toutes les courbes, tous les onglets, et les autres fenêtres ouvertes.'],
-            ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
+            ['Menu ⋮ d’un graphique', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
+            ['Menu ⋮ d’un tableau', 'Les mêmes gestes : ajouter des variables, vider, taille automatique, <b>dupliquer ce tableau</b>, <b>déplacer vers un onglet</b>, <b>ouvrir dans une nouvelle fenêtre</b>, fermer.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
+            ['Barre du haut', '<b>⏸ Figer</b> arrête d’un coup tous les graphiques de l’onglet actif. Le <b>journal de données</b> a rejoint le menu ☰, avec les autres fonctions qui ne dépendent pas de l’onglet.'],
           ]) +
           S('Pages réseau (☰)') +
           L([
             ['Audit des communications', 'Tout ce que le processus échange avec l’extérieur : les sockets <b>réellement ouvertes</b> (lues dans le noyau), les liens déclarés, les interfaces. Le rapport se copie en texte pour un compte rendu d’audit.'],
-            ['Capture d’interfaces', 'tcpdump sur le contrôleur, format pcap relisible dans Wireshark, interfaces Ethernet et CAN. Quota de disque (100 Mo par défaut), durée maximale, et <b>déclenchement par une variable</b> de diagnostic pour attraper un incident rare.'],
+            ['Capture d’interfaces', 'tcpdump sur le contrôleur, format pcap relisible dans Wireshark, interfaces Ethernet et CAN. Quota de disque (100 Mo par défaut), durée maximale, et <b>déclenchement par une variable</b> de diagnostic pour attraper un incident rare. Le quota et le déclencheur sont <b>persistants</b> : ils survivent au redémarrage du contrôleur — c’est parfois la coupure elle-même qu’on cherche à comprendre.'],
             ['Voisinage LLDP', 'Ce qu’annoncent les équipements voisins sur chaque interface : produit, port, adresse d’administration, VLAN. Écoute passive — Diagweb n’émet rien. Un voisin muet disparaît après le délai d’oubli (dix minutes par défaut).'],
+            ['Sans serveur', 'Les trois pages fonctionnent aussi hors contrôleur, sur un <b>contrôleur fictif</b> : l’interface se découvre et se règle sans matériel. Un bandeau le dit sur chaque page, et une capture simulée n’offre aucun fichier — il n’y a pas de trames derrière.'],
           ]) +
           S('Apparence (☰ → Apparence)') +
           L([

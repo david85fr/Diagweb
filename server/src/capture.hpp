@@ -38,6 +38,7 @@
 #include <vector>
 
 #include "json.hpp"
+#include "jvalue.hpp"
 #include "netif.hpp"
 #include "source.hpp"
 
@@ -82,6 +83,7 @@ class CaptureManager {
       : dir_(std::move(dossier)), source_(source) {
     std::error_code ec;
     fs::create_directories(dir_, ec);
+    charger();
   }
   ~CaptureManager() { tout_arreter("arrêt du serveur"); }
 
@@ -97,15 +99,19 @@ class CaptureManager {
 
   void set_quota(uintmax_t octets) {
     quota_ = std::clamp<uintmax_t>(octets, 1u << 20, 4096ull << 20);
+    enregistrer();
   }
   uintmax_t quota() const { return quota_; }
 
-  /** Octets occupés par l'ensemble des fichiers de capture. */
+  /** Octets occupés par les fichiers de capture (le fichier de réglages ne
+   *  compte pas : le quota porte sur les données capturées). */
   uintmax_t occupe() const {
     uintmax_t total = 0;
     std::error_code ec;
     for (const auto& e : fs::directory_iterator(dir_, ec)) {
-      if (e.is_regular_file(ec)) total += e.file_size(ec);
+      if (e.is_regular_file(ec) && e.path().extension() == ".pcap") {
+        total += e.file_size(ec);
+      }
     }
     return total;
   }
@@ -242,6 +248,7 @@ class CaptureManager {
       lu_t_ = 0;
       trigger_.armed = false;
     }
+    enregistrer();
   }
   CaptureTrigger trigger() const {
     std::lock_guard<std::mutex> g(mx_);
@@ -306,6 +313,53 @@ class CaptureManager {
   }
 
  private:
+  /** Fichier de réglages : quota et déclencheur, à côté des captures. */
+  fs::path reglages() const { return dir_ / "reglages.json"; }
+
+  /**
+   * Le déclencheur et le quota survivent au redémarrage : un déclencheur armé
+   * pour attraper un incident rare qui s'oublierait à la première coupure de
+   * courant ne servirait à rien — et c'est précisément la coupure qu'on
+   * cherche parfois à comprendre.
+   */
+  void enregistrer() const {
+    std::ofstream f(reglages(), std::ios::binary | std::ios::trunc);
+    if (!f) return;
+    f << "{\"quotaBytes\":" << quota_
+      << ",\"trigger\":{\"enabled\":" << (trigger_.enabled ? "true" : "false")
+      << ",\"addr\":\"" << jesc(trigger_.addr) << "\",\"mode\":\"" << jesc(trigger_.mode)
+      << "\",\"threshold\":" << jnum(trigger_.threshold, 6)
+      << ",\"iface\":\"" << jesc(trigger_.iface)
+      << "\",\"durationS\":" << jnum(trigger_.duration_s, 1) << "}}";
+  }
+
+  void charger() {
+    std::ifstream f(reglages(), std::ios::binary);
+    if (!f) return;
+    std::ostringstream corps;
+    corps << f.rdbuf();
+    bool ok = false;
+    const JValue j = jparse(corps.str(), &ok);
+    if (!ok) return;
+    quota_ = std::clamp<uintmax_t>(static_cast<uintmax_t>(j.num("quotaBytes", 100ull << 20)),
+                                   1u << 20, 4096ull << 20);
+    const JValue* t = j.find("trigger");
+    if (!t) return;
+    CaptureTrigger cfg;
+    cfg.enabled = t->flag("enabled", false);
+    cfg.addr = t->str("addr");
+    cfg.mode = t->str("mode", "nonzero");
+    cfg.threshold = t->num("threshold", 0);
+    cfg.iface = t->str("iface");
+    cfg.duration_s = t->num("durationS", 60);
+    // set_trigger prend le verrou et réenregistre : ici l'objet est en cours
+    // de construction, on applique donc directement.
+    trigger_ = cfg;
+    if (cfg.enabled && !cfg.addr.empty() && source_.subscribe(cfg.addr, 200)) {
+      abonne_ = cfg.addr;
+    }
+  }
+
   static std::string horodate(double t) {
     char buf[32];
     const auto s = static_cast<long long>(t);

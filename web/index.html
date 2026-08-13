@@ -21,12 +21,14 @@
     </div>
 
     <div class="topIcons">
+      <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" title="Figer ou reprendre d’un coup tous les graphiques de l’onglet actif">⏸ Figer</button>
       <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">dev</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
         <button id="skinBtn" type="button" title="Apparence : logo de l’installation et couleurs de l’interface — réglages partagés par tous les postes quand la page est servie par le contrôleur">Apparence — logo et couleurs…</button>
+        <button id="logBtn" type="button" title="Journal de données : enregistrer tous les échantillons des variables de l’onglet actif (dans le navigateur ou sur le contrôleur), puis les télécharger en CSV/JSON">Journal de données…<i id="logInd" class="recdot hide"></i></button>
         <button id="helpBtn" type="button" title="Récapitulatif des commandes et des gestes (utile sur écran tactile, où les infobulles n’apparaissent pas)">Aide — commandes et gestes…</button>
         <button id="netBtn" type="button" title="Liens réseau : déclarer des équipements Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen, SNMP ou OPC UA et choisir les variables à lire">Liens réseau…</button>
         <button id="aboutBtn" type="button" title="Version affichée, mode de fonctionnement et source de données">À propos de Diagweb…</button>
@@ -58,8 +60,6 @@
     <button id="addTableBtn" class="btn" type="button" title="Créer un tableau numérique vide dans cet onglet ; il devient la destination d’ajout. Plusieurs tableaux peuvent cohabiter avec les graphiques — tableau, graphique, tableau…">+ Tableau</button>
     <button id="addChartBtn" class="btn" type="button" title="Créer un graphique vide dans cet onglet ; il devient la destination d’ajout">+ Graphique</button>
     <button id="layoutsBtn" class="btn" type="button" title="Configurations : enregistrer, télécharger (JSON/CSV), charger, copier la configuration de cet onglet">Configs</button>
-    <button id="logBtn" class="btn" type="button" title="Journal de données : enregistrer tous les échantillons des variables de cet onglet (navigateur ou contrôleur), puis les télécharger en CSV/JSON">Journal<i id="logInd" class="recdot hide"></i></button>
-    <button id="pauseAllBtn" class="btn" type="button" title="Figer ou reprendre d’un coup tous les graphiques de cet onglet">⏸ Figer</button>
   </div>
 
   <section id="emptyState" class="empty hide">
@@ -94,6 +94,7 @@
 <script src="js/store.js"></script>
 <script src="js/dnd.js"></script>
 <script src="js/appearance.js"></script>
+<script src="js/netsim.js"></script>
 <script src="js/network.js"></script>
 <script src="js/protocols-ui.js"></script>
 <script src="js/app.js"></script>

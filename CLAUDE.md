@@ -78,6 +78,7 @@ web/            sources de l'application (page de dev : web/index.html)
   js/dnd.js     déplacement de widgets entre onglets et fenêtres
   js/appearance.js logo de l'exploitant + couleurs (partagés par tous les postes)
   js/network.js pages réseau : audit des communications, capture, voisinage LLDP
+  js/netsim.js  back-end simulé de ces pages (mêmes routes) hors serveur
   js/store.js   configurations : localStorage, export/import JSON+CSV, stub
   js/app.js     onglets, recherche, tableau, journal, boucle de rendu
 server/         serveur de diagnostic C++20 (HTTP + WebSocket ; open62541 pour
@@ -107,14 +108,16 @@ tools/gen-catalog.mjs  régénère server/src/catalog.generated.hpp depuis confi
 tools/gen-protocols.mjs régénère server/src/protocols.generated.hpp depuis protocols.js
 tools/check-drivers.mjs  un dossier de pilote par protocole (rejoué par la CI)
 tools/serve.py  serveur d'aperçu (port 8080, en-têtes anti-cache)
-tests/ui.mjs    tests d'interface Playwright (24 vérifications)
+tests/ui.mjs    tests d'interface Playwright (35 vérifications)
 tests/dnd.mjs   tests de déplacement de widgets (7 vérifications, http requis)
 tests/protocols.mjs  liens réseau bout en bout (équipements simulés + agent snmpd
                 réel pour SNMPv3 ; serveur requis, secrets dans son environnement)
 tests/decode.cpp     décodage des protocoles (cible diagweb-decode-test)
 tests/opcua_server.c serveur OPC UA de test (cible diagweb-opcua-test-server)
 tests/mms_ied.mjs    IED IEC 61850 simulé (pile ISO, MMS, rapports)
-tests/server.mjs     forçage + journalisation autonome (serveur requis)
+tests/server.mjs     forçage, journalisation autonome, apparence, audit,
+                LLDP, capture (serveur requis ; second passage --apres-redemarrage
+                pour la persistance des réglages de capture)
 dist/           livrables générés (commités) : index.html autonome + artifact.html
 docs/           PROJET.md, SPECS.md, PROTOCOLES.md
 .devcontainer/  configuration GitHub Codespaces (Python + Node + aperçu 8080)

@@ -9,6 +9,9 @@
 import net from 'node:net';
 
 const BASE = process.argv[2] || 'http://localhost:8080';
+/* Second passage, joué par tools/run-server-tests.sh après avoir redémarré le
+ * serveur sur le MÊME dossier de données : seule la persistance est vérifiée. */
+const APRES_REDEMARRAGE = process.argv.includes('--apres-redemarrage');
 const results = [];
 let failed = 0;
 
@@ -32,6 +35,26 @@ const health = await api('/api/health');
 if (health.status !== 200 || !health.json || health.json.role !== 'diag-server') {
   console.error('Le serveur de diagnostic ne répond pas sur ' + BASE);
   process.exit(2);
+}
+
+// ------------------------------------------- persistance après redémarrage
+/* Un déclencheur armé pour attraper un incident rare ne vaut que s'il survit
+ * à une coupure — c'est parfois la coupure elle-même qu'on cherche à
+ * comprendre. Le témoin a été posé par le premier passage, avant l'arrêt du
+ * serveur ; il doit être là après. */
+if (APRES_REDEMARRAGE) {
+  const c = await api('/api/capture');
+  const t = (c.json && c.json.trigger) || {};
+  check('capture : le quota survit au redémarrage du serveur',
+    c.json && c.json.quotaBytes === 50 * 1024 * 1024,
+    Math.round((c.json.quotaBytes || 0) / 1048576) + ' Mo');
+  check('capture : le déclencheur survit au redémarrage du serveur',
+    t.enabled === true && t.addr === 'S0.7' && t.mode === 'below' &&
+    t.threshold === 3 && t.iface === 'lo' && t.durationS === 12,
+    t.addr + ' ' + t.mode + ' ' + t.threshold + ' · ' + t.iface + ' · ' + t.durationS + ' s');
+  console.log('');
+  console.log(`${results.length - failed}/${results.length} vérifications réussies`);
+  process.exit(failed ? 1 : 0);
 }
 
 // ---------------------------------------------------------- forçage (WS)
@@ -290,6 +313,20 @@ await sleep(300);
 const after = await api('/api/health');
 check('le serveur survit aux entrées malveillantes (pas de crash)',
   after.status === 200 && after.json && after.json.role === 'diag-server');
+
+// Témoin de persistance : relu par le second passage, après redémarrage.
+const temoin = await api('/api/capture/config', {
+  method: 'PUT', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    quotaMB: 50,
+    trigger: { enabled: true, addr: 'S0.7', mode: 'below', threshold: 3,
+               iface: 'lo', durationS: 12 },
+  }),
+});
+check('capture : quota et déclencheur enregistrés (témoin de persistance)',
+  temoin.status === 200 && temoin.json.state.trigger.addr === 'S0.7' &&
+  temoin.json.state.quotaBytes === 50 * 1024 * 1024,
+  'relu après redémarrage par le second passage');
 
 console.log('');
 console.log(`${results.length - failed}/${results.length} vérifications réussies`);

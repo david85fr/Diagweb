@@ -99,7 +99,16 @@ await p1.waitForTimeout(300);
 check('onglets isolés (nouvel onglet vide, retour intact)',
   tab2Empty && tab2One && await p1.locator(PANE + '.vrow').count() === 7);
 
-// Journal de données
+// Journal de données — il vit désormais dans le menu général ☰, avec les
+// autres fonctions indépendantes des onglets ; la barre d'onglets n'a plus à
+// le porter.
+check('journal rangé dans le menu général, plus dans la barre d’actions',
+  await p1.locator('#menuPanel #logBtn').count() === 1 &&
+  await p1.locator('.tabActions #logBtn').count() === 0 &&
+  await p1.locator('.topIcons #pauseAllBtn').count() === 1,
+  'et « Figer » remonté dans la barre du haut');
+await p1.click('#menuBtn');
+await p1.waitForTimeout(150);
 await p1.click('#logBtn');
 await p1.waitForTimeout(250);
 await p1.click('#logToggle');
@@ -446,6 +455,50 @@ const ordreApres = await ordreCartes();
 check('alternance tableau / graphique, conservée au rechargement',
   /G.*T/.test(ordre) && ordreApres === ordre, ordre + ' → ' + ordreApres);
 
+// Menu ⋮ d'un tableau : les mêmes gestes que sur un graphique. Sans lui, un
+// tableau ne pouvait ni se dupliquer ni partir dans un autre onglet. Un second
+// onglet est ouvert pour que « Déplacer vers » ait une destination.
+await p2.click('#tabAdd');
+await p2.waitForTimeout(300);
+await p2.locator('.tab').first().click();
+await p2.waitForTimeout(300);
+await p2.locator(PANE + '.table-card').first().locator('.table-more').click();
+await p2.waitForTimeout(180);
+const menuTab = await p2.$$eval('.popmenu button', (b) => b.map((x) => x.textContent.trim()));
+const tablesAv = await p2.locator(PANE + '.table-card').count();
+await p2.locator('.popmenu button', { hasText: 'Dupliquer ce tableau' }).click();
+await p2.waitForTimeout(350);
+check('menu ⋮ des tableaux : dupliquer, déplacer, nouvelle fenêtre',
+  menuTab.some((t) => /Dupliquer ce tableau/.test(t)) &&
+  menuTab.some((t) => /Déplacer vers/.test(t)) &&
+  menuTab.some((t) => /nouvelle fenêtre/.test(t)) &&
+  await p2.locator(PANE + '.table-card').count() === tablesAv + 1,
+  menuTab.join(' · '));
+// La copie a fait son office : on la retire pour ne pas fausser la suite.
+await p2.locator(PANE + '.table-card').nth(1).locator('.table-more').click();
+await p2.waitForTimeout(150);
+await p2.locator('.popmenu button', { hasText: 'Fermer le tableau' }).click();
+await p2.waitForTimeout(300);
+
+// Sélection d'une carte : la barre du haut ajoute là où l'on a cliqué. Sans
+// cela il fallait dérouler la liste des destinations à chaque variable.
+// Le clic est porté sur une zone neutre de la légende : les commandes de la
+// carte (boutons, champs, poignées) ne changent volontairement pas la cible.
+const legende = p2.locator(PANE + '.chart-card').first().locator('.chart-legend');
+const legBox = await legende.boundingBox();
+await legende.click({ position: { x: legBox.width - 30, y: 12 } });
+await p2.waitForTimeout(200);
+const cibleClic = await p2.locator('#targetSel').inputValue();
+const surbrillance = await p2.locator(PANE + '.chart-card.cible, ' + PANE + '.table-card.cible').count();
+const courbesAv = await p2.locator(PANE + '.chart-card').first().locator('.chip').count();
+await p2.fill('#searchInput', 'Elec.puissance');
+await p2.click('#addBtn');
+await p2.waitForTimeout(350);
+const courbesAp = await p2.locator(PANE + '.chart-card').first().locator('.chip').count();
+check('carte sélectionnée : l’ajout depuis la barre du haut y va',
+  /^chart:/.test(cibleClic) && surbrillance === 1 && courbesAp === courbesAv + 1,
+  'cible « ' + cibleClic + ' » · ' + courbesAv + ' → ' + courbesAp + ' courbes');
+
 // Apparence : logo de l'exploitant et couleurs. Page ouverte hors serveur ici,
 // donc réglages du navigateur — le tour serveur est couvert par tests/server.mjs.
 await p2.click('#menuBtn');
@@ -502,6 +555,49 @@ await p2.evaluate(() => {
 });
 await p2.waitForTimeout(300);
 
+// Pages réseau hors serveur : elles tournent sur la simulation (netsim.js), de
+// sorte que l'interface de gestion des captures se voie et se règle même sans
+// contrôleur. Le bandeau doit dire d'où viennent les données, et une capture
+// simulée ne doit offrir aucun fichier à télécharger — il n'y a rien derrière.
+await p2.click('#menuBtn'); await p2.waitForTimeout(150);
+await p2.click('#captureBtn');
+await p2.waitForSelector('.cap-if', { timeout: 5000 });
+const bandeau = await p2.locator('.net-sim').count();
+const nbIfaces = await p2.locator('.cap-if option').count();
+await p2.click('.cap-go');
+await p2.waitForTimeout(1200);
+const enCours = await p2.locator('.cap-etat.cap-on').count();
+await p2.click('.cap-stop');
+await p2.waitForTimeout(400);
+const arretee = await p2.locator('.cap-list tbody tr').first().textContent();
+const pcap = await p2.locator('.cap-list a', { hasText: 'pcap' }).count();
+check('capture : interface de gestion utilisable sur la simulation',
+  bandeau === 1 && nbIfaces >= 3 && enCours === 1 && /arrêtée/.test(arretee) && pcap === 0,
+  nbIfaces + ' interfaces · bandeau « données simulées » · aucun fichier proposé');
+
+// Quota et déclencheur simulés : ils se règlent, et ils tiennent au
+// rechargement — comme les réglages persistants du serveur.
+await p2.fill('.cap-quota-in', '25');
+await p2.check('.tr-on');
+await p2.fill('.tr-addr', 'S0.4');
+await p2.click('.tr-save');
+await p2.waitForTimeout(500);
+await p2.click('.m-close');
+await p2.reload();
+await p2.waitForSelector(PANE + '.chart-card', { timeout: 20000 });
+await p2.waitForTimeout(1200);
+await p2.click('#menuBtn'); await p2.waitForTimeout(150);
+await p2.click('#captureBtn');
+await p2.waitForSelector('.cap-quota-in', { timeout: 5000 });
+const quotaGarde = await p2.locator('.cap-quota-in').inputValue();
+const declGarde = await p2.locator('.tr-on').isChecked();
+const adrGarde = await p2.locator('.tr-addr').inputValue();
+check('capture simulée : quota et déclencheur conservés au rechargement',
+  quotaGarde === '25' && declGarde && adrGarde === 'S0.4',
+  quotaGarde + ' Mo · déclencheur ' + adrGarde);
+await p2.click('.m-close');
+await p2.waitForTimeout(200);
+
 // Couverture des infobulles : chaque objet interactif doit être documenté
 const AUDIT = () => {
   const sel = 'button, select, input, .tab, .chip, .drag-handle, .vrow, .badge,' +
@@ -535,16 +631,34 @@ await sweep(async () => {
 await p2.mouse.click(5, 5); await p2.waitForTimeout(150);
 await sweep(async () => { await p2.click('#layoutsBtn'); await p2.waitForTimeout(300); });
 await p2.click('.m-close');
+await p2.click('#menuBtn'); await p2.waitForTimeout(150);
 await sweep(async () => { await p2.click('#logBtn'); await p2.waitForTimeout(300); });
 await p2.click('.m-close');
 await sweep(async () => { await p2.click('#menuBtn'); await p2.waitForTimeout(180); });
+// Les trois pages réseau : hors serveur elles tournent sur la simulation, et
+// c'est justement pour cela qu'elles doivent passer l'audit des infobulles.
+const ouvrirMenu = async () => {
+  if (await p2.locator('#menuPanel.hide').count()) await p2.click('#menuBtn');
+  await p2.waitForTimeout(120);
+};
+for (const [bouton, attente] of [['#auditBtn', '.net-sec'], ['#captureBtn', '.cap-if'],
+                                 ['#lldpBtn', '.lldp-timeout']]) {
+  await sweep(async () => {
+    await ouvrirMenu();
+    await p2.click(bouton);
+    await p2.waitForSelector(attente, { timeout: 5000 });
+    await p2.waitForTimeout(200);
+  });
+  await p2.click('.m-close');
+}
+await ouvrirMenu();
 await sweep(async () => { await p2.click('#netBtn'); await p2.waitForTimeout(300); });
 await sweep(async () => {
   await p2.locator('.px-acts .btn', { hasText: 'Modifier' }).first().click();
   await p2.waitForTimeout(250);
 });
 await p2.click('.m-close');
-await p2.click('#menuBtn'); await p2.waitForTimeout(150);
+await ouvrirMenu();
 await sweep(async () => { await p2.click('#helpBtn'); await p2.waitForTimeout(250); });
 const helpSections = await p2.locator('.help-h').count();
 check('infobulle sur chaque objet de l\'interface',

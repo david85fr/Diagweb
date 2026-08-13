@@ -4,10 +4,11 @@
  * l'espace de travail, qui continue de tourner derrière : ce sont des vues de
  * diagnostic du CONTRÔLEUR, pas des onglets de travail.
  *
- * Toutes trois sont servies par le serveur de diagnostic et n'existent donc
- * pas hors de lui : une page ouverte en fichier local (Artifact, copie hors
- * ligne) le dit franchement plutôt que d'afficher un tableau vide, qui se
- * lirait comme « rien à signaler ».
+ * Toutes trois interrogent le serveur de diagnostic. Hors serveur — Artifact,
+ * page publiée, copie hors ligne — c'est `netsim.js` qui répond à sa place,
+ * avec les mêmes routes : l'interface de gestion reste visible et
+ * manipulable. Un bandeau le dit sans ambiguïté, et rien de ce qui vient de
+ * la simulation ne se fait passer pour une mesure du matériel.
  */
 (function () {
   "use strict";
@@ -40,11 +41,14 @@
     root.appendChild(back);
 
     if (!surServeur()) {
-      corps.innerHTML = '<p class="page-vide">Cette page interroge le serveur de ' +
-        'diagnostic du contrôleur. La page est ouverte hors serveur : il n’y a ' +
-        'rien à observer ici, et afficher un tableau vide laisserait croire le ' +
-        'contraire.</p>';
-      return;
+      const b = document.createElement('p');
+      b.className = 'net-sim';
+      b.title = 'Aucun serveur de diagnostic joignable : cette page fonctionne ' +
+        'sur des données simulées, pour découvrir et régler l’interface.';
+      b.innerHTML = '<b>Données simulées.</b> Aucun serveur de diagnostic n’est ' +
+        'joignable : cette page montre un contrôleur fictif, pour découvrir et ' +
+        'régler l’interface. Rien de ce qui s’affiche ici ne vient d’un matériel.';
+      back.querySelector('.modal').insertBefore(b, corps);
     }
     const maj = () => construire(corps).catch((e) => {
       corps.innerHTML = '<p class="page-vide">Serveur injoignable : ' +
@@ -56,7 +60,16 @@
     return { corps, maj, fermer };
   }
 
+  /**
+   * Un seul point d'appel pour les trois pages. Hors serveur, la requête part
+   * vers le back-end simulé : mêmes routes, mêmes formes de réponse, si bien
+   * que le reste de ce fichier ignore laquelle des deux répond.
+   */
   async function api(chemin, options) {
+    if (!surServeur()) {
+      if (!DW.netsim) throw new Error('simulation réseau indisponible');
+      return DW.netsim.appel(chemin, options);
+    }
     const r = await fetch(chemin, options);
     const txt = await r.text();
     let j = null;
@@ -158,6 +171,7 @@
   function rapportTexte(d) {
     const l = [];
     l.push('Diagweb — audit des communications');
+    if (d.simule) l.push('*** DONNÉES SIMULÉES — aucun contrôleur interrogé ***');
     l.push('Processus ' + d.pid + ', port d’écoute ' + d.listenPort);
     l.push('');
     l.push('ENTRANT');
@@ -326,7 +340,12 @@
           (r.state === 'en cours'
             ? '<button class="btn sm cap-stop" data-id="' + DW.escapeHtml(r.id) + '" ' +
               'title="Arrêter cette capture ; le fichier est refermé proprement">Arrêter</button>'
-            : (r.bytes > 24
+            : (r.simule
+               // Une capture simulée n'a pas de trames derrière elle : offrir un
+               // fichier reviendrait à en inventer.
+               ? '<span class="cap-detail" title="Capture simulée : il n’y a pas ' +
+                 'de trames derrière, donc pas de fichier à télécharger.">simulé</span> '
+               : r.bytes > 24
                ? '<a class="btn sm" href="/api/capture/file?name=' + encodeURIComponent(r.id) +
                  '" title="Télécharger le fichier pcap">pcap</a> '
                : '') +

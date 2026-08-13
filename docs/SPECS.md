@@ -120,8 +120,10 @@ restent partagées entre toutes les fenêtres (stockage local).
   largeur (en colonnes) et sa hauteur. Un tableau regroupe ce qui se lit
   ensemble ; deux tableaux séparent deux sujets, ce qu'une seule liste ne sait
   pas faire. Chaque tableau a son **nom** (modifiable, il sert de destination
-  d'ajout), son bouton **＋** et son menu **⋮** (vider, taille automatique,
-  déplacer vers un onglet, fermer).
+  d'ajout), son bouton **＋** et son menu **⋮** — le même jeu de gestes que
+  celui d'un graphique : ajouter des variables, vider, taille automatique,
+  **dupliquer ce tableau**, **déplacer vers un onglet**, **ouvrir dans une
+  nouvelle fenêtre**, fermer.
 - Colonnes : badge famille, adresse (mono), libellé, valeur vivante, unité,
   tendance (↗/↘/→ sur ~2,5 s, sauf bits), bouton **✎** (renommer), bouton
   retirer.
@@ -522,19 +524,24 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
   onglets (＋ inclus), et à droite le tag de version, le bouton de **repli
   de la zone de configuration** (⌃/⌄) et le **menu burger ☰**.
 - **Menu burger ☰ = fonctions globales** (indépendantes des onglets) :
-  aujourd'hui Basculer le thème, **Apparence** (logo et couleurs, §8 bis),
-  Aide (commandes et gestes), **Liens réseau**
-  (configuration des protocoles industriels, §7 bis) et À propos
-  (version, mode) ; réservé aux
-  futures fonctions globales (capture d'interfaces réseau, notes de
-  version…, affichées « à venir »). Fermé par sélection ou appui à
-  l'extérieur.
+  Basculer le thème, **Apparence** (logo et couleurs, §8 bis), **Journal de
+  données** (§6 bis — point ⏺ tant qu'un enregistrement tourne), Aide
+  (commandes et gestes), **Liens réseau** (configuration des protocoles
+  industriels, §7 bis), À propos (version, mode) et les trois **pages
+  réseau** (§8 ter) ; les notes de version restent affichées « à venir ».
+  Fermé par sélection ou appui à l'extérieur.
+- **Figer/Reprendre** est dans la **barre du haut**, à côté du tag de version :
+  arrêter tous les graphiques est le geste qu'on fait dans l'urgence, il ne
+  doit pas dépendre du repli de la zone de configuration.
 - **Actions de l'onglet actif**, dans une rangée sous la barre d'onglets
-  (elle défile avec le contenu) : + Graphique · Configs · Journal (point ⏺
-  si journalisation active) · Figer/Reprendre.
+  (elle défile avec le contenu) : + Tableau · + Graphique · Configs.
+- **Carte visée** : un clic sur un tableau ou un graphique (hors ses boutons,
+  champs et poignées) en fait la **destination d'ajout** de la barre du haut ;
+  elle se signale par un liseré. Avec plusieurs cartes à l'écran, « Ajouter »
+  cessait sinon d'être prévisible.
 - **Repli de la zone de configuration** via ⌃/⌄ : masque la recherche +
   cible + période + Ajouter **et** la rangée d'actions de l'onglet
-  (+ Graphique / Configs / Journal / Figer) ; l'état est mémorisé dans le
+  (+ Tableau / + Graphique / Configs) ; l'état est mémorisé dans le
   navigateur. Replié, il ne reste que la ligne des onglets (~63 px sur
   téléphone) et le contenu.
 - La barre reste **empilée** (onglets / zone de configuration) jusqu'à
@@ -548,9 +555,10 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
   (`tests/ui.mjs`) qui balaie toutes les vues et échoue au moindre objet
   non documenté.
 - **Aide** (menu ☰) : récapitulatif des commandes et des gestes — ajout de
-  variables (dont forçage `= valeur`), gestes sur le tracé, gestes sur les
-  règles d'axes, organisation (poignées ⠿ et ◢, renommage, menu ⋮, onglets),
-  liens réseau, courbes. Elle remplace les infobulles sur écran tactile, où
+  variables (dont forçage `= valeur` et carte visée), gestes sur le tracé,
+  gestes sur les règles d'axes, organisation (poignées ⠿ et ◢, renommage,
+  menus ⋮ des graphiques et des tableaux, onglets, barre du haut), pages
+  réseau, apparence, liens réseau, courbes. Elle remplace les infobulles sur écran tactile, où
   elles n'apparaissent pas.
 - **Identification de version** tout en haut à droite, en face de la barre
   d'onglets : `hash court · #n`
@@ -594,9 +602,19 @@ contrôleur.
 
 Trois vues de diagnostic du **contrôleur**, ouvertes depuis le menu ☰ par-dessus
 l'espace de travail — qui continue de tourner derrière. Elles sont servies par
-le serveur de diagnostic et n'existent pas hors de lui : une page ouverte en
-fichier local le dit franchement, plutôt que d'afficher un tableau vide qui se
-lirait « rien à signaler ».
+le serveur de diagnostic.
+
+**Hors serveur** (Artifact, page publiée, copie hors ligne), c'est
+`web/js/netsim.js` qui répond à sa place, sur **les mêmes routes et les mêmes
+formes de JSON** : l'interface de gestion reste visible et manipulable — on
+démarre une capture, on la voit grossir, on l'arrête, on règle un quota, on
+arme un déclencheur — ce qu'un écran d'excuse ne permettait pas. Deux règles
+pour que la simulation ne se fasse jamais passer pour la réalité : un
+**bandeau** sur chaque page, et **rien d'inventé qui prétende venir du
+matériel** — une capture simulée n'offre aucun fichier à télécharger, puisqu'il
+n'y a pas de trames derrière. Les réglages simulés (quota, déclencheur, délai
+d'oubli LLDP) tiennent au rechargement, comme ceux du serveur tiennent au
+redémarrage.
 
 ### Audit des communications
 
@@ -631,6 +649,12 @@ Trois garde-fous, parce qu'une capture oubliée remplit un disque embarqué :
 3. **déclenchement par une variable** de diagnostic (front montant d'une
    condition : non nulle, au-dessus, en dessous) — de quoi attraper l'incident
    rare sans laisser tourner la capture des heures.
+
+Le quota et le déclencheur sont **persistants** : ils sont écrits à côté des
+captures (`<data-dir>/captures/reglages.json`) et relus au démarrage, qui
+réabonne la variable observée. Un déclencheur armé pour attraper un incident
+rare et qui s'oublierait à la première coupure ne servirait à rien — et c'est
+précisément la coupure qu'on cherche parfois à comprendre.
 
 L'arrêt se fait par `SIGINT` : tcpdump ferme proprement son fichier, là où un
 `SIGKILL` le laisserait tronqué, donc illisible. L'interface est vérifiée avant
@@ -682,5 +706,13 @@ absence de voisins.
 - [x] Serveur de diagnostic C++ (squelette) : WebSocket, /api/layouts,
       /api/datalog, service des pages ; source encore simulée
 - [x] Source WebSocket côté navigateur + bascule automatique
+- [x] Plusieurs tableaux par onglet, alternés avec les graphiques (format de
+      disposition v2), menu ⋮ complet sur les tableaux (dupliquer, déplacer,
+      nouvelle fenêtre), carte visée par un clic
+- [x] Apparence : logo de l'exploitant et couleurs de l'interface, partagés
+      par tous les postes quand le contrôleur sert la page
+- [x] Pages réseau : audit des communications, capture d'interfaces (quota,
+      durée, déclencheur **persistants**), voisinage LLDP — et leur
+      back-end **simulé** pour la page publiée
 - [ ] Binding du `controller` derrière `IVariableSource` — phase 2
 - [ ] Enregistrement/relecture, export CSV, seuils/alarmes — phase 3

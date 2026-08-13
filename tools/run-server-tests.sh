@@ -24,21 +24,34 @@ DATA=$(mktemp -d)
 # toujours dans l'environnement du serveur — comme en exploitation.
 export DIAGWEB_SECRET_AGENT_AUTH=motdepasseauth
 export DIAGWEB_SECRET_AGENT_PRIV=motdepassepriv
-"$BIN" --port "$PORT" --root . --data-dir "$DATA" > /tmp/diagweb-test-server.log 2>&1 &
-SRV=$!
+SRV=""
 trap 'kill "$SRV" 2>/dev/null; wait "$SRV" 2>/dev/null; rm -rf "$DATA"' EXIT
 
-for _ in $(seq 1 60); do
-  curl -sf "http://localhost:$PORT/api/health" > /dev/null && break
-  sleep 0.25
-done
-if ! curl -sf "http://localhost:$PORT/api/health" > /dev/null; then
+# Le serveur est lancé deux fois sur le MÊME dossier de données : le second
+# départ vérifie que les réglages persistants (quota et déclencheur de
+# capture) ont bien survécu à l'arrêt.
+demarrer() {
+  "$BIN" --port "$PORT" --root . --data-dir "$DATA" > /tmp/diagweb-test-server.log 2>&1 &
+  SRV=$!
+  for _ in $(seq 1 60); do
+    curl -sf "http://localhost:$PORT/api/health" > /dev/null && return 0
+    sleep 0.25
+  done
   echo "le serveur n'a pas démarré :" >&2
   cat /tmp/diagweb-test-server.log >&2
-  exit 1
-fi
+  return 1
+}
+
+demarrer || exit 1
 
 ECHECS=0
 node tests/protocols.mjs "http://localhost:$PORT" || ECHECS=$((ECHECS + 1))
 node tests/server.mjs "http://localhost:$PORT" || ECHECS=$((ECHECS + 1))
+
+kill "$SRV" 2>/dev/null; wait "$SRV" 2>/dev/null; SRV=""
+echo ""
+echo "=== redémarrage du serveur (persistance des réglages) ==="
+demarrer || exit 1
+node tests/server.mjs "http://localhost:$PORT" --apres-redemarrage || ECHECS=$((ECHECS + 1))
+
 exit $((ECHECS > 0))
