@@ -93,6 +93,15 @@ button { font-family: var(--sans); }
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 .logo svg { width: 18px; height: 18px; display: block; }
+/* Logo fourni par l'exploitant : il remplace la pastille d'accent, fond
+   compris — une image de marque sur un carré coloré ne rend jamais bien. */
+/* Un logo de marque est presque toujours plus large que haut : la pastille
+   carrée s'efface et laisse la place, en gardant la hauteur de la barre. */
+.logo:has(img) {
+  background: none; box-shadow: none; border-radius: 6px;
+  width: auto; max-width: 132px;
+}
+.logo img { max-width: 100%; max-height: 30px; display: block; object-fit: contain; }
 
 .topIcons {
   grid-area: icons;
@@ -743,6 +752,25 @@ body.dnd-over-pane #panes {
 }
 .m-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
+/* ---------- Apparence : logo et couleurs ---------- */
+.modal.skin { max-width: 620px; }
+.skin-logo { display: flex; align-items: center; gap: 14px; }
+.skin-prev {
+  width: 96px; height: 56px; flex: none;
+  display: grid; place-items: center; overflow: hidden;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+}
+.skin-prev.vide { color: var(--faint); font-size: 11px; }
+.skin-prev img { max-width: 88px; max-height: 48px; object-fit: contain; }
+.skin-logo-act { display: flex; flex-wrap: wrap; gap: 8px; }
+.skin-colors { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.skin-color { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink); }
+.skin-color input[type="color"] {
+  width: 34px; height: 26px; flex: none; padding: 0;
+  background: none; border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
+}
+.skin-msg { flex: 1; align-self: center; font-size: 12px; color: var(--muted); }
+
 /* ---------- Sélecteur de variables (bouton « + ») ---------- */
 /* Grande fenêtre : on vient y VOIR le catalogue, pas deviner une adresse. */
 .modal.vpick { max-width: 900px; display: flex; flex-direction: column; max-height: 88vh; }
@@ -978,11 +1006,12 @@ body.cfg-hidden .tabActions { display: none; }
     </div>
 
     <div class="topIcons">
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">44ff0b4 · #80</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">acada59 · #82</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
+        <button id="skinBtn" type="button" title="Apparence : logo de l’installation et couleurs de l’interface — réglages partagés par tous les postes quand la page est servie par le contrôleur">Apparence — logo et couleurs…</button>
         <button id="helpBtn" type="button" title="Récapitulatif des commandes et des gestes (utile sur écran tactile, où les infobulles n’apparaissent pas)">Aide — commandes et gestes…</button>
         <button id="netBtn" type="button" title="Liens réseau : déclarer des équipements Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen, SNMP ou OPC UA et choisir les variables à lire">Liens réseau…</button>
         <button id="aboutBtn" type="button" title="Version affichée, mode de fonctionnement et source de données">À propos de Diagweb…</button>
@@ -4489,12 +4518,23 @@ body.cfg-hidden .tabActions { display: none; }
       else if (m.type === 'variable-renamed' && m.origin !== winId && api && api.applyRename) {
         api.applyRename(m.addr, m.name);
       }
+      // L'apparence appartient à l'installation : elle vaut pour toutes les
+      // fenêtres ouvertes sur le même contrôleur, sans attendre un rechargement.
+      else if (m.type === 'appearance' && m.origin !== winId &&
+               DW.appearance && DW.appearance.recevoir) {
+        DW.appearance.recevoir(m.value);
+      }
     });
   }
 
   /** Annonce un renommage aux autres fenêtres de la même origine. */
   function shareRename(addr, name) {
     if (bc) bc.postMessage({ type: 'variable-renamed', origin: winId, addr, name });
+  }
+
+  /** Annonce un changement d'apparence aux autres fenêtres. */
+  function shareAppearance(value) {
+    if (bc) bc.postMessage({ type: 'appearance', origin: winId, value });
   }
 
   function envelope(payload, dragId) {
@@ -4683,6 +4723,7 @@ body.cfg-hidden .tabActions { display: none; }
     startDrag,
     endDrag,
     shareRename,
+    shareAppearance,
     openInNewWindow,
     consumeOpenParam,
     describe,
@@ -4697,6 +4738,289 @@ body.cfg-hidden .tabActions { display: none; }
       });
     },
   };
+})();
+
+</script>
+<script>
+/* Diagweb — apparence : logo de l'exploitant et couleurs de l'interface.
+ *
+ * Deux réglages, un même principe : ils appartiennent à l'INSTALLATION, pas au
+ * poste qui les saisit. Servis par le contrôleur, ils sont donc enregistrés
+ * côté serveur (`<data-dir>/appearance.json`) et tous les postes connectés les
+ * voient. Page ouverte hors serveur (copie hors ligne, Artifact), ils restent
+ * dans le navigateur : jamais de réglage perdu, jamais d'appel réseau inutile.
+ *
+ * AUCUNE RESSOURCE EXTERNE. Le logo n'est pas une URL mais une image
+ * INCORPORÉE (data:), pour deux raisons : la page doit se servir hors ligne
+ * depuis le contrôleur, et la page publiée l'est sous une CSP stricte qui
+ * refuse tout hôte tiers. Une image matricielle est réduite à la volée avant
+ * d'être stockée — un logo de 4 Mo dans une configuration partagée n'a aucun
+ * sens.
+ *
+ * Le logo est rendu dans une balise <img>, jamais injecté comme balisage. Un
+ * SVG y est traité en image : ses scripts éventuels ne s'exécutent pas. C'est
+ * la seule façon d'accepter un fichier fourni par l'exploitant sans lui donner
+ * les clés de la page.
+ */
+(function () {
+  "use strict";
+  const DW = (window.DW = window.DW || {});
+
+  const CLE = 'diagweb.appearance';
+  const MAX_LOGO = 384 * 1024;      // octets du data: final
+  const LOGO_H = 128;               // hauteur de réduction (affiché ~28 px)
+  const LOGO_W = 512;
+
+  /**
+   * Jetons de couleur proposés. Volontairement peu nombreux : tout le reste
+   * s'en déduit (voir `derives`). Six réglages tiennent dans une fenêtre et
+   * donnent une palette cohérente ; vingt donneraient surtout l'occasion de
+   * fabriquer une interface illisible.
+   */
+  const TOKENS = [
+    { key: 'accent', css: '--accent', label: 'Accent',
+      help: 'Couleur des boutons actifs, des sélections et des repères. Les nuances associées en sont déduites.' },
+    { key: 'bg', css: '--bg', label: 'Fond de page',
+      help: 'Fond général, derrière les cartes.' },
+    { key: 'panel', css: '--panel', label: 'Cartes',
+      help: 'Fond des cartes : tableau, graphiques, fenêtres.' },
+    { key: 'panel2', css: '--panel-2', label: 'Fond secondaire',
+      help: 'Fond des champs, des lignes paires du tableau et des zones en retrait.' },
+    { key: 'ink', css: '--ink', label: 'Texte',
+      help: 'Couleur du texte principal. Les gris atténués en sont déduits.' },
+    { key: 'line', css: '--line', label: 'Traits',
+      help: 'Bordures des cartes, séparateurs et grille des graphiques.' },
+  ];
+
+  const vide = () => ({ version: 1, logo: '', colors: { dark: {}, light: {} } });
+  let etat = vide();
+  let svgOrigine = null;            // logo par défaut, capturé au démarrage
+
+  const theme = () => (DW.isDarkTheme && DW.isDarkTheme() ? 'dark' : 'light');
+  const couleurs = () => etat.colors[theme()] || {};
+
+  /** Le serveur de diagnostic sert-il cette page ? */
+  const surServeur = () => DW.sourceMode === 'ws';
+
+  // ------------------------------------------------------------ application
+  /**
+   * Nuances déduites des jetons réglés, pour que la palette reste cohérente
+   * sans multiplier les réglages :
+   *   --accent-dim  l'autre extrémité des dégradés d'accent ;
+   *   --muted/faint le texte atténué, obtenu en fondant le texte dans le fond.
+   */
+  function derives(root, c) {
+    if (c.accent) {
+      root.style.setProperty('--accent-dim', theme() === 'dark'
+        ? 'color-mix(in srgb, ' + c.accent + ' 62%, #000)'
+        : 'color-mix(in srgb, ' + c.accent + ' 82%, #fff)');
+    } else {
+      root.style.removeProperty('--accent-dim');
+    }
+    if (c.ink) {
+      root.style.setProperty('--muted', 'color-mix(in srgb, ' + c.ink + ' 62%, var(--bg))');
+      root.style.setProperty('--faint', 'color-mix(in srgb, ' + c.ink + ' 42%, var(--bg))');
+    } else {
+      root.style.removeProperty('--muted');
+      root.style.removeProperty('--faint');
+    }
+  }
+
+  /** Applique les couleurs du thème courant, ou les retire si aucune. */
+  function appliquerCouleurs() {
+    const root = document.documentElement;
+    const c = couleurs();
+    for (const t of TOKENS) {
+      if (c[t.key]) root.style.setProperty(t.css, c[t.key]);
+      else root.style.removeProperty(t.css);
+    }
+    derives(root, c);
+    // Les graphiques lisent l'encre du thème dans les variables CSS : sans
+    // cette invalidation, ils garderaient l'ancienne palette jusqu'au prochain
+    // changement de thème.
+    if (DW.invalidateChartTheme) DW.invalidateChartTheme();
+    document.dispatchEvent(new CustomEvent('dw:appearance'));
+  }
+
+  function appliquerLogo() {
+    const box = document.querySelector('.logo');
+    if (!box) return;
+    if (svgOrigine === null) svgOrigine = box.innerHTML;
+    box.innerHTML = '';
+    if (!etat.logo) {
+      box.innerHTML = svgOrigine;
+    } else {
+      const img = document.createElement('img');
+      img.src = etat.logo;                 // data: — jamais une URL distante
+      img.alt = 'Logo de l’installation';
+      box.appendChild(img);
+    }
+    // L'icône d'onglet suit le logo : c'est le même repère visuel, et
+    // l'opérateur qui ouvre trois postes s'y retrouve.
+    let lien = document.querySelector('link[rel="icon"]');
+    if (etat.logo) {
+      if (!lien) {
+        lien = document.createElement('link');
+        lien.rel = 'icon';
+        document.head.appendChild(lien);
+      }
+      lien.href = etat.logo;
+    } else if (lien && lien.dataset.dw === '1') {
+      lien.remove();
+    }
+    if (lien) lien.dataset.dw = '1';
+  }
+
+  function appliquer() { appliquerCouleurs(); appliquerLogo(); }
+
+  // ------------------------------------------------------------ persistance
+  function lireLocal() {
+    try {
+      const brut = window.localStorage.getItem(CLE);
+      if (brut) return normaliser(JSON.parse(brut));
+    } catch (e) { /* stockage indisponible ou contenu illisible */ }
+    return null;
+  }
+
+  /** N'accepte que ce qu'on sait rendre : une image incorporée et des couleurs. */
+  function normaliser(o) {
+    const out = vide();
+    if (!o || typeof o !== 'object') return out;
+    if (typeof o.logo === 'string' && /^data:image\//.test(o.logo)) out.logo = o.logo;
+    for (const t of ['dark', 'light']) {
+      const src = (o.colors && o.colors[t]) || {};
+      for (const tok of TOKENS) {
+        const v = src[tok.key];
+        if (typeof v === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(v)) out.colors[t][tok.key] = v;
+      }
+    }
+    return out;
+  }
+
+  async function charger() {
+    // Le stockage local d'abord : l'apparence s'applique sans attendre le
+    // réseau, ce qui évite de voir la page changer de couleur sous les yeux.
+    const local = lireLocal();
+    if (local) { etat = local; appliquer(); }
+    if (!surServeur()) return etat;
+    try {
+      const r = await fetch('/api/appearance', { cache: 'no-store' });
+      if (r.ok) {
+        etat = normaliser(await r.json());
+        appliquer();
+        try { window.localStorage.setItem(CLE, JSON.stringify(etat)); } catch (e) { /* ignoré */ }
+      }
+    } catch (e) { /* serveur muet : les réglages locaux font foi */ }
+    return etat;
+  }
+
+  async function enregistrer() {
+    appliquer();
+    try { window.localStorage.setItem(CLE, JSON.stringify(etat)); } catch (e) { /* ignoré */ }
+    if (DW.dnd && DW.dnd.shareAppearance) DW.dnd.shareAppearance(etat);
+    if (!surServeur()) return { ok: true, portee: 'navigateur' };
+    try {
+      const r = await fetch('/api/appearance', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(etat),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        return { ok: false, error: j.error || ('refus du serveur (HTTP ' + r.status + ')') };
+      }
+      return { ok: true, portee: 'contrôleur' };
+    } catch (e) {
+      return { ok: false, error: 'serveur injoignable' };
+    }
+  }
+
+  // ------------------------------------------------------------------ logo
+  /**
+   * Fichier choisi par l'opérateur → image incorporée, réduite.
+   *
+   * SVG : conservé tel quel (il se redimensionne sans perte), simplement
+   * encodé. Matriciel : redessiné dans un canvas à la hauteur d'affichage,
+   * ce qui ramène une photo de plusieurs méga-octets à quelques kilo-octets.
+   */
+  function lireLogo(file) {
+    return new Promise((resolve, reject) => {
+      if (!file) return reject(new Error('aucun fichier'));
+      if (!/^image\//.test(file.type || '')) {
+        return reject(new Error('ce fichier n’est pas une image'));
+      }
+      if (file.size > 4 * 1024 * 1024) {
+        return reject(new Error('image trop lourde (4 Mo maximum en entrée)'));
+      }
+      const fr = new FileReader();
+      fr.onerror = () => reject(new Error('lecture impossible'));
+      if (/svg/.test(file.type)) {
+        fr.onload = () => {
+          const uri = 'data:image/svg+xml;base64,' + btoa(
+            String.fromCharCode(...new Uint8Array(fr.result)));
+          if (uri.length > MAX_LOGO) return reject(new Error('SVG trop volumineux'));
+          resolve(uri);
+        };
+        fr.readAsArrayBuffer(file);
+        return;
+      }
+      fr.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('image illisible'));
+        img.onload = () => {
+          const k = Math.min(1, LOGO_H / (img.naturalHeight || LOGO_H),
+                             LOGO_W / (img.naturalWidth || LOGO_W));
+          const cv = document.createElement('canvas');
+          cv.width = Math.max(1, Math.round(img.naturalWidth * k));
+          cv.height = Math.max(1, Math.round(img.naturalHeight * k));
+          const ctx = cv.getContext('2d');
+          ctx.drawImage(img, 0, 0, cv.width, cv.height);
+          let uri = cv.toDataURL('image/png');
+          if (uri.length > MAX_LOGO) uri = cv.toDataURL('image/jpeg', 0.85);
+          if (uri.length > MAX_LOGO) return reject(new Error('image trop lourde après réduction'));
+          resolve(uri);
+        };
+        img.src = fr.result;
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+
+  DW.appearance = {
+    TOKENS,
+    charger,
+    enregistrer,
+    appliquer,
+    lireLogo,
+    etat: () => etat,
+    /** Valeur affichée d'un jeton : celle réglée, sinon celle du thème. */
+    valeur(key) {
+      const c = couleurs();
+      if (c[key]) return c[key];
+      const tok = TOKENS.find((t) => t.key === key);
+      const v = getComputedStyle(document.documentElement).getPropertyValue(tok.css).trim();
+      return /^#[0-9a-fA-F]{3,8}$/.test(v) ? v : '#888888';
+    },
+    setCouleur(key, valeur) {
+      etat.colors[theme()][key] = valeur;
+      appliquerCouleurs();
+    },
+    setLogo(uri) { etat.logo = uri || ''; appliquerLogo(); },
+    /** Remet les couleurs du thème courant à celles du produit. */
+    reinitialiserCouleurs() {
+      etat.colors[theme()] = {};
+      appliquerCouleurs();
+    },
+    /** Reçu d'une autre fenêtre : appliqué sans réémettre ni réenregistrer. */
+    recevoir(o) {
+      etat = normaliser(o);
+      appliquer();
+      try { window.localStorage.setItem(CLE, JSON.stringify(etat)); } catch (e) { /* ignoré */ }
+    },
+    surServeur,
+  };
+
+  // Le thème bascule : les couleurs propres à l'autre thème prennent le relais.
+  document.addEventListener('dw:theme', appliquerCouleurs);
 })();
 
 </script>
@@ -6816,6 +7140,143 @@ body.cfg-hidden .tabActions { display: none; }
     } catch (e) { return false; }
   }
 
+  // ---------- Apparence : logo et couleurs -----------------------------
+  /**
+   * Fenêtre « Apparence ». Le logo et les couleurs appartiennent à
+   * l'installation : servis par le contrôleur, ils valent pour tous les postes
+   * connectés ; page ouverte hors serveur, ils restent dans ce navigateur.
+   * L'aperçu est immédiat — on juge une couleur sur l'interface, pas sur une
+   * pastille.
+   */
+  function openAppearance() {
+    const A = DW.appearance;
+    if (!A) return;
+    const root = $('modalRoot');
+    root.innerHTML = '';
+    const sombre = DW.isDarkTheme();
+    const portee = A.surServeur()
+      ? 'Enregistré sur le contrôleur : tous les postes connectés voient la même identité.'
+      : 'Page ouverte hors serveur : ces réglages restent dans ce navigateur.';
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    back.innerHTML =
+      '<div class="modal skin" role="dialog" aria-label="Apparence">' +
+        '<header class="m-head"><h3>Apparence</h3>' +
+          '<button class="iconbtn m-close" type="button" title="Fermer">✕</button></header>' +
+        '<p class="m-note">' + DW.escapeHtml(portee) + '</p>' +
+        '<div class="m-section">' +
+          '<span class="m-label">Logo de l’installation</span>' +
+          '<div class="skin-logo">' +
+            '<span class="skin-prev" title="Aperçu du logo, à la taille où il s’affiche"></span>' +
+            '<div class="skin-logo-act">' +
+              '<button class="btn skin-pick" type="button" ' +
+                'title="Choisir une image : PNG, JPEG, SVG ou WebP. Elle est réduite et ' +
+                'incorporée à la configuration — aucune ressource extérieure n’est appelée">' +
+                'Choisir une image…</button>' +
+              '<button class="btn skin-clear" type="button" ' +
+                'title="Revenir au logo de Diagweb">Retirer</button>' +
+              '<input class="skin-file hide" type="file" accept="image/*" ' +
+                'aria-label="Fichier image du logo">' +
+            '</div>' +
+          '</div>' +
+          '<p class="m-note">Réduite à 128 px de haut et incorporée à la page ' +
+            '(384 ko au plus). Elle sert aussi d’icône d’onglet.</p>' +
+        '</div>' +
+        '<div class="m-section">' +
+          '<span class="m-label">Couleurs — thème ' + (sombre ? 'sombre' : 'clair') + '</span>' +
+          '<div class="skin-colors"></div>' +
+          '<p class="m-note">Chaque thème garde ses propres couleurs : basculez le thème ' +
+            '(☰) pour régler l’autre. Les gris et les nuances d’accent en sont déduits.</p>' +
+        '</div>' +
+        '<footer class="m-actions">' +
+          '<button class="btn skin-reset" type="button" ' +
+            'title="Remettre les couleurs de ce thème à celles du produit">Couleurs d’origine</button>' +
+          '<span class="skin-msg"></span>' +
+          '<button class="btn primary skin-ok" type="button" ' +
+            'title="Enregistrer l’apparence">Enregistrer</button>' +
+        '</footer>' +
+      '</div>';
+
+    const prev = back.querySelector('.skin-prev');
+    const majPrev = () => {
+      prev.innerHTML = '';
+      const uri = A.etat().logo;
+      if (uri) {
+        const img = document.createElement('img');
+        img.src = uri;
+        img.alt = 'Logo choisi';
+        prev.appendChild(img);
+      } else {
+        prev.textContent = 'logo Diagweb';
+        prev.classList.add('vide');
+      }
+      prev.classList.toggle('vide', !uri);
+    };
+    majPrev();
+
+    const colors = back.querySelector('.skin-colors');
+    const champs = [];
+    for (const t of A.TOKENS) {
+      const l = document.createElement('label');
+      l.className = 'skin-color';
+      l.title = t.help;
+      l.innerHTML = '<input type="color" aria-label="' + DW.escapeHtml(t.label) + '">' +
+                    '<span></span>';
+      l.querySelector('span').textContent = t.label;
+      const inp = l.querySelector('input');
+      inp.value = A.valeur(t.key);
+      inp.title = t.help;
+      // Aperçu à la volée : on juge une couleur sur l'interface entière.
+      inp.addEventListener('input', () => A.setCouleur(t.key, inp.value));
+      champs.push({ t, inp });
+      colors.appendChild(l);
+    }
+
+    const file = back.querySelector('.skin-file');
+    const msg = back.querySelector('.skin-msg');
+    back.querySelector('.skin-pick').addEventListener('click', () => file.click());
+    file.addEventListener('change', () => {
+      const f = file.files && file.files[0];
+      if (!f) return;
+      A.lireLogo(f).then((uri) => {
+        A.setLogo(uri);
+        majPrev();
+        const ko = uri.length / 1024;
+        msg.textContent = 'Image chargée (' +
+          (ko < 1 ? 'moins de 1' : Math.round(ko)) + ' ko).';
+      }).catch((e) => {
+        msg.textContent = 'Refusé : ' + e.message;
+        toast('Logo refusé : ' + e.message, 'err');
+      });
+      file.value = '';
+    });
+    back.querySelector('.skin-clear').addEventListener('click', () => {
+      A.setLogo('');
+      majPrev();
+      msg.textContent = 'Logo retiré.';
+    });
+    back.querySelector('.skin-reset').addEventListener('click', () => {
+      A.reinitialiserCouleurs();
+      for (const c of champs) c.inp.value = A.valeur(c.t.key);
+      msg.textContent = 'Couleurs d’origine rétablies.';
+    });
+    back.querySelector('.skin-ok').addEventListener('click', () => {
+      A.enregistrer().then((r) => {
+        if (r.ok) {
+          root.innerHTML = '';
+          toast('Apparence enregistrée (' + r.portee + ').');
+        } else {
+          msg.textContent = r.error;
+          toast('Enregistrement refusé : ' + r.error, 'err');
+        }
+      });
+    });
+    const fermer = () => { root.innerHTML = ''; A.charger(); };   // annule l'aperçu
+    back.querySelector('.m-close').addEventListener('click', fermer);
+    back.addEventListener('pointerdown', (e) => { if (e.target === back) fermer(); });
+    root.appendChild(back);
+  }
+
   // ---------- Sélecteur de variables (bouton « + ») --------------------
   /**
    * Grande fenêtre d'ajout, ouverte par le « + » d'un tableau ou d'un
@@ -7122,6 +7583,12 @@ body.cfg-hidden .tabActions { display: none; }
             ['Menu ⋮', 'Dupliquer, échelles automatiques, taille M/L/XL, taille automatique, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
           ]) +
+          S('Apparence (☰ → Apparence)') +
+          L([
+            ['Logo', 'Une image de l’installation remplace le logo Diagweb dans la barre du haut, et sert d’icône d’onglet. PNG, JPEG, SVG ou WebP : elle est réduite et <b>incorporée</b> à la configuration — aucune ressource extérieure n’est appelée, la page reste servable hors ligne.'],
+            ['Couleurs', 'Six réglages : accent, fond, cartes, fond secondaire, texte, traits. L’aperçu est immédiat. Les gris et les nuances d’accent en sont déduits. <b>Chaque thème garde les siennes</b> : basculez le thème pour régler l’autre.'],
+            ['Portée', 'Page servie par le contrôleur : l’apparence est enregistrée sur lui et <b>tous les postes</b> la voient. Page ouverte hors serveur : elle reste dans ce navigateur.'],
+          ]) +
           S('Liens réseau (☰ → Liens réseau)') +
           L([
             ['Lien', 'Une connexion vers un équipement ou un réseau : Modbus TCP/RTU, IEC 60870-5-104, IEC 61850, CAN, J1939, CANopen, SNMP, OPC UA. Le serveur de diagnostic ouvre le lien et lit les points.'],
@@ -7185,7 +7652,18 @@ body.cfg-hidden .tabActions { display: none; }
       const next = cur === 'dark' ? 'light' : cur === 'light' ? 'dark'
         : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'light' : 'dark');
       document.documentElement.setAttribute('data-theme', next);
+      // Les couleurs personnalisées sont propres à chaque thème : l'apparence
+      // se réapplique avant que les graphiques ne relisent l'encre.
+      document.dispatchEvent(new CustomEvent('dw:theme'));
       DW.invalidateChartTheme();
+      for (const tab of state.tabs) for (const c of tab.charts) c.rebuildLegend();
+    });
+
+    // (le menu ☰ se referme déjà sur le clic de n'importe lequel de ses boutons)
+    $('skinBtn').addEventListener('click', openAppearance);
+    // Couleurs changées (ici ou dans une autre fenêtre) : les légendes et les
+    // tracés relisent la palette.
+    document.addEventListener('dw:appearance', () => {
       for (const tab of state.tabs) for (const c of tab.charts) c.rebuildLegend();
     });
 
@@ -7292,6 +7770,10 @@ body.cfg-hidden .tabActions { display: none; }
   function start() {
     // La source (simulation ou serveur) et la configuration des liens réseau
     // doivent être connues avant les premiers abonnements.
+    // L'apparence s'applique tout de suite depuis le stockage local, puis se
+    // met à jour depuis le contrôleur : la page ne change pas de couleur sous
+    // les yeux de l'opérateur au bout d'une seconde.
+    if (DW.appearance) DW.appearance.charger();
     const ready = Promise.all([
       (DW.sourceReady || Promise.resolve()).catch(() => {}),
       (DW.protocolsReady || Promise.resolve()).catch(() => {}),
