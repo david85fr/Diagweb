@@ -567,7 +567,7 @@ magasin de secrets sans jamais l'écrire sur disque.
 
 #### Compilation
 
-`DIAGWEB_WITH_OPCUA` est actif par défaut ; CMake utilise une copie
+L'option `opcua` vaut « auto » : Meson utilise une copie
 d'open62541 déjà installée si `find_package` en trouve une — le cas d'un SDK
 de contrôleur — et la récupère sinon par `FetchContent` sur la version épinglée
 `DIAGWEB_OPCUA_TAG`. **La compilation croisée d'un produit ne devrait pas
@@ -575,8 +575,8 @@ dépendre d'un accès réseau** : fournir la bibliothèque dans le SDK est la vo
 recommandée.
 
 ```bash
-cmake -B build -S server -DDIAGWEB_WITH_OPCUA=OFF        # sans OPC UA, hors ligne
-cmake -B build -S server -DDIAGWEB_OPCUA_ENCRYPTION=ON   # avec chiffrement (OpenSSL)
+meson setup build -Dopcua=disabled            # sans OPC UA, hors ligne
+meson setup build -Dopcua_encryption=true     # avec chiffrement (OpenSSL)
 ```
 
 À `OFF`, le serveur se construit sans aucune dépendance et le pilote redevient
@@ -858,7 +858,7 @@ partir de la description.
 ## Tests
 
 ```bash
-cmake --build server/build --target diagweb-decode-test && ./server/build/diagweb-decode-test
+meson test -C build --suite serveur    # décodage, liens réseau, forçage
 node tests/protocols.mjs        # serveur de diagnostic en fonctionnement
 ```
 

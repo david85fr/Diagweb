@@ -24,14 +24,14 @@ if [ "$MODE" = "serveur" ]; then
   # 1. Compilation du serveur de diagnostic si nécessaire
   if [ ! -x server/build/diagweb-server ]; then
     echo "→ Compilation du serveur de diagnostic"
-    if ! command -v cmake > /dev/null || ! command -v g++ > /dev/null; then
-      echo "   cmake ou g++ absent. Installez-les :"
-      echo "     sudo apt-get update && sudo apt-get install -y build-essential cmake"
+    if ! command -v meson > /dev/null || ! command -v g++ > /dev/null; then
+      echo "   meson ou g++ absent. Installez-les :"
+      echo "     sudo apt-get update && sudo apt-get install -y build-essential meson ninja-build"
       echo "   (ou reconstruisez le Codespace : image C++ configurée dans .devcontainer/)"
       exit 1
     fi
-    cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release > /dev/null || exit 1
-    cmake --build server/build -j"$(nproc)" > /dev/null || exit 1
+    meson setup build > /dev/null || exit 1
+    meson compile -C build > /dev/null || exit 1
   fi
   # 2. Un aperçu Python occupe peut-être déjà le port
   pkill -f "tools/serve.py --port $PORT" 2>/dev/null

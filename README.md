@@ -43,8 +43,8 @@ CLAUDE.md           instructions pour l'IA (conventions, contraintes)
 ### Serveur de diagnostic (prototype du back-end embarqué)
 
 ```bash
-cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release
-cmake --build server/build -j
+meson setup build
+meson compile -C build
 ./server/build/diagweb-server --port 8080 --root .
 ```
 

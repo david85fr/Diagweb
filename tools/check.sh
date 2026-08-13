@@ -8,6 +8,7 @@
 #   bash tools/check.sh serveur    serveur C++ uniquement
 #   bash tools/check.sh interface  interface web uniquement
 #
+# Prérequis serveur   : meson + ninja (+ open62541 et Net-SNMP si présents).
 # Prérequis interface : bash tools/setup-tests.sh (Playwright + Chromium).
 set -uo pipefail
 
@@ -15,6 +16,7 @@ cd "$(dirname "$0")/.."
 CIBLE="${1:-tout}"
 ECHECS=0
 PORT="${DIAGWEB_PORT:-8080}"
+BUILD="${DIAGWEB_BUILD:-build}"
 
 titre() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
 
@@ -52,41 +54,23 @@ syntaxe_outillage() {
 }
 
 entetes_generes() {
-  node tools/gen-catalog.mjs > /dev/null &&
-  node tools/gen-protocols.mjs > /dev/null &&
+  python3 tools/gen-all.py > /dev/null &&
   git diff --quiet -- server/src/catalog.generated.hpp server/src/protocols.generated.hpp
+}
+
+configurer() {
+  [ -d "$BUILD" ] && meson setup "$BUILD" --reconfigure || meson setup "$BUILD"
 }
 
 # --------------------------------------------------------------- serveur
 if [ "$CIBLE" = tout ] || [ "$CIBLE" = serveur ]; then
-  titre "Serveur de diagnostic (C++20)"
-  etape "compilation (avertissements = erreurs)" bash -c '
-    cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror" &&
-    cmake --build server/build -j --target diagweb-server diagweb-decode-test \
-                                          diagweb-opcua-test-server'
-  etape "décodage des protocoles" ./server/build/diagweb-decode-test
-
-  if [ -x server/build/diagweb-server ]; then
-    DATA=$(mktemp -d)
-    # Phrases secrètes de l'agent SNMPv3 de test : jamais dans la
-    # configuration, toujours dans l'environnement du serveur — c'est
-    # exactement ce que le pilote exige en exploitation.
-    export DIAGWEB_SECRET_AGENT_AUTH=motdepasseauth
-    export DIAGWEB_SECRET_AGENT_PRIV=motdepassepriv
-    ./server/build/diagweb-server --port "$PORT" --root . --data-dir "$DATA" > /tmp/diagweb-ci.log 2>&1 &
-    SRV=$!
-    if attendre "http://localhost:$PORT/api/health"; then
-      etape "liens réseau de bout en bout" node tests/protocols.mjs "http://localhost:$PORT"
-      etape "forçage et journalisation autonome" node tests/server.mjs "http://localhost:$PORT"
-    else
-      printf '  \033[31m✗\033[0m le serveur n’a pas démarré (voir /tmp/diagweb-ci.log)\n'
-      ECHECS=$((ECHECS + 1))
-    fi
-    kill "$SRV" 2> /dev/null
-    wait "$SRV" 2> /dev/null
-    rm -rf "$DATA"
-  fi
+  titre "Serveur de diagnostic (C++23, Meson)"
+  etape "configuration" configurer
+  etape "compilation (avertissements = erreurs)" meson compile -C "$BUILD"
+  # meson test enchaîne le décodage puis les vérifications qui demandent le
+  # serveur en fonctionnement (liens réseau, forçage, journalisation).
+  etape "tests du serveur (décodage, liens réseau, forçage, journalisation)" \
+    meson test -C "$BUILD" --suite serveur --print-errorlogs
 fi
 
 # ------------------------------------------------------------- interface

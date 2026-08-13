@@ -394,7 +394,7 @@ function snmpProbe(port, oidTexte) {
 }
 
 /**
- * Serveur OPC UA de test : binaire compilé par CMake avec open62541
+ * Serveur OPC UA de test : binaire compilé par Meson avec open62541
  * (cible diagweb-opcua-test-server). Son absence n'est pas passée sous
  * silence — les vérifications OPC UA échouent avec la raison.
  */
@@ -407,9 +407,11 @@ function startMmsIed(port) {
 }
 
 function startOpcUaServer(port) {
-  const bin = process.env.DIAGWEB_OPCUA_TEST_SERVER ||
-              new URL('../server/build/diagweb-opcua-test-server', import.meta.url).pathname;
-  if (!fs.existsSync(bin)) return Promise.resolve({ proc: null, port, bin, absent: true });
+  const candidats = [process.env.DIAGWEB_OPCUA_TEST_SERVER,
+                     new URL('../build/diagweb-opcua-test-server', import.meta.url).pathname]
+    .filter(Boolean);
+  const bin = candidats.find((c) => fs.existsSync(c));
+  if (!bin) return Promise.resolve({ proc: null, port, bin: candidats.join(' ou '), absent: true });
   const proc = spawn(bin, [String(port)], { stdio: ['ignore', 'ignore', 'ignore'] });
   proc.on('error', () => {});
   return new Promise((res) => setTimeout(() => res({ proc, port, bin, absent: false }), 1200));

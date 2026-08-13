@@ -1,0 +1,13 @@
+# Diagweb — options de construction.
+#
+# Les deux dépendances sont facultatives et cantonnées à un pilote : à « auto »
+# elles sont utilisées si présentes sur le système, à « disabled » le pilote
+# correspondant redevient « déclaré » et ne publie aucune valeur — jamais de
+# repli silencieux vers une variante non sécurisée.
+
+option('opcua', type: 'feature', value: 'auto',
+       description: 'Pilote OPC UA (open62541, MPL-2.0)')
+option('opcua_encryption', type: 'boolean', value: false,
+       description: 'Chiffrement OPC UA (open62541 compilé avec OpenSSL)')
+option('netsnmp', type: 'feature', value: 'auto',
+       description: 'SNMP v3 (USM) via Net-SNMP (BSD)')

@@ -24,8 +24,8 @@ se débranchent à la compilation (voir § Dépendances).
 ## Compiler et lancer
 
 ```bash
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+meson setup build
+meson compile -C build
 ./build/diagweb-server --port 8080 --root .. --data-dir ../.diag-data
 ```
 
@@ -35,7 +35,7 @@ Options : `--sim-protocols` remplace les pilotes réseau par un générateur
 Tests :
 
 ```bash
-cmake --build build --target diagweb-decode-test && ./build/diagweb-decode-test
+meson test -C build --suite serveur      # décodage + liens réseau + forçage
 node ../tests/protocols.mjs        # serveur en fonctionnement
 ```
 
@@ -47,7 +47,7 @@ automatiquement sur son flux ; `?src=sim` force la simulation locale,
 Compilation croisée pour le contrôleur :
 
 ```bash
-cmake -B build-arm -S . -DCMAKE_TOOLCHAIN_FILE=<sdk>/toolchain.cmake
+meson setup build-arm --cross-file <sdk>/croix-controleur.ini
 ```
 
 ## Points d'entrée
@@ -134,16 +134,17 @@ Deux, toutes deux facultatives et cantonnées à un pilote :
 Tout le reste n'utilise que la bibliothèque standard et POSIX.
 
 ```bash
-cmake -B build -S . -DDIAGWEB_WITH_OPCUA=OFF        # sans OPC UA
-cmake -B build -S . -DDIAGWEB_WITH_NETSNMP=OFF      # sans SNMPv3
-cmake -B build -S . -DDIAGWEB_OPCUA_ENCRYPTION=ON   # chiffrement OPC UA (OpenSSL)
+meson setup build -Dopcua=disabled              # sans OPC UA
+meson setup build -Dnetsnmp=disabled            # sans SNMPv3
+meson setup build -Dopcua_encryption=true       # chiffrement OPC UA (OpenSSL)
 ```
 
 Les deux à OFF : aucune dépendance, compilation hors ligne.
 
-CMake préfère une copie déjà installée (`find_package`) et ne la télécharge
-que faute de mieux : la compilation croisée d'un produit embarqué ne devrait
-pas dépendre du réseau. Les licences vérifiées et les décisions par protocole
+Les deux sont cherchées **sur le système** (pkg-config) : la compilation
+croisée d'un produit embarqué ne doit pas dépendre d'un accès réseau au moment
+du build. Absente, la dépendance est simplement signalée et son pilote redevient
+« déclaré ». Les licences vérifiées et les décisions par protocole
 sont dans `docs/PROTOCOLES.md` § « Bibliothèques externes et licences ».
 
 ## Organisation des pilotes

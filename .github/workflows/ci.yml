@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   serveur:
-    name: Serveur de diagnostic (C++20)
+    name: Serveur de diagnostic (C++23, Meson)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,14 +31,34 @@ jobs:
         with:
           node-version: '22'    # WebSocket natif : les tests n'ont aucune dépendance
 
-      # open62541 (pilote OPC UA) est récupéré par FetchContent : la
-      # configuration a besoin du réseau, et le cache évite de recompiler la
-      # bibliothèque à chaque exécution.
+      # open62541 (pilote OPC UA) n'est pas empaqueté par la distribution :
+      # il est construit une fois puis conservé en cache, et Meson le trouve
+      # par pkg-config. La compilation du produit, elle, ne dépend d'aucun
+      # accès réseau — c'est ce qui compte pour une cible embarquée.
       - name: Cache d'open62541
+        id: cache-o62
         uses: actions/cache@v4
         with:
-          path: server/build/_deps
-          key: open62541-v1.5.6-${{ runner.os }}
+          path: ~/.local/open62541
+          key: open62541-v1.5.6-meson-${{ runner.os }}
+
+      - name: Construire open62541 (si absent du cache)
+        if: steps.cache-o62.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch v1.5.6 \
+            https://github.com/open62541/open62541.git "$RUNNER_TEMP/o62"
+          cmake -S "$RUNNER_TEMP/o62" -B "$RUNNER_TEMP/o62/build" \
+                -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$HOME/.local/open62541" \
+                -DUA_NAMESPACE_ZERO=REDUCED -DUA_ENABLE_AMALGAMATION=OFF \
+                -DUA_BUILD_EXAMPLES=OFF -DUA_FORCE_WERROR=OFF -DBUILD_SHARED_LIBS=OFF \
+                -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+          cmake --build "$RUNNER_TEMP/o62/build" -j
+          cmake --install "$RUNNER_TEMP/o62/build"
+
+      - name: Outillage de construction (Meson + Ninja)
+        run: |
+          sudo apt-get install -y --no-install-recommends meson ninja-build
+          echo "PKG_CONFIG_PATH=$HOME/.local/open62541/lib/pkgconfig:$HOME/.local/open62541/lib64/pkgconfig:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
 
       # Net-SNMP : la bibliothèque pour compiler le pilote v3 (USM), et l'agent
       # snmpd pour l'éprouver de bout en bout — le modèle de sécurité de SNMPv3
@@ -53,44 +73,22 @@ jobs:
           sudo systemctl stop snmpd 2> /dev/null || true
           sudo aa-disable /usr/sbin/snmpd 2> /dev/null || true
 
-      - name: Compiler (avertissements = erreurs)
+      - name: Configurer et compiler (C++23, avertissements = erreurs)
         run: |
-          cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror"
-          cmake --build server/build -j --target diagweb-server diagweb-decode-test \
-                                            diagweb-opcua-test-server
+          meson setup build
+          meson compile -C build
 
-      - name: Décodage des protocoles (tests unitaires)
-        run: ./server/build/diagweb-decode-test
-
-      - name: Liens réseau de bout en bout (équipements simulés)
+      - name: Tests du serveur (décodage, liens réseau, forçage, journalisation)
         # Les phrases secrètes de l'agent SNMPv3 de test passent par
         # l'environnement du serveur : le pilote refuse de les lire ailleurs.
-        env:
-          DIAGWEB_SECRET_AGENT_AUTH: motdepasseauth
-          DIAGWEB_SECRET_AGENT_PRIV: motdepassepriv
+        # meson test lance le serveur, joue les vérifications et l'arrête.
+        run: meson test -C build --suite serveur --print-errorlogs
+
+      - name: Journaux de test
+        if: always()
         run: |
-          ./server/build/diagweb-server --port 8080 --root . \
-            --data-dir "$RUNNER_TEMP/diag-data" > "$RUNNER_TEMP/serveur.log" 2>&1 &
-          echo $! > "$RUNNER_TEMP/serveur.pid"
-          for _ in $(seq 1 60); do
-            curl -sf http://localhost:8080/api/health > /dev/null && break
-            sleep 0.25
-          done
-          curl -sf http://localhost:8080/api/health > /dev/null \
-            || { echo "le serveur n'a pas démarré :"; cat "$RUNNER_TEMP/serveur.log"; exit 1; }
-          node tests/protocols.mjs http://localhost:8080
-
-      - name: Forçage et journalisation autonome (serveur d'acquisition)
-        run: node tests/server.mjs http://localhost:8080
-
-      - name: Journal du serveur
-        if: always()
-        run: cat "$RUNNER_TEMP/serveur.log" || true
-
-      - name: Arrêter le serveur
-        if: always()
-        run: kill "$(cat "$RUNNER_TEMP/serveur.pid")" 2> /dev/null || true
+          cat build/meson-logs/testlog.txt || true
+          cat /tmp/diagweb-test-server.log || true
 
   interface:
     name: Interface web (Playwright)
@@ -113,8 +111,7 @@ jobs:
 
       - name: En-têtes générés à jour (catalogue et protocoles)
         run: |
-          node tools/gen-catalog.mjs
-          node tools/gen-protocols.mjs
+          python3 tools/gen-all.py
           git diff --exit-code -- server/src/catalog.generated.hpp \
                                   server/src/protocols.generated.hpp \
             || { echo "::error::Un en-tête généré ne correspond plus à sa source." \

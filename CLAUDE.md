@@ -103,7 +103,7 @@ tests/ui.mjs    tests d'interface Playwright (24 vérifications)
 tests/dnd.mjs   tests de déplacement de widgets (7 vérifications, http requis)
 tests/protocols.mjs  liens réseau bout en bout (équipements simulés + agent snmpd
                 réel pour SNMPv3 ; serveur requis, secrets dans son environnement)
-tests/decode.cpp     décodage des protocoles (cible CMake diagweb-decode-test)
+tests/decode.cpp     décodage des protocoles (cible diagweb-decode-test)
 tests/opcua_server.c serveur OPC UA de test (cible diagweb-opcua-test-server)
 tests/mms_ied.mjs    IED IEC 61850 simulé (pile ISO, MMS, rapports)
 tests/server.mjs     forçage + journalisation autonome (serveur requis)
@@ -122,7 +122,7 @@ Espace de noms JS global : `window.DW`. Scripts en IIFE, pas de modules ES
 2. `node --check web/js/*.js` puis `python3 tools/build.py`, et tester
    `node tests/ui.mjs` (mobile 390×844 + desktop 1600×900, captures dans
    `.test-shots/`). Après modification du serveur ou des protocoles :
-   `cmake --build server/build -j`, `./server/build/diagweb-decode-test`, puis
+   `meson compile -C build`, `meson test -C build --suite serveur`, puis
    `node tests/protocols.mjs` (serveur lancé). Environnement de développement possible : GitHub
    Codespaces (`.devcontainer/`), aperçu sur le port 8080 via
    `tools/serve.py` — port à passer en « Public » pour tester au téléphone.
