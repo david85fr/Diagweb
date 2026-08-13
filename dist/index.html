@@ -288,6 +288,11 @@ button { font-family: var(--sans); }
   padding: 2px 8px; margin-left: 8px;
 }
 .table-card h3 .card-add { vertical-align: middle; }
+/* En-tête de graphique : place comptée. Le « + » y reste étroit pour ne pas
+   rogner le titre, qui est le seul repère quand plusieurs cartes voisinent. */
+.chart-tools .card-add { padding: 2px 5px; margin-left: 0; }
+.chart-head { min-width: 0; }
+.chart-tools { flex: none; }
 
 /* ---------- Tableau numérique ---------- */
 /* Le tableau est une carte de la grille des graphiques : sa largeur se règle
@@ -366,7 +371,12 @@ button { font-family: var(--sans); }
 /* ---------- Grille de graphiques ---------- */
 /* --col-min : largeur minimale d'une colonne, lue par chart.js pour connaître
    le nombre de colonnes « naturelles » (0 = une seule colonne, mobile). */
-.charts-grid { display: grid; gap: 12px; grid-template-columns: 1fr; --col-min: 0px; }
+/* align-items: start — chaque carte garde SA hauteur. Par défaut une grille
+   étire ses éléments à la hauteur de leur rangée : le tableau réduit à la
+   poignée restait alors aussi haut que le graphique voisin, avec du vide sous
+   ses lignes, et la réduction semblait sans effet. */
+.charts-grid { display: grid; gap: 12px; grid-template-columns: 1fr;
+  align-items: start; --col-min: 0px; }
 
 .chart-card { position: relative; display: flex; flex-direction: column; min-width: 0; }
 
@@ -977,7 +987,7 @@ body.cfg-hidden .tabActions { display: none; }
     </div>
 
     <div class="topIcons">
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">4ad2d6d · #78</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">44ff0b4 · #80</span>
       <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
