@@ -58,8 +58,8 @@ qu'au serveur de diagnostic, jamais au `controller`.
 │  └────────┬────────────────────────────────────┬─────────────┘  │
 └───────────┼────────────────────────────────────┼────────────────┘
             │ Modbus TCP/RTU · IEC 60870-5-104   │ réseau : HTTP
-            │ CAN · J1939 · CANopen · IEC 61850  │ + WebSocket
-            │ SNMP v1/v2c · OPC UA               │
+            │ CAN · J1939 · CANopen · 61850 GOOSE│ + WebSocket
+            │ 61850 SV · SNMP v1/v2c · OPC UA    │
             ▼                                    ▼
  ┌────────────────────┐         ┌──────────────────────────────────┐
  │ ÉQUIPEMENTS TIERS  │         │ NAVIGATEUR — Diagweb (web/)      │

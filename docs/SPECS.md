@@ -420,10 +420,12 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
   *points* (variables lues). Adresse Diagweb : **`@lien.point`** (famille NET).
 - **Protocoles** : Modbus TCP, Modbus RTU (série), IEC 60870-5-104, CAN brut,
   J1939 (transport multi-trames compris), CANopen, **SNMP v1 et v2c**,
-  **OPC UA (IEC 62541)** — pilotes implémentés ; **SNMP v3 (USM)** et
-  **IEC 61850 (MMS)** sont *déclarés* : la configuration est acceptée et
+  **OPC UA (IEC 62541)**, **IEC 61850 GOOSE (8-1)** et **Sampled Values
+  (9-2)** — pilotes implémentés ; **SNMP v3 (USM)** et **IEC 61850 MMS /
+  rapports BRCB-URCB** sont *déclarés* : la configuration est acceptée et
   conservée, la lecture viendra avec leur pile respective (ISO/MMS d'un côté,
-  USM pour SNMPv3). Un pilote déclaré ne publie **aucune** valeur — et un lien SNMP configuré en v3 ne retombe
+  USM pour SNMPv3, pile ISO/MMS pour IEC 61850). Un pilote déclaré ne publie
+  **aucune** valeur — et un lien SNMP configuré en v3 ne retombe
   jamais en silence sur v2c, ce qui viderait de son sens le choix de v3.
 - **Bibliothèques tierces** : autorisées côté serveur si leur licence reste
   **gratuite en produit commercial fermé** (MIT, BSD, Apache-2.0, MPL-2.0…) ;
@@ -439,6 +441,11 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
   Le mot de passe ne figure pas dans la configuration : celle-ci ne porte
   qu'une référence, résolue dans l'environnement du serveur
   (`DIAGWEB_SECRET_<RÉFÉRENCE>`).
+- **IEC 61850** : le *mécanisme* se choisit sur le lien (GOOSE, Sampled Values,
+  lecture MMS, rapports) et les champs du point s'adaptent. GOOSE et SV sont
+  des trames Ethernet de niveau 2 : elles demandent la capacité `CAP_NET_RAW`
+  au service, refusent par défaut les trames marquées « simulation », et
+  n'émettent jamais rien.
 - **Un dossier par protocole** : chaque pilote vit dans
   `server/src/drivers/<protocole>/`, le partagé dans `drivers/common/`.
   `tools/check-drivers.mjs` (rejoué par la CI) refuse un protocole sans

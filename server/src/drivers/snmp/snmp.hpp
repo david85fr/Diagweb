@@ -25,7 +25,7 @@
 
 #include "../../protocol.hpp"
 #include "../common/net.hpp"
-#include "ber.hpp"
+#include "../common/ber.hpp"
 
 namespace diagweb {
 

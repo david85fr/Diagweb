@@ -1,28 +1,47 @@
-// Diagweb — IEC 61850 (MMS) : pilote DÉCLARÉ, lecture non implémentée.
+// Diagweb — IEC 61850 : aiguillage des quatre mécanismes de la norme.
 //
-// Ce qui manque est une pile ISO complète sous MMS : ISO 8073 (COTP) sur TCP
-// port 102, ISO 8327 (session), ISO 8823 (présentation) et l'encodage ACSE,
-// puis MMS lui-même. Rien de tout cela ne s'improvise en quelques centaines de
-// lignes, et le projet s'interdit toute dépendance externe au runtime : le
-// travail est donc identifié, pas bâclé.
+// La norme couvre quatre façons très différentes de récupérer une donnée, et
+// elles ne se valent pas du tout en coût d'implémentation :
 //
-// En attendant, la configuration (adresse de l'IED, mode d'interrogation,
-// références d'objet et contraintes fonctionnelles) se saisit et se conserve
-// intégralement, ce qui permet de préparer un déploiement. Le lien s'affiche
-// « non branché » et aucune valeur n'est publiée.
+//   GOOSE (8-1)   Ethernet 0x88B8, BER, aucune session       → IMPLÉMENTÉ
+//   SV (9-2)      Ethernet 0x88BA, BER, aucune session       → IMPLÉMENTÉ
+//   MMS lecture   ISO 8073/8327/8823 + ACSE + MMS sur TCP    → déclaré
+//   Rapports      MMS + BRCB/URCB (bufférisés ou non)        → déclaré
 //
-// Services visés à l'implémentation : Initiate/Conclude, Read (interrogation
-// cyclique) et Report (BRCB/URCB) — en lecture seule, sans Write ni Control.
+// GOOSE et Sampled Values sont des trames diffusées : rien à établir, rien à
+// négocier, juste à écouter et décoder. C'est ce qui les rend écrivables ici.
+//
+// MMS demande au contraire une pile ISO complète — ISO-on-TCP (RFC 1006),
+// COTP, session, présentation, ACSE, puis MMS en ASN.1 BER — soit un volume de
+// code comparable à tout le reste du serveur, et non validable sans IED réel.
+// Les rapports (BRCB et URCB) roulent sur MMS : ils héritent du même blocage.
+//
+// Ce blocage n'est pas technique mais juridique, et il vaut d'être rappelé :
+// les piles C matures (libiec61850 et consorts) sont en double licence GPLv3
+// ou commerciale payante, donc écartées par la règle du projet — une
+// bibliothèque doit rester gratuite en produit commercial fermé. Aucune pile
+// IEC 61850 permissive en C n'existe à ce jour. Voir docs/PROTOCOLES.md.
 #pragma once
 
 #include "../common/declared.hpp"
+#include "goose.hpp"
+#include "sv.hpp"
 
 namespace diagweb {
 
-/** Pilote IEC 61850 déclaré : motif affiché dans l'état du lien. */
-inline DriverPtr make_iec61850_driver() {
+/** Choisit le pilote selon le mécanisme retenu dans la configuration. */
+inline DriverPtr make_iec61850_driver(const LinkConfig& link, IPointSink& sink) {
+  const std::string mode = link.str("mode", "goose");
+  if (mode == "goose") return std::make_unique<GooseDriver>(link, sink);
+  if (mode == "sv")    return std::make_unique<SvDriver>(link, sink);
+  if (mode == "report") {
+    return std::make_unique<DeclaredDriver>(
+        "rapports MMS (BRCB/URCB) non implémentés — ils roulent sur la pile "
+        "ISO/MMS, absente ; configuration conservée (voir docs/PROTOCOLES.md)");
+  }
   return std::make_unique<DeclaredDriver>(
-      "pile ISO/MMS non implémentée — configuration conservée (voir docs/PROTOCOLES.md)");
+      "lecture MMS non implémentée — pile ISO/MMS absente ; configuration "
+      "conservée (voir docs/PROTOCOLES.md)");
 }
 
 }  // namespace diagweb

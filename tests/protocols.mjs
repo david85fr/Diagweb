@@ -351,11 +351,28 @@ const config = {
       ],
     },
     {
-      id: 'poste61850', label: 'Poste 61850', protocol: 'iec61850', enabled: true,
-      params: { host: '127.0.0.1', port: 102, mode: 'poll' },
+      id: 'poste61850', label: 'Poste 61850 (MMS)', protocol: 'iec61850', enabled: true,
+      params: { host: '127.0.0.1', port: 102, mode: 'mms', pollMs: 1000 },
       points: [
         { id: 'courant', label: 'Courant phase A', unit: 'A', kind: 'float', periodMs: 1000,
           params: { ref: 'LD0/MMXU1.A.phsA.cVal.mag.f', fc: 'MX', gain: 1, offset: 0 } },
+      ],
+    },
+    {
+      id: 'rapports', label: 'Rapports BRCB', protocol: 'iec61850', enabled: true,
+      params: { host: '127.0.0.1', port: 102, mode: 'report', buffered: true,
+                rcbRef: 'IED1LD0/LLN0.BR.brcb01', trgOps: 'dchg', intgPd: 1000 },
+      points: [
+        { id: 'pos', label: 'Position disjoncteur', unit: '', kind: 'bit', periodMs: 1000,
+          params: { ref: 'LD0/XCBR1.Pos.stVal', fc: 'ST', gain: 1, offset: 0 } },
+      ],
+    },
+    {
+      id: 'goose', label: 'GOOSE poste', protocol: 'iec61850', enabled: true,
+      params: { mode: 'goose', iface: 'diagweb-absent', appId: 12345, promisc: false },
+      points: [
+        { id: 'decl', label: 'Déclenchement', unit: '', kind: 'bit', periodMs: 200,
+          params: { field: 'data', index: 0, gain: 1, offset: 0 } },
       ],
     },
     {
@@ -444,9 +461,18 @@ check('lien Modbus établi', stMap.banc && stMap.banc.state === 'up',
   stMap.banc ? stMap.banc.state + ' · ' + stMap.banc.detail : 'absent');
 check('lien IEC 60870-5-104 établi', stMap.poste && stMap.poste.state === 'up',
   stMap.poste ? stMap.poste.state + ' · ' + stMap.poste.detail : 'absent');
-check('pilote IEC 61850 annoncé comme non branché (pas de valeur inventée)',
+check('IEC 61850 : lecture MMS annoncée non branchée',
   stMap.poste61850 && stMap.poste61850.state === 'todo',
   stMap.poste61850 ? stMap.poste61850.detail : 'absent');
+check('IEC 61850 : rapports BRCB/URCB annoncés non branchés',
+  stMap.rapports && stMap.rapports.state === 'todo',
+  stMap.rapports ? stMap.rapports.detail : 'absent');
+// GOOSE est implémenté : sur une interface inexistante il tombe en défaut
+// avec le motif, et non en « non branché ».
+check('IEC 61850 : GOOSE implémenté, échoue sur l’interface et le dit',
+  stMap.goose && stMap.goose.state === 'down' &&
+  /interface|CAP_NET_RAW/.test(stMap.goose.detail || ''),
+  stMap.goose ? stMap.goose.state + ' · ' + stMap.goose.detail : 'absent');
 check('lien OPC UA établi (abonnement)',
   !ua.absent && stMap.supervision && stMap.supervision.state === 'up',
   ua.absent ? 'cible diagweb-opcua-test-server non compilée : ' + ua.bin
@@ -476,7 +502,8 @@ check('test de connexion du lien Modbus', test.status === 200 && test.json.ok ==
 
 const { got, metas } = await collect(
   ['@banc.reg0', '@banc.reg5', '@banc.flot', '@banc.bobine', '@banc.absent',
-   '@poste.mesure', '@poste.etat', '@poste61850.courant',
+   '@poste.mesure', '@poste.etat', '@poste61850.courant', '@rapports.pos',
+   '@goose.decl',
    '@supervision.pression', '@supervision.compteur', '@supervision.marche',
    '@supervision.texte', '@uapoll.regime', '@uasecu.regime',
    '@commut.uptime', '@commut.octets', '@commut.signe', '@commut.chaine',
@@ -498,8 +525,12 @@ check('mesure IEC-104 reçue en spontané',
   'valeur ' + last('@poste.mesure'));
 check('état simple IEC-104 décodé (0/1)',
   [0, 1].includes(last('@poste.etat')), 'valeur ' + last('@poste.etat'));
-check('point IEC 61850 sans valeur (pilote non branché)',
+check('IEC 61850 : point MMS sans valeur (pilote non branché)',
   got.get('@poste61850.courant').length === 0);
+check('IEC 61850 : point de rapport sans valeur (pilote non branché)',
+  got.get('@rapports.pos').length === 0);
+check('IEC 61850 : point GOOSE sans valeur si le lien n’ouvre pas',
+  got.get('@goose.decl').length === 0);
 check('OPC UA : Double reçu par abonnement et mis à l’échelle',
   last('@supervision.pression') !== null && last('@supervision.pression') >= 25 &&
   last('@supervision.pression') <= 60,

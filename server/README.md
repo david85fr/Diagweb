@@ -147,9 +147,9 @@ Chaque protocole a son dossier ; rien ne traîne à la racine de `src/drivers/`.
 | `j1939/` | J1939 : SPN, demande de PGN, réassemblage BAM | implémenté |
 | `canopen/` | CANopen (TPDO, SDO expédié) | implémenté |
 | `snmp/` | SNMP v1 et v2c (`ber.hpp` + pilote) | implémenté ; v3 déclaré |
-| `iec61850/` | IEC 61850 (MMS) | déclaré |
+| `iec61850/` | IEC 61850 : GOOSE et Sampled Values | implémenté ; MMS et rapports déclarés |
 | `opcua/` | OPC UA (IEC 62541), via open62541 | implémenté |
-| `common/` | `net.hpp` (TCP/série), `can_socket.hpp` (socle SocketCAN), `declared.hpp` | — |
+| `common/` | `net.hpp` (TCP/UDP/série), `can_socket.hpp`, `l2_socket.hpp` (Ethernet brut), `ber.hpp` (ASN.1), `declared.hpp` | — |
 
 Modbus TCP et RTU partagent un dossier : même PDU, même décodage, seul le
 transport diffère. Les trois protocoles CAN ont chacun le leur, car c'est

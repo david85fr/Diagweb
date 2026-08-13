@@ -2,12 +2,14 @@
 //
 // Vérifie ce qui ne peut pas l'être par le test bout en bout (tests/protocols.mjs) :
 // extraction de champs de bits CAN, décomposition d'un identifiant J1939,
-// filtres noyau et appariement des trois pilotes CAN, codec BER/ASN.1 de SNMP,
-// grammaire des adresses « @lien.point », lecture de la configuration JSON.
+// filtres noyau et appariement des trois pilotes CAN, codec BER/ASN.1 partagé
+// par SNMP et IEC 61850, décodage des trames GOOSE et Sampled Values, grammaire
+// des adresses « @lien.point », lecture de la configuration JSON.
 //
 //   g++ -std=c++20 -I server/src -o /tmp/decode tests/decode.cpp && /tmp/decode
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <utility>
 #include <vector>
@@ -15,7 +17,9 @@
 #include "drivers/can/can_raw.hpp"
 #include "drivers/canopen/canopen.hpp"
 #include "drivers/j1939/j1939.hpp"
-#include "drivers/snmp/ber.hpp"
+#include "drivers/common/ber.hpp"
+#include "drivers/iec61850/goose.hpp"
+#include "drivers/iec61850/sv.hpp"
 #include "protocol.hpp"
 
 using namespace diagweb;
@@ -370,6 +374,154 @@ int main() {
       check("BER : Counter64 préfixé d'un octet nul",
             ber::read_uint(c64, 9, u) && u == 0xFFFFFFFFFFFFFFFFull);
       check("BER : entier trop long refusé", !ber::read_int(c64, 9, trop_long));
+    }
+  }
+
+  // ---- IEC 61850 : GOOSE et Sampled Values ------------------------------
+  // Ces deux flux ne sont pas couverts par le test bout en bout (il faudrait
+  // une interface Ethernet et la capacité CAP_NET_RAW), et une erreur de
+  // décodage se traduirait par une variable fausse plutôt que par une panne.
+  {
+    // Étiquette VLAN : un commutateur de poste en ajoute presque toujours une.
+    {
+      const uint8_t trame[] = {
+        0x01, 0x0C, 0xCD, 0x01, 0x00, 0x01,          // destination multicast
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55,          // source
+        0x81, 0x00, 0x80, 0x0A,                      // VLAN, priorité 4, id 10
+        0x88, 0xB8, 0x00, 0x01,                      // EtherType GOOSE + début
+      };
+      // L'ordre d'évaluation des arguments n'étant pas garanti, on décode
+      // AVANT d'appeler check() : sinon le détail affiché serait périmé.
+      L2Frame f;
+      const bool lu = L2DriverBase::parse_ethernet(trame, sizeof trame, 0x88B8, f);
+      check("L2 : étiquette VLAN franchie", lu && f.vlan_id == 10 && f.len == 2,
+            "VLAN " + std::to_string(f.vlan_id) + ", " + std::to_string(f.len) + " octets");
+      check("L2 : EtherType non concordant refusé",
+            !L2DriverBase::parse_ethernet(trame, sizeof trame, 0x88BA, f));
+      check("L2 : trame trop courte refusée",
+            !L2DriverBase::parse_ethernet(trame, 10, 0x88B8, f));
+    }
+
+    // GOOSE : en-tête (APPID, longueur, réservés) puis goosePdu en BER.
+    // Jeu de données : booléen vrai, entier 1234, flottant 50,25.
+    {
+      const uint8_t donnees[] = {
+        0x83, 0x01, 0x01,                             // booléen = vrai
+        0x85, 0x02, 0x04, 0xD2,                       // entier = 1234
+        0x87, 0x05, 0x08, 0x42, 0x49, 0x00, 0x00,     // flottant = 50,25
+      };
+      std::vector<uint8_t> pdu;
+      auto ajoute = [&pdu](uint8_t tag, std::initializer_list<uint8_t> v) {
+        pdu.push_back(tag);
+        pdu.push_back(static_cast<uint8_t>(v.size()));
+        pdu.insert(pdu.end(), v.begin(), v.end());
+      };
+      const char* gocb = "IED1LD0/LLN0$GO$gcb01";
+      pdu.push_back(0x80);
+      pdu.push_back(static_cast<uint8_t>(std::strlen(gocb)));
+      pdu.insert(pdu.end(), gocb, gocb + std::strlen(gocb));
+      ajoute(0x85, {0x00, 0x2A});                     // stNum = 42
+      ajoute(0x86, {0x07});                           // sqNum = 7
+      ajoute(0x87, {0x00});                           // simulation = faux
+      ajoute(0x8A, {0x03});                           // 3 entrées
+      pdu.push_back(0xAB);
+      pdu.push_back(sizeof donnees);
+      pdu.insert(pdu.end(), donnees, donnees + sizeof donnees);
+
+      std::vector<uint8_t> trame = {0x30, 0x39, 0, 0, 0, 0, 0, 0};   // APPID 0x3039
+      trame.push_back(0x61);
+      trame.push_back(static_cast<uint8_t>(pdu.size()));
+      trame.insert(trame.end(), pdu.begin(), pdu.end());
+      trame[2] = static_cast<uint8_t>(trame.size() >> 8);            // longueur
+      trame[3] = static_cast<uint8_t>(trame.size() & 0xFF);
+
+      GoosePdu g;
+      const bool ok = decode_goose(trame.data(), trame.size(), g);
+      check("GOOSE : en-tête décodé", ok && g.st_num == 42 && g.sq_num == 7,
+            ok ? "stNum " + std::to_string(g.st_num) + " sqNum " + std::to_string(g.sq_num)
+               : "échec");
+      check("GOOSE : référence du bloc de contrôle lue", ok && g.gocb_ref == gocb, g.gocb_ref);
+      check("GOOSE : nombre d'entrées annoncé", ok && g.entries == 3);
+
+      double v = 0;
+      bool lu = goose_entry(g.all_data, g.all_data_len, 0, v);
+      check("GOOSE : entrée booléenne", lu && v == 1, std::to_string(v));
+      lu = goose_entry(g.all_data, g.all_data_len, 1, v);
+      check("GOOSE : entrée entière", lu && v == 1234, std::to_string(v));
+      lu = goose_entry(g.all_data, g.all_data_len, 2, v);
+      near("GOOSE : entrée flottante", lu ? v : 0, 50.25);
+      check("GOOSE : indice au-delà du jeu de données",
+            !goose_entry(g.all_data, g.all_data_len, 9, v));
+
+      // Une longueur annoncée plus grande que la trame ne doit pas être crue.
+      std::vector<uint8_t> menteuse = trame;
+      menteuse[3] = 0xFF;
+      GoosePdu g2;
+      check("GOOSE : longueur annoncée au-delà de la trame refusée",
+            !decode_goose(menteuse.data(), menteuse.size(), g2));
+    }
+
+    // Sampled Values 9-2LE : une ASDU, huit voies de 8 octets.
+    {
+      std::vector<uint8_t> donnees(64, 0);
+      // Voie 0 : 1 500 (qualité bonne). Voie 1 : −2 000, qualité invalide.
+      const auto ecrire = [&donnees](int voie, int32_t val, uint32_t q) {
+        const uint32_t u = static_cast<uint32_t>(val);
+        donnees[voie * 8 + 0] = static_cast<uint8_t>(u >> 24);
+        donnees[voie * 8 + 1] = static_cast<uint8_t>(u >> 16);
+        donnees[voie * 8 + 2] = static_cast<uint8_t>(u >> 8);
+        donnees[voie * 8 + 3] = static_cast<uint8_t>(u);
+        donnees[voie * 8 + 7] = static_cast<uint8_t>(q);
+      };
+      ecrire(0, 1500, 0);
+      ecrire(1, -2000, 0x01);
+
+      const char* svid = "MU01A";
+      std::vector<uint8_t> asdu;
+      asdu.push_back(0x80);
+      asdu.push_back(static_cast<uint8_t>(std::strlen(svid)));
+      asdu.insert(asdu.end(), svid, svid + std::strlen(svid));
+      asdu.insert(asdu.end(), {0x82, 0x02, 0x01, 0x00});             // smpCnt = 256
+      asdu.push_back(0x87);
+      asdu.push_back(static_cast<uint8_t>(donnees.size()));
+      asdu.insert(asdu.end(), donnees.begin(), donnees.end());
+
+      std::vector<uint8_t> seq = {0x30};
+      seq.push_back(static_cast<uint8_t>(asdu.size()));
+      seq.insert(seq.end(), asdu.begin(), asdu.end());
+
+      std::vector<uint8_t> pdu = {0x80, 0x01, 0x01, 0xA2};           // noASDU = 1
+      pdu.push_back(static_cast<uint8_t>(seq.size()));
+      pdu.insert(pdu.end(), seq.begin(), seq.end());
+
+      std::vector<uint8_t> trame = {0x40, 0x00, 0, 0, 0, 0, 0, 0};
+      trame.push_back(0x60);
+      trame.push_back(0x81);                                          // longueur forme longue
+      trame.push_back(static_cast<uint8_t>(pdu.size()));
+      trame.insert(trame.end(), pdu.begin(), pdu.end());
+      trame[2] = static_cast<uint8_t>(trame.size() >> 8);
+      trame[3] = static_cast<uint8_t>(trame.size() & 0xFF);
+
+      std::vector<SvAsdu> asdus;
+      const bool ok = decode_sv(trame.data(), trame.size(), asdus);
+      check("SV : ASDU extraite", ok && asdus.size() == 1,
+            std::to_string(asdus.size()) + " ASDU");
+      check("SV : svID lu", ok && asdus[0].sv_id == svid, ok ? asdus[0].sv_id : "?");
+      check("SV : compteur d'échantillons", ok && asdus[0].smp_cnt == 256,
+            ok ? std::to_string(asdus[0].smp_cnt) : "?");
+
+      double v = 0;
+      bool lu = ok && sv_channel(asdus[0].data, asdus[0].data_len, 0, v);
+      check("SV : voie 0 décodée (entier 32 bits gros-boutiste)", lu && v == 1500,
+            std::to_string(v));
+      lu = ok && sv_channel(asdus[0].data, asdus[0].data_len, 1, v);
+      check("SV : voie négative décodée", lu && v == -2000, std::to_string(v));
+      uint32_t q = 0;
+      lu = ok && sv_quality(asdus[0].data, asdus[0].data_len, 1, q);
+      check("SV : qualité invalide repérée sur la voie 1", lu && (q & 3) != 0,
+            "qualité 0x" + std::to_string(q));
+      lu = ok && sv_channel(asdus[0].data, asdus[0].data_len, 40, v);
+      check("SV : voie au-delà du bloc de données", ok && !lu);
     }
   }
 

@@ -1,4 +1,8 @@
-// Diagweb — encodage/décodage BER (ASN.1), juste ce qu'il faut pour SNMP.
+// Diagweb — encodage/décodage BER (ASN.1), partagé par SNMP et IEC 61850.
+//
+// Deux protocoles très différents s'appuient dessus : SNMP encode ses PDU en
+// BER, et les messages GOOSE et Sampled Values d'IEC 61850 aussi. Seules les
+// étiquettes changent.
 //
 // Tout ce qui est lu ici vient du réseau : chaque lecture est bornée par la
 // fin du tampon et refuse silencieusement ce qui déborde, plutôt que de faire
@@ -6,6 +10,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -31,6 +36,31 @@ enum Tag : uint8_t {
   kNoSuchInstance = 0x81,
   kEndOfMibView   = 0x82,
 };
+
+/**
+ * Flottant IEC 61850 : un octet donnant la largeur de l'exposant, puis la
+ * valeur IEEE-754 en gros-boutiste (4 octets pour un FLOAT32, 8 pour un
+ * FLOAT64). Refuse tout ce qui ne correspond pas exactement.
+ */
+inline bool read_float(const uint8_t* b, size_t n, double& out) {
+  if (n == 5 && b[0] == 8) {
+    uint32_t raw = (static_cast<uint32_t>(b[1]) << 24) | (static_cast<uint32_t>(b[2]) << 16) |
+                   (static_cast<uint32_t>(b[3]) << 8) | static_cast<uint32_t>(b[4]);
+    float f;
+    std::memcpy(&f, &raw, 4);
+    out = f;
+    return true;
+  }
+  if (n == 9 && b[0] == 11) {
+    uint64_t raw = 0;
+    for (int i = 1; i <= 8; ++i) raw = (raw << 8) | b[i];
+    double d;
+    std::memcpy(&d, &raw, 8);
+    out = d;
+    return true;
+  }
+  return false;
+}
 
 // ---------------------------------------------------------------- lecture
 /** Curseur borné sur un tampon reçu. */

@@ -298,7 +298,7 @@ class ProtocolSource : public IVariableSource {
     if (p == "j1939")      return std::make_unique<J1939Driver>(link, sink);
     if (p == "canopen")    return std::make_unique<CanOpenDriver>(link, sink);
     if (p == "snmp")       return std::make_unique<SnmpDriver>(link, sink);
-    if (p == "iec61850")   return make_iec61850_driver();
+    if (p == "iec61850")   return make_iec61850_driver(link, sink);
     if (p == "opcua")      return make_opcua_driver(link, sink);
     return nullptr;
   }

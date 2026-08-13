@@ -84,14 +84,19 @@
     return isFinite(v) ? v : (raw === '' || raw === '-' ? raw : f.def);
   }
 
-  /** Formulaire d'une liste de champs, redessiné quand une dépendance change. */
-  function fieldsForm(fields, params) {
+  /**
+   * Formulaire d'une liste de champs, redessiné quand une dépendance change.
+   * `hors` est le contexte englobant (les paramètres du lien, quand on édite
+   * un point) : certains champs d'un point ne valent que pour un mécanisme
+   * choisi au niveau du lien.
+   */
+  function fieldsForm(fields, params, hors) {
     const box = document.createElement('div');
     box.className = 'pf-form';
     const draw = () => {
       box.innerHTML = '';
       for (const f of fields) {
-        if (!P.fieldApplies(f, params)) continue;
+        if (!P.fieldApplies(f, params, hors)) continue;
         box.appendChild(fieldRow(f, params, () => {
           // Un champ « when » a pu changer : on redessine le formulaire.
           if (fields.some((g) => g.when && Object.keys(g.when).includes(f.key))) draw();
@@ -447,7 +452,7 @@
     h.textContent = 'Adressage ' + proto.label;
     h.title = 'Paramètres propres au protocole de ce lien';
     b.appendChild(h);
-    b.appendChild(fieldsForm(proto.pointFields, point.params));
+    b.appendChild(fieldsForm(proto.pointFields, point.params, link.params));
 
     const acts = document.createElement('div');
     acts.className = 'm-actions';
@@ -475,7 +480,7 @@
       return 'Période de lecture attendue entre 10 ms et 60 000 ms.';
     }
     for (const f of proto.pointFields) {
-      if (!f.required || !P.fieldApplies(f, point.params)) continue;
+      if (!f.required || !P.fieldApplies(f, point.params, link.params)) continue;
       const v = point.params[f.key];
       if (v === '' || v == null) return 'Champ obligatoire non renseigné : ' + f.label + '.';
     }

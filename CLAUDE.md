@@ -86,7 +86,8 @@ server/         serveur de diagnostic C++20 (HTTP + WebSocket ; open62541 pour O
   src/protocol_source.hpp  liens réseau (@lien.point) + aiguillage composite
   src/drivers/<proto>/  UN DOSSIER PAR PROTOCOLE : modbus, iec104, can, j1939,
                      canopen, snmp, iec61850, opcua — plus common/ (net,
-                     can_socket, declared) ; contrôlé par check-drivers.mjs
+                     can_socket, l2_socket, ber, declared) ; contrôlé par
+                     tools/check-drivers.mjs
   src/jvalue.hpp     analyseur JSON complet (configuration imbriquée)
   src/main.cpp       HTTP/WS, REST, boucle d'émission
 tools/build.py  assemble dist/ à partir de web/

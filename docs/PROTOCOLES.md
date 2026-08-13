@@ -157,7 +157,9 @@ donc exactement les champs que le serveur sait lire.
 | CANopen | SocketCAN | implémenté (TPDO, SDO expédié) | `drivers/canopen/` |
 | SNMP v1 et v2c | UDP/161 | implémenté | `drivers/snmp/` |
 | SNMP v3 | UDP/161 | **déclaré** (USM à écrire) | `drivers/snmp/` |
-| IEC 61850 (MMS) | ISO sur TCP | **déclaré** | `drivers/iec61850/` |
+| IEC 61850 GOOSE (8-1) | Ethernet 0x88B8 | implémenté | `drivers/iec61850/` |
+| IEC 61850 Sampled Values (9-2) | Ethernet 0x88BA | implémenté | `drivers/iec61850/` |
+| IEC 61850 MMS et rapports | ISO sur TCP | **déclaré** | `drivers/iec61850/` |
 | OPC UA (IEC 62541) | UA-TCP binaire | implémenté (open62541) | `drivers/opcua/` |
 
 ### Un dossier par protocole
@@ -342,16 +344,85 @@ recevoir sa réponse en connexion plutôt qu'en diffusion, et sans l'accusé
 attendu le transfert n'aboutirait jamais. Un lien qui se contente d'écouter
 n'émet donc aucun `CTS`.
 
-### IEC 61850 — pilote déclaré
+### IEC 61850 — quatre mécanismes, deux implémentés
 
-La configuration (hôte, port 102, nom d'IED, mode, références d'objet et
-contraintes fonctionnelles) se saisit et se conserve dès maintenant, mais
-**aucune valeur n'est lue** : le lien s'affiche « non branché » et ne publie
-rien — jamais de valeur inventée. La lecture demande la pile complète
-ISO-on-TCP (RFC 1006) → COTP → session → présentation → ACSE → MMS en ASN.1
-BER, soit un volume de code comparable à celui de tout le reste du serveur, et
-elle ne peut pas être validée sans IED réel. C'est une phase ultérieure, pas un
-oubli.
+La norme couvre quatre façons très différentes de récupérer une donnée, et
+elles ne se valent pas du tout en coût d'implémentation. Le mécanisme se
+choisit sur le lien, et l'interface adapte ensuite ses champs toute seule.
+
+| Mécanisme | Transport | État |
+|---|---|---|
+| **GOOSE** (8-1) | Ethernet 0x88B8, diffusé | **implémenté** |
+| **Sampled Values** (9-2) | Ethernet 0x88BA, diffusé | **implémenté** |
+| Lecture MMS | ISO sur TCP (port 102) | déclaré |
+| Rapports BRCB / URCB | MMS | déclaré |
+
+**Pourquoi cette coupure exactement là.** GOOSE et Sampled Values sont des
+trames Ethernet diffusées : ni session, ni négociation, ni chiffrement. Il n'y
+a rien à établir, juste à écouter et décoder — et le codec BER écrit pour SNMP
+se réemploie tel quel. MMS demande à l'inverse une pile ISO complète
+(ISO-on-TCP, COTP, session, présentation, ACSE, puis MMS en ASN.1 BER), soit un
+volume comparable à tout le reste du serveur, non validable sans IED réel. Les
+rapports roulent sur MMS : ils héritent du même blocage.
+
+Et ce blocage est **juridique autant que technique** : les piles C matures sont
+en double licence GPLv3 ou commerciale payante, donc écartées par la règle du
+projet — voir § « Bibliothèques externes et licences ». Aucune pile IEC 61850
+permissive en C n'existe à ce jour.
+
+#### GOOSE
+
+Un point désigne une entrée du jeu de données par son **indice**, celui que
+fixe le fichier SCL ; les membres d'une structure comptent chacun pour une
+entrée. Types décodés : booléen, chaîne de bits (qualité, position double),
+entier signé, entier non signé, flottant IEEE. Tout autre type n'est pas
+publié.
+
+Deux repères du flux se lisent comme des variables ordinaires : **stNum**
+(incrémenté à chaque événement) et **sqNum** (à chaque réémission). Un `sqNum`
+figé trahit un IED muet — c'est souvent le premier symptôme visible d'une
+panne de communication.
+
+**Les trames marquées « simulation » sont refusées par défaut.** Elles
+proviennent d'un injecteur de test, pas du procédé ; les publier comme des
+mesures réelles serait exactement le piège à éviter en salle de conduite. Une
+case permet de les accepter pour un essai délibéré. Un GOOSE marqué « needs
+commissioning » est signalé dans l'état du lien.
+
+#### Sampled Values
+
+Convention **9-2LE**, la plus répandue : chaque ASDU porte huit voies de huit
+octets — quatre courants (IA, IB, IC, IN) puis quatre tensions (UA, UB, UC,
+UN) — chaque voie étant un entier signé 32 bits gros-boutiste suivi de sa
+qualité sur 32 bits. Un point désigne donc une **ASDU** et une **voie**.
+
+Une voie dont la qualité porte le bit « invalide » ne produit **aucun
+échantillon**, comme le bit IV en IEC-104. `smpCnt` et `smpSynch` se lisent
+comme des variables, pour surveiller la santé et la synchronisation du flux.
+
+**Cadence** : à 4 000 trames par seconde, publier chaque échantillon
+saturerait l'historique en quelques secondes. La décimation par la période du
+point s'en charge, et seules les ASDU réellement demandées sont décodées.
+
+#### Ce que GOOSE et SV exigent du système
+
+Ces deux flux ne passent pas par IP : le serveur ouvre une socket de niveau 2
+(`AF_PACKET`), ce qui demande la capacité **`CAP_NET_RAW`**. Sur le contrôleur,
+elle se donne à l'unité systemd du serveur de diagnostic plutôt qu'en le
+lançant en root :
+
+```ini
+[Service]
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+```
+
+Sans elle, le lien tombe en défaut avec le motif — jamais en silence. Un
+**filtre d'EtherType** est posé dans le noyau dès l'ouverture : sur un réseau
+de poste chargé de Sampled Values, c'est la différence entre un serveur qui
+respire et un serveur qui passe son temps en interruptions. L'**étiquette
+VLAN** qu'ajoute presque tout commutateur de poste est franchie
+automatiquement. Le mode **promiscuité** ne sert que derrière un port miroir.
 
 ### OPC UA (IEC 62541)
 
@@ -439,7 +510,10 @@ GCC recompilait son code C avec nos options, dont `-Werror`.
 - **Revendication d'adresse J1939** (PGN 60928) et **état NMT CANopen** : non
   suivis. Un filtre sur adresse source fixe peut donc devenir muet après une
   re-revendication.
-- **GOOSE** (IEC 61850-8-1 couche 2) et **rôle de maître CANopen**.
+- **Rôle de maître CANopen**, et côté IEC 61850 : **émission** de GOOSE ou de
+  Sampled Values (Diagweb écoute, il ne publie rien sur le réseau de poste),
+  lecture du **fichier SCL** pour déduire les jeux de données — les indices se
+  saisissent à la main — et **contrôle** (services de commande).
 - **Écriture et appel de méthode OPC UA** (`Write`, `Call`), **découverte**
   automatique de l'arborescence (`Browse`), **historique** (`HistoryRead`) et
   **événements** (`EventNotifier`). Les types non scalaires — tableaux,
@@ -578,12 +652,14 @@ publiées, ce qui ne concerne pas le code de Diagweb. Version épinglée v1.5.6,
 licence vérifiée dans son fichier `LICENSE`. C'est la **seule** dépendance du
 serveur, et elle se débranche par `-DDIAGWEB_WITH_OPCUA=OFF`.
 
-**IEC 61850 — la contrainte de licence ferme la porte.** Toutes les piles C
-matures sont en double licence GPLv3 / commerciale : gratuites tant que le
-produit est lui-même GPL, payantes sinon. Aucune pile permissive en C n'existe
-à ce jour. Il n'y a donc que trois issues, et ce n'est pas une décision
-technique : acheter une licence commerciale, écrire la pile ISO/MMS, ou
-laisser le pilote déclaré. En attendant, il reste déclaré.
+**IEC 61850 — la contrainte de licence ne ferme la porte qu'à moitié.** GOOSE
+et Sampled Values ont été écrits à la main : ce sont des trames diffusées,
+sans session ni négociation, et le codec BER de SNMP se réemploie. MMS et les
+rapports restent bloqués, eux : toutes les piles C matures sont en double
+licence GPLv3 / commerciale — gratuites tant que le produit est lui-même GPL,
+payantes sinon — et aucune pile permissive en C n'existe. Trois issues, hors du
+champ technique : acheter une licence, écrire la pile ISO/MMS, ou laisser ces
+deux mécanismes déclarés. C'est le choix actuel.
 
 **Modbus, IEC 60870-5-104, CAN — on garde l'existant.** Ces pilotes
 fonctionnent, sont couverts de bout en bout par les tests et ne coûtent rien à

@@ -151,30 +151,121 @@
     },
     {
       id: 'iec61850',
-      label: 'IEC 61850 (MMS)',
-      transport: 'TCP/IP (ISO sur TCP, port 102)',
-      state: 'declared',
-      help: 'Client MMS d’un IED. La configuration et les points se saisissent dès ' +
-            'maintenant ; la lecture effective demande la pile ISO/MMS, prévue en ' +
-            'phase ultérieure (voir docs/PROTOCOLES.md).',
+      label: 'IEC 61850',
+      transport: 'Ethernet niveau 2 (GOOSE, SV) · ISO sur TCP (MMS)',
+      state: 'live',
+      help: 'Quatre mécanismes très différents cohabitent dans la norme. GOOSE et ' +
+            'Sampled Values sont des trames Ethernet diffusées, sans session ni ' +
+            'négociation : elles sont lues. La lecture MMS et les rapports (BRCB, ' +
+            'URCB) roulent sur une pile ISO complète, non implémentée — leur ' +
+            'configuration se saisit et se conserve, mais le lien reste « non ' +
+            'branché ». Voir docs/PROTOCOLES.md.',
       linkFields: [
-        F('host', 'Hôte', 'text', '', true, 'Adresse IP ou nom réseau de l’IED.'),
-        F('port', 'Port', 'int', 102, false, 'Port TCP de la pile ISO (102 par défaut).'),
+        F('mode', 'Mécanisme', 'enum', 'goose', true,
+          'GOOSE : événements diffusés par un IED (protection, position d’organe). ' +
+          'Sampled Values : mesures échantillonnées d’un TC/TP numérique, à 4 000 ou ' +
+          '4 800 trames par seconde. Lecture MMS : interrogation cyclique d’attributs. ' +
+          'Rapports : l’IED notifie, avec ou sans mémoire tampon.',
+          { choices: [['goose', 'GOOSE (8-1) — implémenté'],
+                      ['sv', 'Sampled Values (9-2) — implémenté'],
+                      ['mms', 'Lecture MMS — non branché'],
+                      ['report', 'Rapports BRCB/URCB — non branché']] }),
+
+        // --- GOOSE et Sampled Values : Ethernet de niveau 2 ---
+        F('iface', 'Interface réseau', 'text', 'eth0', true,
+          'Interface du contrôleur raccordée au réseau de poste. GOOSE et Sampled ' +
+          'Values ne passent pas par IP : le serveur ouvre une socket de niveau 2, ce ' +
+          'qui demande la capacité CAP_NET_RAW à son service systemd.',
+          { when: { mode: ['goose', 'sv'] } }),
+        F('appId', 'APPID attendu', 'int', -1, false,
+          'Identifiant d’application annoncé en tête de trame ; −1 pour accepter tous ' +
+          'les flux de l’interface. Le filtrer évite de décoder les trames des autres IED.',
+          { when: { mode: ['goose', 'sv'] } }),
+        F('promisc', 'Mode promiscuité', 'bool', false, false,
+          'Nécessaire si les trames ne sont pas adressées à cette interface — par exemple ' +
+          'sur un port miroir de commutateur.', { when: { mode: ['goose', 'sv'] } }),
+
+        // --- GOOSE ---
+        F('gocbRef', 'Référence du bloc GOOSE', 'text', '', false,
+          'Référence du GoCB annoncée dans la trame (ex. IED1LD0/LLN0$GO$gcb01) ; vide ' +
+          'pour ne pas filtrer.', { when: { mode: ['goose'] } }),
+        F('acceptSimulated', 'Accepter les trames simulées', 'bool', false, false,
+          'Les trames marquées « simulation » viennent d’un injecteur de test, pas du ' +
+          'procédé. Les refuser est le comportement sûr ; ne cocher que pour un essai ' +
+          'd’injection délibéré.', { when: { mode: ['goose'] } }),
+
+        // --- Sampled Values ---
+        F('svId', 'Identifiant svID', 'text', '', false,
+          'Identifiant du flux annoncé dans chaque ASDU ; vide pour ne pas filtrer.',
+          { when: { mode: ['sv'] } }),
+
+        // --- MMS et rapports : ISO sur TCP ---
+        F('host', 'Hôte', 'text', '', true, 'Adresse IP ou nom réseau de l’IED.',
+          { when: { mode: ['mms', 'report'] } }),
+        F('port', 'Port', 'int', 102, false, 'Port TCP de la pile ISO (102 par défaut).',
+          { when: { mode: ['mms', 'report'] } }),
         F('iedName', 'Nom d’IED', 'text', '', false,
-          'Nom logique de l’IED, utilisé en tête des références d’objet.'),
-        F('mode', 'Mode de lecture', 'enum', 'poll', false,
-          'Interrogation cyclique (MMS Read) ou abonnement aux rapports de l’IED.',
-          { choices: [['poll', 'Interrogation cyclique'], ['report', 'Rapports (BRCB/URCB)']] }),
+          'Nom logique de l’IED, utilisé en tête des références d’objet.',
+          { when: { mode: ['mms', 'report'] } }),
+        F('rcbRef', 'Référence du bloc de rapport', 'text', '', false,
+          'Référence du RCB à activer, par exemple IED1LD0/LLN0.RP.urcb01 pour un bloc ' +
+          'non bufférisé, ou LLN0.BR.brcb01 pour un bloc bufférisé.',
+          { when: { mode: ['report'] } }),
+        F('buffered', 'Bloc bufférisé (BRCB)', 'bool', true, false,
+          'Un BRCB conserve les rapports pendant une coupure et les rejoue à la ' +
+          'reconnexion ; un URCB perd ce qui s’est produit hors ligne. Le bufférisé est ' +
+          'le choix sûr pour du diagnostic.', { when: { mode: ['report'] } }),
         F('dataset', 'Jeu de données', 'text', '', false,
-          'Référence du jeu de données à rapporter (mode rapports).', { when: { mode: ['report'] } }),
+          'Référence du dataset rapporté, si le bloc ne le fixe pas lui-même.',
+          { when: { mode: ['report'] } }),
+        F('trgOps', 'Conditions de déclenchement', 'enum', 'dchg', false,
+          'Ce qui provoque un rapport : changement de valeur, de qualité, mise à jour, ' +
+          'ou période d’intégrité.',
+          { choices: [['dchg', 'Changement de valeur'], ['qchg', 'Changement de qualité'],
+                      ['dupd', 'Mise à jour'], ['integrity', 'Périodique (intégrité)']],
+            when: { mode: ['report'] } }),
+        F('intgPd', 'Période d’intégrité (ms)', 'int', 1000, false,
+          'Intervalle des rapports périodiques ; 0 pour n’envoyer que sur événement.',
+          { when: { mode: ['report'] } }),
+        F('pollMs', 'Période d’interrogation (ms)', 'int', 1000, false,
+          'Cadence des lectures MMS.', { when: { mode: ['mms'] } }),
       ],
       pointFields: [
-        F('ref', 'Référence d’objet', 'text', '', true,
-          'Référence complète de l’attribut, par exemple LD0/MMXU1.A.phsA.cVal.mag.f.'),
+        // --- GOOSE ---
+        F('field', 'Donnée', 'enum', 'data', false,
+          'Entrée du jeu de données, ou compteur du flux. stNum change à chaque ' +
+          'événement ; sqNum à chaque réémission — un sqNum figé trahit un IED muet.',
+          { choices: [['data', 'Entrée du jeu de données'], ['stNum', 'stNum (événements)'],
+                      ['sqNum', 'sqNum (réémissions)']], when: { mode: ['goose'] } }),
+        F('index', 'Indice dans le jeu de données', 'int', 0, false,
+          'Rang de l’entrée dans le dataset, à partir de 0, tel que le fichier SCL le ' +
+          'fixe. Les membres d’une structure comptent chacun pour une entrée.',
+          { when: { mode: ['goose'] } }),
+
+        // --- Sampled Values ---
+        F('asdu', 'ASDU', 'int', 0, false,
+          'Rang de l’ASDU dans la trame, à partir de 0. Un flux 9-2LE en porte souvent ' +
+          'plusieurs, correspondant à des instants d’échantillonnage successifs.',
+          { when: { mode: ['sv'] } }),
+        F('channel', 'Voie', 'int', 0, false,
+          'Rang de la voie dans le bloc de données, à partir de 0. En 9-2LE : 0 à 3 pour ' +
+          'IA, IB, IC, IN ; 4 à 7 pour UA, UB, UC, UN.', { when: { mode: ['sv'] } }),
+        F('field', 'Donnée', 'enum', 'channel', false,
+          'Valeur d’une voie, ou repère du flux : smpCnt (compteur d’échantillons) et ' +
+          'smpSynch (état de synchronisation) servent à vérifier la santé du flux.',
+          { choices: [['channel', 'Valeur d’une voie'], ['smpCnt', 'smpCnt'],
+                      ['smpSynch', 'smpSynch']], when: { mode: ['sv'] } }),
+
+        // --- MMS et rapports ---
+        F('ref', 'Référence d’objet', 'text', '', false,
+          'Référence complète de l’attribut, par exemple LD0/MMXU1.A.phsA.cVal.mag.f.',
+          { when: { mode: ['mms', 'report'] } }),
         F('fc', 'Contrainte fonctionnelle', 'enum', 'MX', false,
-          'Contrainte fonctionnelle de l’attribut : mesures (MX), état (ST), consigne (SP), réglage (SE), configuration (CF).',
+          'Contrainte fonctionnelle de l’attribut : mesures (MX), état (ST), consigne (SP), ' +
+          'réglage (SE), configuration (CF).',
           { choices: [['MX', 'MX — mesures'], ['ST', 'ST — état'], ['SP', 'SP — consignes'],
-                      ['SE', 'SE — réglages'], ['CF', 'CF — configuration']] }),
+                      ['SE', 'SE — réglages'], ['CF', 'CF — configuration']],
+            when: { mode: ['mms', 'report'] } }),
       ].concat(SCALE),
     },
     {
@@ -416,11 +507,21 @@
   /** Valeur par défaut d'un champ. */
   function fieldDefault(f) { return f.def; }
 
-  /** Un champ est-il pertinent compte tenu des autres valeurs saisies ? */
-  function fieldApplies(f, params) {
+  /**
+   * Un champ est-il pertinent compte tenu des autres valeurs saisies ?
+   *
+   * `hors` porte le contexte englobant : les champs d'un POINT dépendent
+   * souvent d'un réglage du LIEN — le mécanisme IEC 61850, par exemple,
+   * décide de ce qu'un point doit renseigner. Sans ce second niveau, une
+   * condition sur un champ du lien ne serait jamais satisfaite depuis le
+   * formulaire d'un point, et le champ resterait invisible.
+   */
+  function fieldApplies(f, params, hors) {
     if (!f.when) return true;
     for (const k in f.when) {
-      const cur = params[k] == null ? '' : String(params[k]);
+      let v = params[k];
+      if (v == null && hors) v = hors[k];
+      const cur = v == null ? '' : String(v);
       if (!f.when[k].map(String).includes(cur)) return false;
     }
     return true;
