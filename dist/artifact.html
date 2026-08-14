@@ -670,13 +670,20 @@ body.dnd-over-pane #panes {
   display: flex; gap: 8px; align-items: center;
   min-width: 0;
 }
+/* flex: 0 1 auto — la liste ne prend que la largeur de ses onglets, pour que
+   le bouton ＋ se tienne JUSTE APRÈS le dernier plutôt que d'être repoussé au
+   bord droit. Quand les onglets débordent, la liste se rétracte et défile, et
+   le ＋ reste à portée immédiate au lieu de partir avec elle. */
 .tabs {
   display: flex; gap: 6px;
-  flex: 1; min-width: 0;
+  flex: 0 1 auto; min-width: 0;
   overflow-x: auto;
   padding-bottom: 2px;
   -webkit-overflow-scrolling: touch;
 }
+/* Le reste de la barre est poussé à droite par cet espace élastique. */
+.tabbar { justify-content: flex-start; }
+.tabbar #tabAdd { flex: none; margin-right: auto; }
 .tab {
   flex: none;
   display: inline-flex; align-items: center; gap: 7px;
@@ -1135,7 +1142,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
 
     <div class="topIcons">
       <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" title="Figer ou reprendre d’un coup tous les graphiques de l’onglet actif">⏸ Figer</button>
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">3919e56 · #63</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">574a66d · #117</span>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
