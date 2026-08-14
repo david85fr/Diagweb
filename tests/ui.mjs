@@ -599,6 +599,37 @@ check('échelles : association explicite et nom, conservés au rechargement',
   !apresEchelle.some((t) => /^✓ Échelle (automatique|dédiée)/.test(t)),
   entrees.filter((t) => /échelle/i.test(t)).join(' · '));
 
+// Plein écran depuis l'en-tête de la tuile : un bouton, pas seulement une
+// entrée de menu — c'est un geste qu'on fait souvent pour regarder une courbe
+// de près. La tuile sort de la mosaïque, donc sa place et sa taille sont
+// intactes au retour.
+const dim = (sel) => p2.locator(PANE + sel).first().evaluate((e) => {
+  const r = e.getBoundingClientRect();
+  return Math.round(r.width) + 'x' + Math.round(r.height);
+});
+const ecran = await p2.evaluate(() => window.innerWidth + 'x' + window.innerHeight);
+const tAvantFs = await dim('.table-card');
+await p2.locator(PANE + '.table-card .card-fs').first().click();
+await p2.waitForTimeout(350);
+const tPlein = await dim('.table-card');
+const bloque = await p2.evaluate(() => document.body.classList.contains('has-fs'));
+await p2.keyboard.press('Escape');
+await p2.waitForTimeout(300);
+const tRetour = await dim('.table-card');
+const gAvantFs = await dim('.chart-card');
+await p2.locator(PANE + '.chart-card .card-fs').first().click();
+await p2.waitForTimeout(350);
+const gPlein = await dim('.chart-card');
+await p2.locator(PANE + '.chart-card .card-fs').first().click();
+await p2.waitForTimeout(300);
+const gRetour = await dim('.chart-card');
+check('bouton ⛶ : plein écran par tuile (tableau et graphique), retour intact',
+  tPlein === ecran && gPlein === ecran && bloque &&
+  tRetour === tAvantFs && gRetour === gAvantFs &&
+  !(await p2.evaluate(() => document.body.classList.contains('has-fs'))),
+  'tableau ' + tAvantFs + ' → ' + tPlein + ' → ' + tRetour +
+  ' · graphique ' + gAvantFs + ' → ' + gPlein + ' → ' + gRetour);
+
 // Adresse ou description : les deux publics — automaticien et exploitant — ne
 // lisent pas le même repère. Chaque tuile porte donc sa bascule.
 const ligne1 = () => p2.locator(PANE + '.vrow').first().evaluate((e) => ({

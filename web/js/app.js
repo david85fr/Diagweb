@@ -283,6 +283,9 @@
           'sont celles de cet instant passé"></span>' +
         '<button class="iconbtn table-pause" type="button" ' +
           'title="Figer les valeurs de ce tableau sur l’instant courant, ou revenir au temps réel">⏸</button>' +
+        '<button class="iconbtn card-fs" type="button" ' +
+          'title="Afficher cette tuile seule sur toute la page, ou revenir à la ' +
+          'mosaïque (sortie aussi par Échap)">⛶</button>' +
         '<button class="iconbtn card-add" type="button" ' +
           'title="Ajouter des variables à ce tableau : ouvre le catalogue complet, ' +
           'avec filtres et sélection multiple">+</button>' +
@@ -304,6 +307,7 @@
                                             : 'Valeurs numériques'),
       entries: [],
       frozen: null,       // null = temps réel ; sinon instant figé (s)
+      fullscreen: false,  // tuile affichée seule sur toute la page
       labelFirst: !!opts.labelFirst,   // description en tête plutôt que l'adresse
       // Tuile de la mosaïque (cf. mosaic.js) : colonne, rangée, largeur, hauteur.
       x: opts.x, y: opts.y,
@@ -335,6 +339,9 @@
     card.querySelector('.table-pause').addEventListener('click', () => {
       setTableFrozen(tbl, tbl.frozen == null);
     });
+    card.querySelector('.card-fs').addEventListener('click', () => {
+      setTableFullscreen(tbl, !tbl.fullscreen);
+    });
     card.querySelector('.table-more').addEventListener('click', (e) =>
       openTableMenu(tbl, e.currentTarget));
     tab.chartsGridEl.appendChild(card);
@@ -346,6 +353,25 @@
     renderTable(tbl);
     refreshTargets();
     return tbl;
+  }
+
+  /**
+   * Affiche un tableau seul sur toute la page, ou le rend à la mosaïque. La
+   * carte sort de la grille (position fixe) : sa place et sa taille sont donc
+   * intactes au retour, il n'y a rien à mémoriser.
+   */
+  function setTableFullscreen(tbl, on) {
+    tbl.fullscreen = !!on;
+    tbl.cardEl.classList.toggle('fs', tbl.fullscreen);
+    document.body.classList.toggle('has-fs', tbl.fullscreen);
+    const b = tbl.cardEl.querySelector('.card-fs');
+    if (b) {
+      b.classList.toggle('on', tbl.fullscreen);
+      b.title = tbl.fullscreen
+        ? 'Revenir à la mosaïque (Échap)'
+        : 'Afficher cette tuile seule sur toute la page, ou revenir à la ' +
+          'mosaïque (sortie aussi par Échap)';
+    }
   }
 
   /**
@@ -379,6 +405,9 @@
       mk('Vider le tableau', () => {
         for (const e of [...tbl.entries]) removeFromTable(tbl, e.addr);
       }, null, 'Retirer toutes les variables sans supprimer le tableau');
+      mk(tbl.fullscreen ? 'Quitter le plein écran' : 'Plein écran', () => {
+        setTableFullscreen(tbl, !tbl.fullscreen);
+      }, null, 'Afficher ce tableau seul sur toute la page (sortie par Échap)');
       mk((tbl.labelFirst ? '✓ ' : '') + 'Mettre la description en tête', () => {
         tbl.labelFirst = !tbl.labelFirst;
         renderTable(tbl);
@@ -414,6 +443,7 @@
     const tab = tbl.tab;
     for (const e of tbl.entries) appApi.release(e.addr);
     tbl.entries = [];
+    if (tbl.fullscreen) setTableFullscreen(tbl, false);
     tbl.cardEl.remove();
     const i = tab.tables.indexOf(tbl);
     if (i >= 0) tab.tables.splice(i, 1);
@@ -2262,6 +2292,13 @@
     $('logBtn').addEventListener('click', openLogModal);
     $('tabAdd').addEventListener('click', () => { createTab(); });
 
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      for (const tab of state.tabs) {
+        for (const t of tab.tables) if (t.fullscreen) setTableFullscreen(t, false);
+      }
+    });
+
     $('pauseAllBtn').addEventListener('click', () => {
       const tab = state.active;
       if (!tab) return;
@@ -2363,6 +2400,7 @@
             ['Pastille de légende', 'Couleur (palette ou teinte libre), masquer, échelle dédiée, décalage vertical, retrait.'],
             ['Badge Én', 'Numéro de l’échelle utilisée ; 🔒 signale un réglage manuel.'],
             ['Échelles — regrouper, séparer, nommer', 'Par défaut les courbes de même unité partagent une échelle. Le menu d’une pastille permet de choisir : <b>Échelle automatique</b> (par unité), <b>Échelle dédiée</b> (cette courbe seule), ou <b>Mettre sur l’échelle « … »</b> pour rejoindre celle d’une autre courbe — même si les unités diffèrent. <b>Renommer l’échelle</b> lui donne un nom qui remplace l’unité en tête de sa règle.'],
+            ['Plein écran', '<b>⛶</b> dans l’en-tête d’une tuile l’affiche seule sur toute la page, et l’y ramène. La tuile sort de la mosaïque le temps du plein écran : sa place et sa taille sont intactes au retour. Sortie aussi par <b>Échap</b>.'],
             ['Figer', '<b>⏸</b> sur une tuile, ou <b>⏸ Figer</b> en haut pour tout l’onglet : le tracé <b>et les valeurs numériques</b> s’arrêtent sur l’instant courant, et la grille cesse de défiler. Un badge <b>⏱ −durée</b> dans l’en-tête dit de quand datent les valeurs qu’on lit.'],
             ['Adresse ou description', 'Menu ⋮ d’un tableau : <b>Mettre la description en tête</b> intervertit l’adresse et la description. Menu ⋮ d’un graphique : <b>Légende : description plutôt qu’adresse</b>. L’automaticien cherche une adresse, l’exploitant un nom — chaque tuile choisit.'],
             ['Échelles verticales', 'Toutes les règles sont <b>à gauche</b>, empilées dans l’ordre des badges Én : on lit une valeur sans chercher de quel bord vient son échelle. Clic sur une <b>règle d’axe</b> (les graduations, curseur ↕) : saisir le minimum et le maximum exacts, pour cette échelle seule ou pour <b>toutes</b> celles du graphique. Glisser ou molette sur la règle : réglage à la volée ; double-clic : retour à l’automatique. Même réglage depuis le menu d’une pastille (« Bornes de l’échelle… »).'],
