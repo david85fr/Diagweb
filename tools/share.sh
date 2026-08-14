@@ -4,12 +4,44 @@
 #
 #   bash tools/share.sh              aperçu statique (Python, simulation navigateur)
 #   bash tools/share.sh --server     serveur de diagnostic C++ (flux WebSocket)
+#   bash tools/share.sh --local      démarre sans toucher à la visibilité du port
+#
+# --local existe pour le démarrage automatique du Codespace : publier un port
+# est une décision, pas un effet de bord d'un attachement. Le port reste privé
+# — accessible en étant connecté au même compte GitHub — et « share.sh » sans
+# cette option le publie quand tu le décides.
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
 PORT="${PORT:-8080}"
 MODE="apercu"
-[ "${1:-}" = "--server" ] && MODE="serveur"
+PARTAGE=1
+for arg in "$@"; do
+  case "$arg" in
+    --server) MODE="serveur" ;;
+    --local)  PARTAGE=0 ;;
+    *) echo "option inconnue : $arg" >&2
+       echo "usage : bash tools/share.sh [--server] [--local]" >&2
+       exit 2 ;;
+  esac
+done
+
+# Le serveur de diagnostic répond-il déjà sur ce port — et non un aperçu
+# statique ? C'est la seule question qui distingue « rien à faire » de « il
+# faut démarrer », et /api/health y répond sans ambiguïté : l'aperçu Python
+# ne sert aucune API.
+serveur_deja_la() {
+  python3 - "$PORT" <<'PY' 2>/dev/null
+import json, sys, urllib.request
+
+try:
+    url = "http://127.0.0.1:%s/api/health" % sys.argv[1]
+    with urllib.request.urlopen(url, timeout=1.5) as r:
+        sys.exit(0 if json.load(r).get("role") == "diag-server" else 1)
+except Exception:
+    sys.exit(1)
+PY
+}
 
 listening() {
   python3 - "$PORT" <<'PY' 2>/dev/null
@@ -118,17 +150,24 @@ if [ "$MODE" = "serveur" ]; then
     meson setup build > /dev/null || exit 1
     meson compile -C build > /dev/null || exit 1
   fi
-  # 2. Un aperçu Python occupe peut-être déjà le port : postAttachCommand le
-  #    lance à l'attachement, sans argument « --port ».
-  liberer_port || exit 1
-  echo "→ Démarrage du serveur de diagnostic (port $PORT)"
-  nohup ./build/diagweb-server --port "$PORT" --root . --data-dir .diag-data \
-    > /tmp/diagweb-server.log 2>&1 &
-  sleep 1.2
-  if ! listening; then
-    echo "   Échec du démarrage :"
-    sed 's/^/     /' /tmp/diagweb-server.log
-    exit 1
+  # 2. Ne rien casser s'il tourne déjà. postAttachCommand rejoue ce script à
+  #    CHAQUE attachement : redémarrer couperait une capture ou une campagne de
+  #    journalisation en cours, et déconnecterait les navigateurs ouverts.
+  if serveur_deja_la; then
+    echo "→ Serveur de diagnostic déjà en fonctionnement (port $PORT) — inchangé"
+  else
+    # Un aperçu Python occupe peut-être le port : il est démarré en repli quand
+    # le serveur n'a pas pu être compilé.
+    liberer_port || exit 1
+    echo "→ Démarrage du serveur de diagnostic (port $PORT)"
+    nohup ./build/diagweb-server --port "$PORT" --root . --data-dir .diag-data \
+      > /tmp/diagweb-server.log 2>&1 &
+    sleep 1.2
+    if ! serveur_deja_la; then
+      echo "   Échec du démarrage :"
+      sed 's/^/     /' /tmp/diagweb-server.log
+      exit 1
+    fi
   fi
 elif ! listening; then
   echo "→ Démarrage de l'aperçu statique (port $PORT)"
@@ -136,7 +175,23 @@ elif ! listening; then
   sleep 1
 fi
 
-# 3. Hors Codespace : rien à transférer
+# 3. Publier un port est une décision : --local s'arrête ici
+if [ "$PARTAGE" = 0 ]; then
+  echo
+  echo "Port $PORT laissé privé — accessible connecté au même compte GitHub :"
+  python3 tools/serve.py --port "$PORT" --url | sed 's/^/   /'
+  if [ "$MODE" = serveur ]; then
+    echo
+    echo "   Flux temps réel WebSocket actif (barre d'état : « Serveur de"
+    echo "   diagnostic »). Ajouter ?src=sim pour comparer avec la simulation."
+    echo "   Pour l'ouvrir à un autre appareil : bash tools/share.sh --server"
+  else
+    echo "   Pour l'ouvrir à un autre appareil : bash tools/share.sh"
+  fi
+  exit 0
+fi
+
+# 4. Hors Codespace : rien à transférer
 if [ -z "${CODESPACE_NAME:-}" ]; then
   echo
   echo "Pas dans un Codespace — accès local ($MODE) :"
@@ -144,7 +199,7 @@ if [ -z "${CODESPACE_NAME:-}" ]; then
   exit 0
 fi
 
-# 4. Port en visibilité publique (peut être refusé par la politique de l'organisation)
+# 5. Port en visibilité publique (peut être refusé par la politique de l'organisation)
 echo "→ Passage du port $PORT en public"
 if gh codespace ports visibility "$PORT:public" -c "$CODESPACE_NAME" 2>/tmp/diagweb-gh.log; then
   VISIBILITE="public — ouvrable depuis n'importe quel navigateur"

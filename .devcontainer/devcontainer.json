@@ -49,8 +49,12 @@
   // valent, et le découpage reste correct.
   "onCreateCommand": "bash .devcontainer/on-create.sh",
   "postCreateCommand": "bash .devcontainer/post-create.sh",
+  // À l'attachement : le serveur de diagnostic (flux WebSocket, pilotes réseau
+  // réels), pas l'aperçu statique qui laisserait la page en simulation
+  // navigateur. Idempotent — rejoué à chaque attachement, il laisse un serveur
+  // déjà lancé tranquille — et il ne publie pas le port de lui-même.
   "postAttachCommand": {
-    "apercu": "nohup python3 tools/serve.py > /tmp/diagweb-serve.log 2>&1 &"
+    "serveur": "bash .devcontainer/post-attach.sh"
   },
   "customizations": {
     "vscode": {

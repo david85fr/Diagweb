@@ -148,6 +148,7 @@ docs/           PROJET.md, SPECS.md, PROTOCOLES.md
 .devcontainer/  configuration GitHub Codespaces (Python + Node + aperçu 8080)
   on-create.sh    outillage système (apt, open62541) — cuit dans le prebuild
   post-create.sh  ce qui dépend du dépôt (syntaxe, compilation du serveur)
+  post-attach.sh  démarre le serveur de diagnostic (pilotes réseau réels)
 .github/workflows/ci.yml  intégration continue (push sur main, PR, claude/**)
 ```
 

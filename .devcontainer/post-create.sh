@@ -68,19 +68,24 @@ fi
 
 echo
 echo "────────────────────────────────────────────────────────────────"
-echo " Diagweb — Codespace prêt. Aperçu lancé sur le port 8080 :"
+echo " Diagweb — Codespace prêt. Le SERVEUR DE DIAGNOSTIC démarre à"
+echo " l'attachement (port 8080, flux WebSocket, pilotes réseau réels) :"
 echo
 python3 tools/serve.py --url | sed 's/^/   /'
 echo
 cat <<'TXT'
  (adresses aussi listées par : python3 tools/serve.py --url)
 
- Rendre l'aperçu accessible à un autre appareil :
-   bash tools/share.sh
+ Les variables internes restent simulées — le binding vers le controller
+ est la phase 2 (docs/PROJET.md). Ce qui est réel : les liens réseau, à
+ configurer dans ☰ → « Liens réseau ».
+
+ Rendre le port accessible à un autre appareil :
+   bash tools/share.sh --server
 
  Commandes utiles :
-   bash tools/share.sh               aperçu public + adresse
-   bash tools/share.sh --server      serveur de diagnostic C++ (flux réel)
+   bash tools/share.sh --server      serveur de diagnostic, port public
+   bash tools/share.sh               aperçu statique (simulation navigateur)
    python3 tools/serve.py            relancer l'aperçu (port 8080)
    python3 tools/serve.py --url      réafficher les adresses
    python3 tools/build.py            assembler dist/

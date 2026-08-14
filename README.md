@@ -74,11 +74,15 @@ Activer les prebuilds (**Settings → Codespaces → Set up prebuilds**) évite
 donc de repayer ces minutes à chaque création ; sans eux tout fonctionne
 pareil, simplement sans le gain.
 
-- **Une seule commande** : `bash tools/share.sh` — démarre l'aperçu s'il
-  ne tourne pas, rend le port public et affiche l'adresse à ouvrir.
-  Variante `bash tools/share.sh --server` : compile et lance le **serveur
-  de diagnostic C++** à la place (flux WebSocket réel au lieu de la
-  simulation navigateur).
+- **Le serveur de diagnostic démarre tout seul** à l'attachement
+  (`post-attach.sh`) : flux WebSocket réel et **pilotes réseau actifs**,
+  pas la simulation navigateur. Le port reste privé — publier est une
+  décision, pas un effet de bord. Les variables internes, elles, restent
+  simulées tant que le binding vers le `controller` n'existe pas (phase 2).
+- **Pour partager le port** : `bash tools/share.sh --server` — le rend
+  public et affiche l'adresse. Sans `--server`, c'est l'aperçu statique
+  (simulation navigateur) qui est publié ; `--local` démarre sans toucher
+  à la visibilité.
 - Sinon, adresse seule : `python3 tools/serve.py --url` (elle est aussi
   affichée à la création du Codespace). `/web/index.html` = page de
   développement, `/dist/index.html` = livrable autonome.
