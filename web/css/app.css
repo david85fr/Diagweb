@@ -669,13 +669,20 @@ body.dnd-over-pane #panes {
   display: flex; gap: 8px; align-items: center;
   min-width: 0;
 }
+/* flex: 0 1 auto — la liste ne prend que la largeur de ses onglets, pour que
+   le bouton ＋ se tienne JUSTE APRÈS le dernier plutôt que d'être repoussé au
+   bord droit. Quand les onglets débordent, la liste se rétracte et défile, et
+   le ＋ reste à portée immédiate au lieu de partir avec elle. */
 .tabs {
   display: flex; gap: 6px;
-  flex: 1; min-width: 0;
+  flex: 0 1 auto; min-width: 0;
   overflow-x: auto;
   padding-bottom: 2px;
   -webkit-overflow-scrolling: touch;
 }
+/* Le reste de la barre est poussé à droite par cet espace élastique. */
+.tabbar { justify-content: flex-start; }
+.tabbar #tabAdd { flex: none; margin-right: auto; }
 .tab {
   flex: none;
   display: inline-flex; align-items: center; gap: 7px;

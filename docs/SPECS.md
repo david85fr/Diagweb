@@ -621,6 +621,11 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
 - **Figer/Reprendre** est dans la **barre du haut**, à côté du tag de version :
   arrêter tous les graphiques est le geste qu'on fait dans l'urgence, il ne
   doit pas dépendre du repli de la zone de configuration.
+- Le bouton **＋** (nouvel onglet) se tient **juste après le dernier onglet**,
+  pas au bord droit : la liste ne prend que la largeur de ses onglets. Quand
+  ils débordent, elle se rétracte et défile — le ＋ reste à portée immédiate au
+  lieu de partir avec elle. Sur téléphone, la barre est pleine et le ＋ touche
+  forcément le bord.
 - **Pas de rangée d'actions** sous les onglets : créer un tableau ou un
   graphique se fait dans la liste des destinations (§2), et les fonctions qui
   ne dépendent pas de ce qui est affiché sont dans le menu ☰. La barre du haut

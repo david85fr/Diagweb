@@ -184,6 +184,23 @@ await p2.goto(TARGET);
 await p2.waitForSelector(PANE + '.chart-card', { timeout: 20000 });
 await p2.waitForTimeout(1200);
 
+// Le ＋ se tient JUSTE APRÈS le dernier onglet. Repoussé au bord droit, il
+// obligeait à traverser toute la barre pour créer un onglet, et rien ne le
+// reliait visuellement à la liste. (Sur téléphone la barre est pleine : le ＋
+// y touche forcément le bord, ce n'est pas ce cas qu'on mesure.)
+const placePlus = await p2.evaluate(() => {
+  const onglets = [...document.querySelectorAll('.tab')];
+  const plus = document.getElementById('tabAdd');
+  const dernier = onglets[onglets.length - 1].getBoundingClientRect();
+  const p = plus.getBoundingClientRect();
+  const barre = document.querySelector('.tabbar').getBoundingClientRect();
+  return { ecart: Math.round(p.left - dernier.right),
+           marge: Math.round(barre.right - p.right) };
+});
+check('bouton ＋ collé au dernier onglet, pas repoussé à droite',
+  placePlus.ecart >= 0 && placePlus.ecart <= 14 && placePlus.marge > 100,
+  placePlus.ecart + ' px après le dernier onglet, ' + placePlus.marge + ' px de marge à droite');
+
 // Le contenu remplit sa tuile : sans cela, la hauteur tirée à la poignée
 // laisserait du vide sous le tracé et le redimensionnement semblerait sans
 // effet — c'est précisément ce qui clochait dans la version précédente.
