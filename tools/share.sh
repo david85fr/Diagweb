@@ -20,20 +20,82 @@ sys.exit(0 if s.connect_ex(("127.0.0.1", int(sys.argv[1]))) == 0 else 1)
 PY
 }
 
+# Processus qui écoutent sur $PORT, trouvés par /proc — sans outil externe.
+#
+# « ss » (iproute2) ferait l'affaire, mais n'est pas garanti présent : son
+# absence rendait liberer_port() muette, et le symptôme était trompeur. Le
+# serveur échouait à se lier, l'aperçu Python répondait toujours, listening()
+# le voyait — share.sh annonçait donc un démarrage réussi tout en continuant
+# de servir la simulation. Le noyau, lui, est toujours là.
+port_owners() {
+  python3 - "$PORT" <<'PY' 2>/dev/null
+import os, sys
+
+port = int(sys.argv[1])
+
+# Sockets en écoute (état 0A) sur ce port, tables IPv4 et IPv6.
+inodes = set()
+for table in ("/proc/net/tcp", "/proc/net/tcp6"):
+    try:
+        with open(table) as f:
+            next(f, None)                        # ligne d'en-tête
+            for line in f:
+                col = line.split()
+                if (len(col) > 9 and col[3] == "0A"
+                        and int(col[1].rsplit(":", 1)[1], 16) == port):
+                    inodes.add(col[9])
+    except OSError:
+        pass
+
+# Propriétaires de ces sockets : un descripteur pointe « socket:[inode] ».
+for pid in sorted(os.listdir("/proc")):
+    if not pid.isdigit():
+        continue
+    try:
+        fds = os.listdir(f"/proc/{pid}/fd")
+    except OSError:
+        continue                                 # disparu, ou pas à nous
+    for fd in fds:
+        try:
+            cible = os.readlink(f"/proc/{pid}/fd/{fd}")
+        except OSError:
+            continue
+        if cible.startswith("socket:[") and cible[8:-1] in inodes:
+            print(pid)
+            break
+PY
+}
+
 # Libère le port avant de démarrer autre chose dessus.
 #
 # On vise le processus qui ÉCOUTE, jamais un motif de ligne de commande :
 # « pkill -f tools/serve.py » attrape aussi le shell dont la commande contient
 # ce texte — y compris celui qui exécute ce script. Tuer son propre terminal
 # est vite arrivé, et le symptôme n'a alors plus rien à voir avec la cause.
+#
+# Ne rend la main que lorsque le port est réellement libre : démarrer sur un
+# port encore pris était précisément le défaut décrit au-dessus.
+#
+# L'attente interroge port_owners, pas listening() : « quelqu'un tient-il ce
+# port ? » et « ça répond ? » sont deux questions différentes. Un serveur dont
+# la file d'attente est pleine, ou simplement bloqué, garde le port sans plus
+# accepter de connexion — la sonde le croirait parti, et on repartirait sur le
+# faux succès qu'on cherche justement à supprimer.
 liberer_port() {
-  local pids pid
-  pids=$(ss -ltnpH "sport = :$PORT" 2> /dev/null |
-           grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u)
-  for pid in $pids; do
+  local pid essai restants
+  for pid in $(port_owners); do
     [ "$pid" = "$$" ] && continue
     kill "$pid" 2> /dev/null
   done
+  for essai in 1 2 3 4 5 6 7 8 9 10; do
+    [ -z "$(port_owners)" ] && return 0
+    sleep 0.2
+  done
+  restants=$(port_owners | tr '\n' ' ')
+  restants=${restants% }
+  echo "   Le port $PORT reste occupé${restants:+ (processus $restants)}."
+  echo "   L'arrêter, ou viser un autre port : PORT=8081 bash tools/share.sh --server"
+  return 1
 }
 
 if [ "$MODE" = "serveur" ]; then
@@ -51,8 +113,7 @@ if [ "$MODE" = "serveur" ]; then
   fi
   # 2. Un aperçu Python occupe peut-être déjà le port : postAttachCommand le
   #    lance à l'attachement, sans argument « --port ».
-  liberer_port
-  sleep 0.5
+  liberer_port || exit 1
   echo "→ Démarrage du serveur de diagnostic (port $PORT)"
   nohup ./build/diagweb-server --port "$PORT" --root . --data-dir .diag-data \
     > /tmp/diagweb-server.log 2>&1 &
