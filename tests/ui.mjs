@@ -633,6 +633,54 @@ check('échelles : association explicite et nom, conservés au rechargement',
   !apresEchelle.some((t) => /^✓ Échelle (automatique|dédiée)/.test(t)),
   entrees.filter((t) => /échelle/i.test(t)).join(' · '));
 
+// Mesures graphiques : deux boutons qui n'apparaissent qu'à l'arrêt — sur un
+// tracé qui défile, le point d'appui aurait déjà bougé au relâchement. La cote
+// est ancrée sur les DONNÉES (un temps absolu, une valeur), pas sur des
+// pixels : changer la fenêtre de temps ne doit pas la fausser.
+const carteMes = p2.locator(PANE + '.chart-card').first();
+const boutonsMesure = () => carteMes.locator('.mes-val:visible, .mes-t:visible').count();
+const auDirect = await boutonsMesure();
+await carteMes.locator('.chart-pause').click();
+await p2.waitForTimeout(400);
+const aLArret = await boutonsMesure();
+const cvBox = await carteMes.locator('canvas').boundingBox();
+const mesure = () => carteMes.evaluate((el) => {
+  const c = el.__dwChart;
+  return c && c.measure ? { mode: c.measure.mode, fini: c.measure.fini,
+                            dv: c.measure.v1 == null ? null : Math.abs(c.measure.v1 - c.measure.v0),
+                            dt: Math.abs(c.measure.t1 - c.measure.t0),
+                            nom: c.measure.nom } : null;
+});
+await carteMes.locator('.mes-val').click();
+await p2.waitForTimeout(150);
+await p2.mouse.move(cvBox.x + cvBox.width * 0.45, cvBox.y + cvBox.height * 0.30);
+await p2.mouse.down();
+await p2.mouse.move(cvBox.x + cvBox.width * 0.45, cvBox.y + cvBox.height * 0.70, { steps: 8 });
+await p2.mouse.up();
+await p2.waitForTimeout(300);
+const mVal = await mesure();
+await carteMes.locator('.mes-t').click();
+await p2.waitForTimeout(150);
+await p2.mouse.move(cvBox.x + cvBox.width * 0.30, cvBox.y + cvBox.height * 0.55);
+await p2.mouse.down();
+await p2.mouse.move(cvBox.x + cvBox.width * 0.70, cvBox.y + cvBox.height * 0.55, { steps: 8 });
+await p2.mouse.up();
+await p2.waitForTimeout(300);
+const mTemps = await mesure();
+// Retour au direct : la cote n'annote plus rien, elle disparaît.
+await carteMes.locator('.chart-pause').click();
+await p2.waitForTimeout(300);
+const apresDirect = await mesure();
+const boutonsApres = await boutonsMesure();
+check('mesures à l’arrêt : écart de valeur et écart de temps',
+  auDirect === 0 && aLArret === 2 &&
+  mVal && mVal.mode === 'val' && mVal.fini && mVal.dv > 0 && !!mVal.nom &&
+  mTemps && mTemps.mode === 'temps' && mTemps.fini && mTemps.dt > 1 &&
+  apresDirect === null && boutonsApres === 0,
+  (mVal ? 'Δ ' + mVal.dv.toFixed(2) + ' sur « ' + mVal.nom + ' »' : 'valeur ✗') +
+  ' · ' + (mTemps ? 'Δt ' + mTemps.dt.toFixed(1) + ' s' : 'temps ✗') +
+  ' · effacées au retour au direct');
+
 // Masquer / afficher : double-appui sur la pastille (le geste qu'on fait dix
 // fois pour isoler une grandeur), et « tout masquer » depuis le menu ⋮ — les
 // pastilles restent, on rallume ensuite celle qu'on veut suivre.

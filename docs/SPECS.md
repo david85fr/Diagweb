@@ -326,6 +326,28 @@ seulement ce qu'on trace :
   datent les valeurs affichées. Sans lui, des valeurs figées se lisent comme
   des valeurs actuelles.
 
+## 4 ter. Mesures sur le tracé (vue arrêtée)
+
+Deux boutons apparaissent dans l'en-tête d'un graphique **figé** — et seulement
+là : sur un tracé qui défile, le point d'appui aurait déjà bougé au
+relâchement, la mesure serait fausse par construction.
+
+- **↕ écart de valeur** : glisser verticalement. L'unité est celle de la
+  **courbe la plus proche du point d'appui** — sur un graphique multi-échelles
+  il n'existe pas d'unité universelle, et désigner la courbe en appuyant
+  dessus évite d'inventer une notion de « courbe sélectionnée ». Le nom de la
+  courbe s'affiche avec la cote, et la cote prend sa couleur.
+- **↔ écart de temps** : glisser horizontalement, dans un sens ou dans
+  l'autre.
+
+La cote **reste affichée** après le relâchement : c'est une mesure qu'on lit,
+pas un survol. Elle est ancrée sur les **données** — un temps absolu, une
+valeur dans l'unité de la courbe — et non sur des pixels : régler une échelle
+ou la fenêtre de temps la laisserait sinon en place en affichant un écart
+devenu faux. Un mode armé prend la main sur le déplacement et le zoom, sans
+quoi le geste de mesure ferait défiler la vue sous la cote. Un second appui
+sur le bouton efface la mesure ; le retour au direct aussi.
+
 ## 5. Multi-échelles (règles)
 
 1. Les courbes d'un graphique sont **regroupées automatiquement par unité**
