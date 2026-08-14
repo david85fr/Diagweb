@@ -2443,6 +2443,7 @@
           S('Courbes') +
           L([
             ['Pastille de légende', 'Couleur (palette ou teinte libre), masquer, échelle, décalage vertical, retrait — et <b>Copier l’adresse</b>, pour la réutiliser ailleurs (autre fenêtre, tableur, message).'],
+            ['Masquer une courbe', '<b>Double-appui</b> sur sa pastille la retire du tracé, un second la remet. Le menu ⋮ du graphique porte <b>Masquer toutes les courbes</b> : les pastilles restent, on rallume ensuite celle qu’on veut suivre. Une courbe masquée reste <b>abonnée</b> — son historique continue, et le journal l’enregistre toujours.'],
             ['Déplacer une courbe', 'Glissez sa <b>pastille</b> sur un autre graphique : elle y va avec sa couleur, son échelle et son décalage. <b>Ctrl</b> (ou ⌘) enfoncé au dépôt : elle est <b>copiée</b>, l’original reste en place. Au tact, le menu de la pastille propose « Copier vers « … » ». Une pastille se dépose aussi sur un tableau, un onglet ou une autre fenêtre.'],
             ['Badge Én', 'Numéro de l’échelle utilisée ; 🔒 signale un réglage manuel.'],
             ['Échelles — regrouper, séparer, nommer', 'Par défaut les courbes de même unité partagent une échelle. Le menu d’une pastille permet de choisir : <b>Échelle automatique</b> (par unité), <b>Échelle dédiée</b> (cette courbe seule), ou <b>Mettre sur l’échelle « … »</b> pour rejoindre celle d’une autre courbe — même si les unités diffèrent. <b>Renommer l’échelle</b> lui donne un nom qui remplace l’unité en tête de sa règle.'],

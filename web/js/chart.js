@@ -479,6 +479,17 @@
           this.app.onChange();
         }, null, 'Afficher sur les pastilles la description de la variable (repère de ' +
           'l’exploitant) au lieu de son adresse (repère de l’automaticien)');
+        // Tout masquer d'un coup : les pastilles restent, on rallume celles
+        // qu'on veut suivre — d'un double-appui.
+        if (this.series.length) {
+          const visibles = this.series.filter((x) => x.visible).length;
+          mk(visibles ? 'Masquer toutes les courbes' : 'Afficher toutes les courbes',
+            () => this.setToutesVisibles(!visibles), null,
+            visibles
+              ? 'Retirer toutes les courbes du tracé sans les supprimer ; les pastilles ' +
+                'restent, un double-appui rallume celle qu’on veut suivre'
+              : 'Remettre toutes les courbes sur le tracé');
+        }
         mk('Taille de départ', () => this.resetSize(), null,
           'Annuler le dimensionnement fait à la poignée ◢ et revenir à la taille de départ ' +
           'd’un graphique (une demi-largeur)');
@@ -1052,6 +1063,15 @@
           }, () => this.removeSeries(s.addr));
         });
         chip.addEventListener('click', () => this.openSeriesMenu(s, chip));
+        // Double-appui : masquer / afficher la courbe. C'est le geste qu'on
+        // fait dix fois pour isoler une grandeur au milieu des autres ; passer
+        // par le menu à chaque fois est trop lent. Le menu ouvert par le
+        // premier appui est refermé, sans quoi il resterait en travers.
+        chip.addEventListener('dblclick', (ev) => {
+          ev.preventDefault();
+          closePopover();
+          this.setSeriesVisible(s, !s.visible);
+        });
         this.legendEl.appendChild(chip);
       }
       this.hintEl.classList.toggle('hide', this.series.length > 0);
@@ -1081,11 +1101,10 @@
         }
         mk('Renommer la courbe…', () => this.renameSeries(s), null,
           'Nom d’affichage dans la légende (vide = adresse ou libellé du catalogue)');
-        mk(s.visible ? 'Masquer la courbe' : 'Afficher la courbe', () => {
-          s.visible = !s.visible;
-          this.rebuildLegend();
-          this.app.onChange();
-        }, null, 'Retirer la courbe du tracé sans la supprimer (elle reste abonnée)');
+        mk(s.visible ? 'Masquer la courbe' : 'Afficher la courbe',
+          () => this.setSeriesVisible(s, !s.visible), null,
+          'Retirer la courbe du tracé sans la supprimer (elle reste abonnée) — ' +
+          'double-appui sur la pastille pour aller plus vite');
         mk('Bornes de l’échelle…', () => {
           const key = this.axisKey(s);
           this.openAxisMenu(key, chip);
@@ -1562,6 +1581,32 @@
       const left = x + 12 + tw > bw ? Math.max(4, x - tw - 12) : x + 12;
       this.tipEl.style.left = left + 'px';
       this.tipEl.style.top = (mT + 4) + 'px';
+    }
+
+    /**
+     * Masque ou affiche une courbe. Elle reste **abonnée** : la retirer du
+     * tracé n'interrompt pas son historique, qui sera là quand on la
+     * réaffichera — et le journal continue de l'enregistrer.
+     */
+    setSeriesVisible(s, visible) {
+      if (s.visible === visible) return;
+      s.visible = visible;
+      this.rebuildLegend();
+      this.app.onChange();
+    }
+
+    /**
+     * Masque toutes les courbes, ou les réaffiche toutes. Sur un graphique
+     * chargé, c'est la façon rapide d'en isoler une : tout masquer, puis
+     * rallumer celle qu'on veut suivre.
+     */
+    setToutesVisibles(visible) {
+      let n = 0;
+      for (const s of this.series) if (s.visible !== visible) { s.visible = visible; n++; }
+      if (!n) return;
+      this.rebuildLegend();
+      this.app.onChange();
+      this.app.toast(visible ? n + ' courbe(s) réaffichée(s).' : n + ' courbe(s) masquée(s).');
     }
 
     /**

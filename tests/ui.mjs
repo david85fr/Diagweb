@@ -599,6 +599,34 @@ check('échelles : association explicite et nom, conservés au rechargement',
   !apresEchelle.some((t) => /^✓ Échelle (automatique|dédiée)/.test(t)),
   entrees.filter((t) => /échelle/i.test(t)).join(' · '));
 
+// Masquer / afficher : double-appui sur la pastille (le geste qu'on fait dix
+// fois pour isoler une grandeur), et « tout masquer » depuis le menu ⋮ — les
+// pastilles restent, on rallume ensuite celle qu'on veut suivre.
+const visibles = () => p2.$$eval(PANE + '.chart-card',
+  (els) => [...els[0].querySelectorAll('.chip')].map((c) => !c.classList.contains('off')));
+const v0 = await visibles();
+await p2.locator(PANE + '.chart-card .chip').first().dblclick();
+await p2.waitForTimeout(350);
+const v1 = await visibles();
+const menuFerme = await p2.locator('.popmenu').count();
+await p2.locator(PANE + '.chart-card .chip').first().dblclick();
+await p2.waitForTimeout(350);
+const v2 = await visibles();
+await p2.locator(PANE + '.chart-more').first().click();
+await p2.waitForTimeout(220);
+await p2.locator('.popmenu button', { hasText: 'Masquer toutes les courbes' }).click();
+await p2.waitForTimeout(350);
+const v3 = await visibles();
+await p2.locator(PANE + '.chart-more').first().click();
+await p2.waitForTimeout(220);
+await p2.locator('.popmenu button', { hasText: 'Afficher toutes les courbes' }).click();
+await p2.waitForTimeout(350);
+const v4 = await visibles();
+check('double-appui masque une courbe ; le menu ⋮ les masque toutes',
+  v0.every(Boolean) && v1[0] === false && v1.slice(1).every(Boolean) && menuFerme === 0 &&
+  v2.every(Boolean) && v3.every((x) => x === false) && v4.every(Boolean),
+  v0.length + ' courbes · une masquée puis rendue · toutes masquées puis rendues');
+
 // Une courbe se glisse d'un graphique à l'autre — déplacée, ou COPIÉE quand
 // Ctrl est enfoncé. Sa configuration voyage avec elle : sans cela, elle
 // arriverait dépouillée de sa couleur, de son échelle et de son décalage.
