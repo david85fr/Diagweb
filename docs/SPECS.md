@@ -332,11 +332,14 @@ Deux boutons apparaissent dans l'en-tête d'un graphique **figé** — et seulem
 là : sur un tracé qui défile, le point d'appui aurait déjà bougé au
 relâchement, la mesure serait fausse par construction.
 
-- **↕ écart de valeur** : glisser verticalement. L'unité est celle de la
-  **courbe la plus proche du point d'appui** — sur un graphique multi-échelles
-  il n'existe pas d'unité universelle, et désigner la courbe en appuyant
-  dessus évite d'inventer une notion de « courbe sélectionnée ». Le nom de la
-  courbe s'affiche avec la cote, et la cote prend sa couleur.
+- **↕ écart de valeur** : glisser verticalement. L'écart est relevé pour
+  **toutes les courbes affichées**, une ligne par courbe, chacune **dans son
+  unité** : sur un graphique multi-échelles, le même écart d'écran ne vaut pas
+  la même chose d'une échelle à l'autre, et c'est cette comparaison qui
+  intéresse. Les courbes **masquées n'y figurent pas** — elles ne sont pas sur
+  le tracé qu'on mesure. La cote elle-même est positionnée sur la courbe la
+  plus proche du point d'appui, dont elle prend la couleur : c'est elle qui
+  l'ancre aux données.
 - **↔ écart de temps** : glisser horizontalement, dans un sens ou dans
   l'autre.
 

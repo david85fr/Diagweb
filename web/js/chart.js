@@ -314,7 +314,8 @@
             // relâchement. Les boutons n'apparaissent donc qu'à l'arrêt.
             '<button class="iconbtn mes-val hide" type="button" ' +
               'title="Mesurer un écart de VALEUR : glisser verticalement sur le tracé. ' +
-              'La courbe la plus proche du point d’appui donne l’unité.">↕</button>' +
+              'L’écart est donné pour TOUTES les courbes affichées, chacune dans son ' +
+              'unité ; les courbes masquées n’y figurent pas.">↕</button>' +
             '<button class="iconbtn mes-t hide" type="button" ' +
               'title="Mesurer un écart de TEMPS : glisser horizontalement sur le tracé, ' +
               'dans un sens ou dans l’autre.">↔</button>' +
@@ -1747,34 +1748,76 @@
       if (vert) { pointe(x0 + 0.5, y0, 1); pointe(x0 + 0.5, y1, -1); }
       else { pointe(x0, y0 + 0.5, 1); pointe(x1, y0 + 0.5, -1); }
 
-      // Étiquette : l'écart, et de quoi il est l'écart
-      let txt;
+      // Étiquette. En mesure de VALEUR, l'écart est donné pour TOUTES les
+      // courbes affichées, chacune dans son unité : le même écart d'écran ne
+      // vaut pas la même chose d'une échelle à l'autre, et c'est justement la
+      // comparaison qui intéresse. Les courbes masquées n'y figurent pas —
+      // elles ne sont pas sur le tracé qu'on mesure.
+      ctx.font = '600 11px system-ui, sans-serif';
+      const lignes = [];
       if (vert) {
-        txt = 'Δ ' + DW.fmtVal(Math.abs(m.v1 - m.v0), s ? s.meta : { unit: m.unite }) +
-              (m.unite ? ' ' + m.unite : '') + (m.nom ? '  ·  ' + m.nom : '');
-      } else {
-        txt = 'Δt ' + DW.fmtDuree(Math.abs(m.t1 - m.t0));
+        const dyPx = Math.abs(y1 - y0);
+        for (const c of this.series) {
+          if (!c.visible) continue;
+          const ech = this._axisScale[c.addr];
+          if (!ech) continue;
+          lignes.push({
+            couleur: colorOf(c),
+            txt: 'Δ ' + DW.fmtVal(dyPx * ech, c.meta) + (c.meta.unit ? ' ' + c.meta.unit : ''),
+            nom: c.name || c.meta.label || c.addr,
+          });
+        }
       }
-      ctx.font = '600 11px ' + 'system-ui, sans-serif';
-      const larg = ctx.measureText(txt).width + 12;
-      let lx = vert ? x0 + 10 : (x0 + x1) / 2 - larg / 2;
-      let ly = vert ? (y0 + y1) / 2 - 9 : y0 - 24;
-      lx = clamp(lx, mL + 2, mL + pw - larg - 2);
-      ly = clamp(ly, mT + 2, mT + ph - 20);
+      if (!lignes.length) {
+        lignes.push({ couleur: null,
+          txt: vert ? 'Δ ' + DW.fmtVal(Math.abs(m.v1 - m.v0), s ? s.meta : { unit: m.unite }) +
+                      (m.unite ? ' ' + m.unite : '')
+                    : 'Δt ' + DW.fmtDuree(Math.abs(m.t1 - m.t0)),
+          nom: vert ? m.nom : '' });
+      }
+
+      const H = 15, PAD = 6, PUCE = 9;
+      let larg = 0;
+      for (const l of lignes) {
+        larg = Math.max(larg, ctx.measureText(l.txt).width +
+                              (l.nom ? ctx.measureText('  ' + l.nom).width : 0));
+      }
+      larg += PAD * 2 + (lignes.some((l) => l.couleur) ? PUCE : 0);
+      const haut = lignes.length * H + PAD;
+      let lx = vert ? x0 + 12 : (x0 + x1) / 2 - larg / 2;
+      let ly = vert ? (y0 + y1) / 2 - haut / 2 : y0 - haut - 8;
+      lx = clamp(lx, mL + 2, Math.max(mL + 2, mL + pw - larg - 2));
+      ly = clamp(ly, mT + 2, Math.max(mT + 2, mT + ph - haut - 2));
+
       ctx.fillStyle = IK.panel;
-      ctx.globalAlpha = 0.92;
+      ctx.globalAlpha = 0.93;
       ctx.beginPath();
-      if (ctx.roundRect) ctx.roundRect(lx, ly, larg, 18, 6);
-      else ctx.rect(lx, ly, larg, 18);
+      if (ctx.roundRect) ctx.roundRect(lx, ly, larg, haut, 6);
+      else ctx.rect(lx, ly, larg, haut);
       ctx.fill();
       ctx.globalAlpha = 1;
       ctx.strokeStyle = teinte;
       ctx.lineWidth = 1;
       ctx.stroke();
-      ctx.fillStyle = IK.ink;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(txt, lx + 6, ly + 9);
+      lignes.forEach((l, i) => {
+        const y = ly + PAD / 2 + H * i + H / 2;
+        let tx = lx + PAD;
+        if (l.couleur) {
+          ctx.fillStyle = l.couleur;
+          ctx.beginPath();
+          ctx.arc(tx + 3, y, 3, 0, Math.PI * 2);
+          ctx.fill();
+          tx += PUCE;
+        }
+        ctx.fillStyle = IK.ink;
+        ctx.fillText(l.txt, tx, y);
+        if (l.nom) {
+          ctx.fillStyle = IK.muted;
+          ctx.fillText('  ' + l.nom, tx + ctx.measureText(l.txt).width, y);
+        }
+      });
       ctx.restore();
     }
 

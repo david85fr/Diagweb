@@ -651,6 +651,20 @@ const mesure = () => carteMes.evaluate((el) => {
                             dt: Math.abs(c.measure.t1 - c.measure.t0),
                             nom: c.measure.nom } : null;
 });
+// Une courbe masquée ne doit pas figurer dans le relevé : elle n'est pas sur
+// le tracé qu'on mesure.
+const releve = () => carteMes.evaluate((el) => {
+  const c = el.__dwChart;
+  if (!c || !c.measure || c.measure.mode !== 'val') return null;
+  const dyPx = Math.abs(c.pixelDeValeur(c.series.find((x) => x.addr === c.measure.addr), c.measure.v1) -
+                        c.pixelDeValeur(c.series.find((x) => x.addr === c.measure.addr), c.measure.v0));
+  return c.series.filter((x) => x.visible)
+    .map((x) => ({ nom: x.name || x.meta.label || x.addr, unite: x.meta.unit || '',
+                   d: dyPx * (c._axisScale[x.addr] || 0) }));
+});
+const cachee = await carteMes.locator('.chip').nth(2).evaluate((el) => el.dataset.addr);
+await carteMes.locator('.chip').nth(2).dblclick();
+await p2.waitForTimeout(300);
 await carteMes.locator('.mes-val').click();
 await p2.waitForTimeout(150);
 await p2.mouse.move(cvBox.x + cvBox.width * 0.45, cvBox.y + cvBox.height * 0.30);
@@ -659,6 +673,15 @@ await p2.mouse.move(cvBox.x + cvBox.width * 0.45, cvBox.y + cvBox.height * 0.70,
 await p2.mouse.up();
 await p2.waitForTimeout(300);
 const mVal = await mesure();
+const lignes = await releve();
+const nbAffichees = await carteMes.locator('.chip:not(.off)').count();
+check('écart de valeur : une ligne par courbe AFFICHÉE, dans son unité',
+  Array.isArray(lignes) && lignes.length === nbAffichees && lignes.length >= 1 &&
+  lignes.every((l) => l.d > 0) && !lignes.some((l) => l.nom === cachee),
+  (lignes || []).map((l) => l.d.toFixed(2) + (l.unite ? ' ' + l.unite : '')).join(' · ') +
+  ' — la courbe masquée est exclue');
+await carteMes.locator('.chip').nth(2).dblclick();   // on la rend au tracé
+await p2.waitForTimeout(250);
 await carteMes.locator('.mes-t').click();
 await p2.waitForTimeout(150);
 await p2.mouse.move(cvBox.x + cvBox.width * 0.30, cvBox.y + cvBox.height * 0.55);
