@@ -674,12 +674,9 @@ await p2.mouse.up();
 await p2.waitForTimeout(300);
 const mVal = await mesure();
 const lignes = await releve();
-const nbAffichees = await carteMes.locator('.chip:not(.off)').count();
-check('écart de valeur : une ligne par courbe AFFICHÉE, dans son unité',
-  Array.isArray(lignes) && lignes.length === nbAffichees && lignes.length >= 1 &&
-  lignes.every((l) => l.d > 0) && !lignes.some((l) => l.nom === cachee),
-  (lignes || []).map((l) => l.d.toFixed(2) + (l.unite ? ' ' + l.unite : '')).join(' · ') +
-  ' — la courbe masquée est exclue');
+check('écart de valeur : la courbe désignée, et elle seule',
+  mVal && mVal.dv > 0 && !!mVal.nom && mVal.nom !== cachee,
+  mVal ? 'Δ ' + mVal.dv.toFixed(2) + ' sur « ' + mVal.nom + ' » (une seule courbe)' : '✗');
 await carteMes.locator('.chip').nth(2).dblclick();   // on la rend au tracé
 await p2.waitForTimeout(250);
 await carteMes.locator('.mes-t').click();
@@ -690,6 +687,23 @@ await p2.mouse.move(cvBox.x + cvBox.width * 0.70, cvBox.y + cvBox.height * 0.55,
 await p2.mouse.up();
 await p2.waitForTimeout(300);
 const mTemps = await mesure();
+// Le relevé temporel porte Δt PUIS la variation de chaque courbe affichée,
+// signée du plus ancien vers le plus récent quel que soit le sens du geste.
+const relevéTemps = await carteMes.evaluate((el) => {
+  const c = el.__dwChart;
+  if (!c || !c.measure || c.measure.mode !== 'temps') return null;
+  const ta = Math.min(c.measure.t0, c.measure.t1), tb = Math.max(c.measure.t0, c.measure.t1);
+  return c.series.filter((x) => x.visible).map((x) => ({
+    nom: x.name || x.meta.label || x.addr,
+    d: DW.valeurA(x.addr, tb) - DW.valeurA(x.addr, ta),
+  }));
+});
+const affichees = await carteMes.locator('.chip:not(.off)').count();
+check('écart de temps : Δt et la variation SIGNÉE de chaque courbe affichée',
+  Array.isArray(relevéTemps) && relevéTemps.length === affichees &&
+  relevéTemps.every((l) => isFinite(l.d)) && !relevéTemps.some((l) => l.nom === cachee),
+  (relevéTemps || []).map((l) => (l.d >= 0 ? '+' : '−') + Math.abs(l.d).toFixed(2)).join(' · ') +
+  ' — la courbe masquée est exclue');
 // Retour au direct : la cote n'annote plus rien, elle disparaît.
 await carteMes.locator('.chart-pause').click();
 await p2.waitForTimeout(300);
@@ -703,6 +717,31 @@ check('mesures à l’arrêt : écart de valeur et écart de temps',
   (mVal ? 'Δ ' + mVal.dv.toFixed(2) + ' sur « ' + mVal.nom + ' »' : 'valeur ✗') +
   ' · ' + (mTemps ? 'Δt ' + mTemps.dt.toFixed(1) + ' s' : 'temps ✗') +
   ' · effacées au retour au direct');
+
+// Une vue figée RETIENT son historique : sans cela le tampon défilerait sous
+// elle et le graphique se remettrait à avancer tout seul au bout de quelques
+// minutes de pause — ce qui se lit comme une pause qui lâche.
+const retenue = () => carteMes.evaluate((el) => {
+  const c = el.__dwChart;
+  const d = DW.source.data(c.series[0].addr);
+  return { fige: c.viewEnd !== null,
+           besoin: c.viewEnd === null ? null : c.viewEnd - c.windowS,
+           profondeur: DW.source.now() - d.ts[0],
+           horizon: DW.CONFIG.horizonS, plafond: DW.CONFIG.holdMaxS,
+           horizonAtteint: !!c.horizonAtteint };
+});
+await carteMes.locator('.chart-pause').click();
+await p2.waitForTimeout(700);
+const rFige = await retenue();
+await carteMes.locator('.chart-pause').click();
+await p2.waitForTimeout(400);
+const rDirect = await retenue();
+check('vue figée : l’historique est retenu, la vue ne repart pas seule',
+  rFige.fige && !rFige.horizonAtteint && rFige.besoin != null &&
+  rFige.profondeur >= rFige.horizon - 5 && rFige.plafond > rFige.horizon &&
+  !rDirect.fige,
+  Math.round(rFige.profondeur) + ' s conservées (horizon ' + rFige.horizon +
+  ' s, plafond de retenue ' + rFige.plafond + ' s)');
 
 // Masquer / afficher : double-appui sur la pastille (le geste qu'on fait dix
 // fois pour isoler une grandeur), et « tout masquer » depuis le menu ⋮ — les

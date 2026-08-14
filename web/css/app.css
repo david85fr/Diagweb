@@ -252,6 +252,12 @@ button { font-family: var(--sans); }
 
 /* Retard sur le temps réel, dans l'en-tête d'une tuile figée. Il doit se voir :
    des valeurs figées sans indication se lisent comme des valeurs actuelles. */
+/* Historique épuisé : la vue figée ne peut plus rester en place, elle suit le
+   plus ancien échantillon disponible. La teinte change pour que ce basculement
+   se remarque. */
+.lag.lag-fin { color: var(--crit);
+  border-color: color-mix(in srgb, var(--crit) 55%, var(--line));
+  background: color-mix(in srgb, var(--crit) 14%, transparent); }
 .lag {
   flex: none;
   font: 600 11px var(--mono);

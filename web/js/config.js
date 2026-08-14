@@ -7,6 +7,11 @@
     defaultPeriodMs: 10,     // période de rafraîchissement par défaut d'une variable
     periodChoices: [10, 20, 50, 100, 200, 500, 1000],
     horizonS: 330,           // profondeur d'historique conservée (s)
+    // Une vue figée retient l'historique qu'elle montre, au-delà de l'horizon
+    // ordinaire : sans cela le tampon défilerait sous elle et la vue se
+    // remettrait à avancer toute seule. Plafonné, car retenir est de la
+    // mémoire : au-delà, la vue recommence à suivre, et le graphique le dit.
+    holdMaxS: 1800,          // rétention maximale d'une vue figée (s)
     windows: [15, 30, 60, 120, 300],
     defaultWindowS: 60,
     maxCharts: 8,

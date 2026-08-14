@@ -314,11 +314,12 @@
             // relâchement. Les boutons n'apparaissent donc qu'à l'arrêt.
             '<button class="iconbtn mes-val hide" type="button" ' +
               'title="Mesurer un écart de VALEUR : glisser verticalement sur le tracé. ' +
-              'L’écart est donné pour TOUTES les courbes affichées, chacune dans son ' +
-              'unité ; les courbes masquées n’y figurent pas.">↕</button>' +
+              'L’écart porte sur la courbe désignée au point d’appui (à défaut, la ' +
+              'première affichée), et sur elle seule.">↕</button>' +
             '<button class="iconbtn mes-t hide" type="button" ' +
               'title="Mesurer un écart de TEMPS : glisser horizontalement sur le tracé, ' +
-              'dans un sens ou dans l’autre.">↔</button>' +
+              'dans un sens ou dans l’autre. Le relevé donne la durée ET la variation ' +
+              'signée de chaque courbe affichée sur l’intervalle.">↔</button>' +
             '<button class="iconbtn card-fs" type="button" ' +
               'title="Afficher cette tuile seule sur toute la page, ou revenir à la ' +
               'mosaïque (sortie aussi par Échap)">⛶</button>' +
@@ -508,7 +509,15 @@
       if (!el) return;
       if (this.viewEnd === null) { el.classList.add('hide'); return; }
       el.classList.remove('hide');
-      el.textContent = '⏱ −' + DW.fmtDuree(Math.max(0, DW.source.now() - this.viewEnd));
+      const retard = Math.max(0, DW.source.now() - this.viewEnd);
+      el.textContent = '⏱ −' + DW.fmtDuree(retard) +
+        (this.horizonAtteint ? ' · historique épuisé' : '');
+      el.classList.toggle('lag-fin', !!this.horizonAtteint);
+      el.title = this.horizonAtteint
+        ? 'Historique épuisé : les données de cet instant ne sont plus conservées, ' +
+          'la vue suit donc le plus ancien échantillon disponible.'
+        : 'Retard sur le temps réel : la vue et les valeurs affichées sont celles ' +
+          'de cet instant passé';
     }
 
     syncWinSel() {
@@ -1001,11 +1010,21 @@
       };
     }
 
+    /**
+     * Ramène la vue dans ce que l'historique peut encore montrer. Une vue
+     * figée retient normalement son historique (voir DW.source.setHold) ; ce
+     * garde-fou ne joue donc qu'au-delà du plafond de rétention — et quand il
+     * joue, la vue se remet à avancer. Il faut alors le DIRE : sans message,
+     * cela se lit comme une pause qui lâche toute seule.
+     */
     clampView() {
       if (this.viewEnd === null) return;
       const now = DW.source.now();
-      const minEnd = now - CFG.horizonS + this.windowS;
-      this.viewEnd = Math.min(now, Math.max(this.viewEnd, Math.min(minEnd, now)));
+      const dispo = Math.max(CFG.horizonS, CFG.holdMaxS || 0);
+      const minEnd = now - dispo + this.windowS;
+      const voulu = this.viewEnd;
+      this.viewEnd = Math.min(now, Math.max(voulu, Math.min(minEnd, now)));
+      this.horizonAtteint = this.viewEnd > voulu + 0.05;
     }
 
     timeAt(xPx) {
@@ -1748,32 +1767,45 @@
       if (vert) { pointe(x0 + 0.5, y0, 1); pointe(x0 + 0.5, y1, -1); }
       else { pointe(x0, y0 + 0.5, 1); pointe(x1, y0 + 0.5, -1); }
 
-      // Étiquette. En mesure de VALEUR, l'écart est donné pour TOUTES les
-      // courbes affichées, chacune dans son unité : le même écart d'écran ne
-      // vaut pas la même chose d'une échelle à l'autre, et c'est justement la
-      // comparaison qui intéresse. Les courbes masquées n'y figurent pas —
-      // elles ne sont pas sur le tracé qu'on mesure.
+      // Étiquette. Les deux mesures ne répondent pas à la même question :
+      //   ↕ « de combien cette grandeur a-t-elle varié ? » → UNE courbe, celle
+      //     qu'on a désignée en appuyant dessus (à défaut, la première
+      //     affichée) ; en mêler d'autres brouillerait la réponse ;
+      //   ↔ « que s'est-il passé pendant cet intervalle ? » → le temps écoulé
+      //     ET la variation de CHAQUE courbe affichée, avec son SIGNE : c'est
+      //     la comparaison des évolutions qui fait l'intérêt de la mesure.
+      // Les courbes masquées ne figurent dans aucun des deux : elles ne sont
+      // pas sur le tracé qu'on mesure.
       ctx.font = '600 11px system-ui, sans-serif';
       const lignes = [];
       if (vert) {
-        const dyPx = Math.abs(y1 - y0);
+        const ref = s || this.series.find((c) => c.visible) || null;
+        const dv = ref === s ? (m.v1 - m.v0)
+                             : (y0 - y1) * (this._axisScale[ref && ref.addr] || 0);
+        lignes.push({
+          couleur: ref ? colorOf(ref) : null,
+          txt: 'Δ ' + DW.fmtVal(Math.abs(dv), ref ? ref.meta : { unit: m.unite }) +
+               (ref && ref.meta.unit ? ' ' + ref.meta.unit : ''),
+          nom: ref ? (ref.name || ref.meta.label || ref.addr) : '',
+        });
+      } else {
+        lignes.push({ couleur: null, txt: 'Δt ' + DW.fmtDuree(Math.abs(m.t1 - m.t0)), nom: '' });
+        // Variation de chaque courbe affichée sur l'intervalle, signée : du
+        // plus ancien vers le plus récent, quel que soit le sens du geste.
+        const ta = Math.min(m.t0, m.t1), tb = Math.max(m.t0, m.t1);
         for (const c of this.series) {
           if (!c.visible) continue;
-          const ech = this._axisScale[c.addr];
-          if (!ech) continue;
+          const va = DW.valeurA(c.addr, ta), vb = DW.valeurA(c.addr, tb);
+          if (va == null || vb == null) continue;
+          const d = vb - va;
+          const signe = d > 0 ? '+' : d < 0 ? '−' : '';
           lignes.push({
             couleur: colorOf(c),
-            txt: 'Δ ' + DW.fmtVal(dyPx * ech, c.meta) + (c.meta.unit ? ' ' + c.meta.unit : ''),
+            txt: 'Δ ' + signe + DW.fmtVal(Math.abs(d), c.meta) +
+                 (c.meta.unit ? ' ' + c.meta.unit : ''),
             nom: c.name || c.meta.label || c.addr,
           });
         }
-      }
-      if (!lignes.length) {
-        lignes.push({ couleur: null,
-          txt: vert ? 'Δ ' + DW.fmtVal(Math.abs(m.v1 - m.v0), s ? s.meta : { unit: m.unite }) +
-                      (m.unite ? ' ' + m.unite : '')
-                    : 'Δt ' + DW.fmtDuree(Math.abs(m.t1 - m.t0)),
-          nom: vert ? m.nom : '' });
       }
 
       const H = 15, PAD = 6, PUCE = 9;
@@ -1809,8 +1841,8 @@
           ctx.beginPath();
           ctx.arc(tx + 3, y, 3, 0, Math.PI * 2);
           ctx.fill();
-          tx += PUCE;
         }
+        if (lignes.some((x) => x.couleur)) tx += PUCE;
         ctx.fillStyle = IK.ink;
         ctx.fillText(l.txt, tx, y);
         if (l.nom) {

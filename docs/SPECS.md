@@ -324,7 +324,14 @@ seulement ce qu'on trace :
   l'heure courante : elle ne glisse donc plus sous un graphique figé ;
 - un badge **⏱ −durée** dans l'en-tête de chaque tuile figée dit de quand
   datent les valeurs affichées. Sans lui, des valeurs figées se lisent comme
-  des valeurs actuelles.
+  des valeurs actuelles ;
+- une tuile figée **retient l'historique qu'elle montre** (`DW.source.setHold`,
+  honoré par les deux sources) : l'horizon ordinaire est de 330 s, si bien que
+  sans cette retenue le tampon défilait sous une vue arrêtée, qui se remettait
+  à avancer d'elle-même au bout de quelques minutes — ce qui se lit comme une
+  pause qui lâche. La retenue est plafonnée (`holdMaxS`, 30 min) parce que
+  retenir coûte de la mémoire ; **passé ce plafond, le badge passe au rouge et
+  affiche « historique épuisé »**, seul cas où la vue suit à nouveau.
 
 ## 4 ter. Mesures sur le tracé (vue arrêtée)
 
@@ -332,16 +339,21 @@ Deux boutons apparaissent dans l'en-tête d'un graphique **figé** — et seulem
 là : sur un tracé qui défile, le point d'appui aurait déjà bougé au
 relâchement, la mesure serait fausse par construction.
 
-- **↕ écart de valeur** : glisser verticalement. L'écart est relevé pour
-  **toutes les courbes affichées**, une ligne par courbe, chacune **dans son
-  unité** : sur un graphique multi-échelles, le même écart d'écran ne vaut pas
-  la même chose d'une échelle à l'autre, et c'est cette comparaison qui
-  intéresse. Les courbes **masquées n'y figurent pas** — elles ne sont pas sur
-  le tracé qu'on mesure. La cote elle-même est positionnée sur la courbe la
-  plus proche du point d'appui, dont elle prend la couleur : c'est elle qui
-  l'ancre aux données.
-- **↔ écart de temps** : glisser horizontalement, dans un sens ou dans
-  l'autre.
+Les deux mesures ne répondent pas à la même question, et leur relevé s'en
+déduit :
+
+- **↕ écart de valeur** — « de combien cette grandeur a-t-elle varié ? ». Une
+  **seule** courbe : celle désignée au point d'appui (à défaut, la première
+  affichée). La cote prend sa couleur, et c'est elle qui l'ancre aux données.
+  En mêler d'autres brouillerait la réponse.
+- **↔ écart de temps** — « que s'est-il passé pendant ce laps de temps ? ». Le
+  relevé donne la **durée**, puis la **variation signée de chaque courbe
+  affichée** sur l'intervalle, chacune dans son unité, comptée du plus ancien
+  vers le plus récent quel que soit le sens du geste. C'est la comparaison des
+  évolutions qui fait l'intérêt de la mesure.
+
+Les courbes **masquées** ne figurent dans aucun des deux relevés : elles ne
+sont pas sur le tracé qu'on mesure.
 
 La cote **reste affichée** après le relâchement : c'est une mesure qu'on lit,
 pas un survol. Elle est ancrée sur les **données** — un temps absolu, une

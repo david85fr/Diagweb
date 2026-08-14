@@ -154,9 +154,13 @@
     if (rec.refs <= 0) regs.delete(addr);
   }
 
+  /** Instant en deçà duquel l'historique ne doit pas être purgé (vue figée). */
+  let holdT = null;
+
   function tick() {
     const t = now();
-    const minT = t - CFG.horizonS;
+    let minT = t - CFG.horizonS;
+    if (holdT != null) minT = Math.min(minT, Math.max(holdT, t - CFG.holdMaxS));
     for (const [addr, rec] of regs) {
       // Rattrapage borné : si l'onglet a été suspendu, on saute en avant.
       if (t - rec.nextT > 2) rec.nextT = t;
@@ -177,6 +181,12 @@
   DW.sources = DW.sources || {};
   DW.sources.sim = {
     name: 'Simulation locale',
+    /**
+     * Retient l'historique jusqu'à cet instant, au-delà de l'horizon ordinaire.
+     * Appelé par l'application quand une tuile est figée : ce qu'on regarde ne
+     * doit pas être jeté sous nos yeux. `null` rend la purge à l'horizon.
+     */
+    setHold(t) { holdT = (typeof t === 'number' && isFinite(t)) ? t : null; },
     defaultPeriodMs: CFG.defaultPeriodMs,
     now,
     subscribe,

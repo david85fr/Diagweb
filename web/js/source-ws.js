@@ -42,11 +42,16 @@
     }
 
     function trim(ch) {
-      const minT = now() - horizonS;
+      let minT = now() - horizonS;
+      if (holdT != null) minT = Math.min(minT, Math.max(holdT, now() - CFG.holdMaxS));
       let cut = 0;
       while (cut < ch.ts.length && ch.ts[cut] < minT) cut++;
       if (cut > 400) { ch.ts.splice(0, cut); ch.vs.splice(0, cut); }
     }
+
+    // Instant retenu par une vue figée : l'historique qu'elle montre survit à
+    // l'horizon ordinaire (voir sim.js, même contrat).
+    let holdT = null;
 
     let onHello = null;   // renseigné par connect() : la session n'est prête
                           // qu'une fois « hello » reçu (nom, horizon, horloge)
@@ -195,6 +200,9 @@
       },
 
       count: () => chans.size,
+
+      /** Voir sim.js : retient l'historique d'une vue figée au-delà de l'horizon. */
+      setHold(t) { holdT = (typeof t === 'number' && isFinite(t)) ? t : null; },
 
       latest(addr) {
         const ch = chans.get(addr);

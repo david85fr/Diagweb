@@ -2266,6 +2266,7 @@
     }
     if (t - lastLiveT >= CFG.liveRefreshMs) {
       lastLiveT = t;
+      majRetenue();
       if (tab) for (const c of tab.charts) c.updateLive();
       updateTableValues();
       const n = DW.source.count();
@@ -2273,6 +2274,29 @@
         ' · ' + state.tabs.length + ' onglet' + (state.tabs.length > 1 ? 's' : '');
     }
     requestAnimationFrame(loop);
+  }
+
+  /**
+   * Instant le plus ancien qu'une tuile figée a besoin de montrer, tous
+   * onglets confondus. La source retient son historique jusque-là : sans cela
+   * le tampon défilerait sous une vue arrêtée, qui se remettrait à avancer
+   * toute seule au bout de quelques minutes — ce qui se lit comme une pause
+   * qui lâche.
+   */
+  function majRetenue() {
+    let plusAncien = null;
+    for (const tab of state.tabs) {
+      for (const c of tab.charts) {
+        if (c.viewEnd === null) continue;
+        const t = c.viewEnd - c.windowS;
+        if (plusAncien === null || t < plusAncien) plusAncien = t;
+      }
+      for (const t of tab.tables) {
+        if (t.frozen == null) continue;
+        if (plusAncien === null || t.frozen < plusAncien) plusAncien = t.frozen;
+      }
+    }
+    if (DW.source && DW.source.setHold) DW.source.setHold(plusAncien);
   }
 
   /** « Figer » agit sur TOUTES les tuiles de l'onglet, tableaux compris. */
@@ -2457,8 +2481,8 @@
             ['Badge Én', 'Numéro de l’échelle utilisée ; 🔒 signale un réglage manuel.'],
             ['Échelles — regrouper, séparer, nommer', 'Par défaut les courbes de même unité partagent une échelle. Le menu d’une pastille permet de choisir : <b>Échelle automatique</b> (par unité), <b>Échelle dédiée</b> (cette courbe seule), ou <b>Mettre sur l’échelle « … »</b> pour rejoindre celle d’une autre courbe — même si les unités diffèrent. <b>Renommer l’échelle</b> lui donne un nom qui remplace l’unité en tête de sa règle.'],
             ['Plein écran', '<b>⛶</b> dans l’en-tête d’une tuile l’affiche seule sur toute la page, et l’y ramène. La tuile sort de la mosaïque le temps du plein écran : sa place et sa taille sont intactes au retour. Sortie aussi par <b>Échap</b>.'],
-            ['Mesurer sur le tracé', 'Une fois le graphique <b>figé</b>, deux boutons apparaissent dans son en-tête. <b>↕</b> : glisser verticalement mesure un <b>écart de valeur</b>. Il est donné pour <b>toutes les courbes affichées</b>, chacune dans son unité — le même écart d’écran ne vaut pas la même chose d’une échelle à l’autre, et c’est cette comparaison qui intéresse. Les courbes masquées n’y figurent pas. <b>↔</b> : glisser horizontalement mesure un <b>écart de temps</b>, dans un sens ou dans l’autre. La cote reste affichée après le relâchement, et elle est ancrée sur les données : régler une échelle ne la fausse pas. Un second appui sur le bouton l’efface.'],
-            ['Figer', '<b>⏸</b> sur une tuile, ou <b>⏸ Figer</b> en haut pour tout l’onglet : le tracé <b>et les valeurs numériques</b> s’arrêtent sur l’instant courant, et la grille cesse de défiler. Un badge <b>⏱ −durée</b> dans l’en-tête dit de quand datent les valeurs qu’on lit.'],
+            ['Mesurer sur le tracé', 'Une fois le graphique <b>figé</b>, deux boutons apparaissent dans son en-tête. <b>↕</b> : glisser verticalement mesure un <b>écart de valeur</b>, sur la <b>seule</b> courbe désignée au point d’appui (à défaut, la première affichée) — la question posée est « de combien cette grandeur a-t-elle varié ? », en mêler d’autres brouillerait la réponse. <b>↔</b> : glisser horizontalement mesure un <b>écart de temps</b>, dans un sens ou dans l’autre. Le relevé donne la durée <b>et la variation signée de chaque courbe affichée</b> sur l’intervalle — la question posée est « que s’est-il passé pendant ce laps de temps ? ». Les courbes masquées n’y figurent pas. La cote reste affichée après le relâchement, et elle est ancrée sur les données : régler une échelle ne la fausse pas. Un second appui sur le bouton l’efface.'],
+            ['Figer', '<b>⏸</b> sur une tuile, ou <b>⏸ Figer</b> en haut pour tout l’onglet : le tracé <b>et les valeurs numériques</b> s’arrêtent sur l’instant courant, et la grille cesse de défiler. Un badge <b>⏱ −durée</b> dans l’en-tête dit de quand datent les valeurs qu’on lit. Une vue figée <b>retient son historique</b> : elle ne se remet pas à avancer toute seule quand le tampon défile. Passé le plafond de rétention (30 min), le badge passe au rouge et dit « historique épuisé » — c’est le seul cas où la vue suit à nouveau.'],
             ['Adresse ou description', 'Menu ⋮ d’un tableau : <b>Mettre la description en tête</b> intervertit l’adresse et la description. Menu ⋮ d’un graphique : <b>Légende : description plutôt qu’adresse</b>. L’automaticien cherche une adresse, l’exploitant un nom — chaque tuile choisit.'],
             ['Échelles verticales', 'Toutes les règles sont <b>à gauche</b>, empilées dans l’ordre des badges Én : on lit une valeur sans chercher de quel bord vient son échelle. Clic sur une <b>règle d’axe</b> (les graduations, curseur ↕) : saisir le minimum et le maximum exacts, pour cette échelle seule ou pour <b>toutes</b> celles du graphique. Glisser ou molette sur la règle : réglage à la volée ; double-clic : retour à l’automatique. Même réglage depuis le menu d’une pastille (« Bornes de l’échelle… »).'],
           ]) +
