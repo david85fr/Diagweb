@@ -277,6 +277,17 @@ moins de 55 % de l'échelle pendant plus de 2 s ; transitions lissées.
 « Échelles automatiques » du menu ⋮ ré-arme tous les axes du graphique.
 Historique conservé : 330 s glissantes.
 
+## 3 ter. Plein écran par tuile
+
+**⛶** dans l'en-tête d'une tuile — tableau comme graphique — l'affiche seule
+sur toute la page, et l'y ramène ; **Échap** en sort aussi. Le bouton est dans
+l'en-tête et pas seulement dans le menu ⋮ : regarder une courbe de près est un
+geste fréquent, il ne doit pas coûter deux appuis.
+
+La carte sort de la mosaïque le temps du plein écran (`position: fixed`) : sa
+place et sa taille y sont donc **intactes au retour**, sans rien à mémoriser.
+Le contenu remplit l'écran — le tracé s'étire, le tableau défile à l'intérieur.
+
 ## 4 bis. Figer (tuile ou onglet)
 
 **⏸** sur une tuile fige cette tuile ; **⏸ Figer** dans la barre du haut fige

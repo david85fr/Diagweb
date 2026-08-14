@@ -293,6 +293,9 @@
               'title="Durée affichée — modifiable aussi par pincement ou molette sur le tracé"></select>' +
             '<button class="iconbtn chart-pause" type="button" ' +
               'title="Figer ce graphique sur l’instant courant, ou revenir au temps réel">⏸</button>' +
+            '<button class="iconbtn card-fs" type="button" ' +
+              'title="Afficher cette tuile seule sur toute la page, ou revenir à la ' +
+              'mosaïque (sortie aussi par Échap)">⛶</button>' +
             '<button class="iconbtn chart-more" type="button" ' +
               'title="Options : dupliquer, échelles automatiques, taille, plein écran, déplacer, fermer">⋮</button>' +
           '</div>' +
@@ -354,6 +357,8 @@
       this.root.querySelector('.card-add').addEventListener('click', () => {
         if (DW.openVarPicker) DW.openVarPicker({ kind: 'chart', chart: this });
       });
+      this.root.querySelector('.card-fs').addEventListener('click', () =>
+        this.setFullscreen(!this.fullscreen));
       this.root.querySelector('.chart-more').addEventListener('click', (e) =>
         this.openChartMenu(e.currentTarget));
       this.moveEl.querySelector('button').addEventListener('click', () => this.endMoveMode());
@@ -442,6 +447,14 @@
       this.fullscreen = on;
       this.root.classList.toggle('fs', on);
       document.body.classList.toggle('has-fs', on);
+      const b = this.root.querySelector('.card-fs');
+      if (b) {
+        b.textContent = on ? '⛶' : '⛶';
+        b.classList.toggle('on', on);
+        b.title = on ? 'Revenir à la mosaïque (Échap)'
+                     : 'Afficher cette tuile seule sur toute la page, ou revenir à la ' +
+                       'mosaïque (sortie aussi par Échap)';
+      }
     }
 
     openChartMenu(anchor) {

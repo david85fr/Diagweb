@@ -433,7 +433,6 @@ button { font-family: var(--sans); }
 }
 .chart-card.resizing { outline: 1px solid color-mix(in srgb, var(--accent) 60%, transparent); }
 .chart-card.resizing .resize-grip { opacity: 1; }
-.chart-card.fs .resize-grip { display: none; }
 .chart-head {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 10px 6px;
@@ -461,14 +460,19 @@ button { font-family: var(--sans); }
 .chart-body { position: relative; padding: 0 4px;
   height: clamp(200px, calc(var(--th, 9) * 42px - 104px), 62vh); }
 
-/* Plein écran par graphique */
-.chart-card.fs {
+/* Plein écran, pour l'une ou l'autre nature de tuile. La carte sort de la
+   mosaïque (position fixe) : sa place et sa taille sont donc intactes au
+   retour, il n'y a rien à mémoriser. */
+.card.fs {
   position: fixed; inset: 0; z-index: 140;
   margin: 0; border-radius: 0; border: 0;
   display: flex; flex-direction: column;
+  height: auto; overflow: hidden;
 }
-.chart-card.fs .chart-body { flex: 1 1 0; height: auto; min-height: 0; }
-.chart-card.fs .chart-legend { flex: none; }
+.card.fs .chart-body { flex: 1 1 0; height: auto; min-height: 0; }
+.card.fs .chart-legend { flex: none; max-height: 30vh; overflow-y: auto; }
+.card.fs .trows { flex: 1 1 0; min-height: 0; overflow-y: auto; }
+.card.fs .resize-grip { display: none; }
 body.has-fs { overflow: hidden; }
 
 /* Bandeau du mode « décaler une courbe » */
