@@ -65,6 +65,15 @@ Sur GitHub : bouton **Code → Codespaces → Create codespace on
 Ninja, Net-SNMP, open62541), vérifie la syntaxe des sources, compile le
 serveur de diagnostic et démarre l'aperçu sur le **port 8080**.
 
+La préparation est coupée en deux selon la dépendance au dépôt :
+`on-create.sh` pose l'outillage système et construit open62541 —
+l'étape la plus chère — et `post-create.sh` fait ce qui a besoin du code.
+Cette coupure n'existe que pour une raison : un prebuild Codespaces
+s'arrête à `onCreateCommand` et ne joue **jamais** `postCreateCommand`.
+Activer les prebuilds (**Settings → Codespaces → Set up prebuilds**) évite
+donc de repayer ces minutes à chaque création ; sans eux tout fonctionne
+pareil, simplement sans le gain.
+
 - **Une seule commande** : `bash tools/share.sh` — démarre l'aperçu s'il
   ne tourne pas, rend le port public et affiche l'adresse à ouvrir.
   Variante `bash tools/share.sh --server` : compile et lance le **serveur

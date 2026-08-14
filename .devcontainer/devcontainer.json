@@ -34,6 +34,20 @@
   // type » signifie noyau sans vcan, et il n'y a alors rien à tenter de plus.
   "runArgs": ["--cap-add=NET_RAW", "--cap-add=NET_ADMIN"],
 
+  // Découpage selon la dépendance au dépôt, et non par commodité :
+  //
+  //   onCreateCommand   outillage système (apt, open62541) — ne lit aucune
+  //                     source, donc cuisable dans un prebuild Codespaces,
+  //                     qui s'arrête à onCreate/updateContent et ne joue
+  //                     JAMAIS postCreateCommand. C'est là que se trouvent les
+  //                     minutes de CMake d'open62541.
+  //   postCreateCommand ce qui a besoin du code (syntaxe, compilation) et doit
+  //                     refléter le commit ouvert, jamais une image figée.
+  //
+  // Le gain ne se matérialise qu'avec les prebuilds activés sur le dépôt
+  // (Settings → Codespaces → Set up prebuilds) ; sans eux les deux crochets se
+  // valent, et le découpage reste correct.
+  "onCreateCommand": "bash .devcontainer/on-create.sh",
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "postAttachCommand": {
     "apercu": "nohup python3 tools/serve.py > /tmp/diagweb-serve.log 2>&1 &"
