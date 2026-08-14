@@ -599,6 +599,84 @@ check('échelles : association explicite et nom, conservés au rechargement',
   !apresEchelle.some((t) => /^✓ Échelle (automatique|dédiée)/.test(t)),
   entrees.filter((t) => /échelle/i.test(t)).join(' · '));
 
+// Masquer / afficher : double-appui sur la pastille (le geste qu'on fait dix
+// fois pour isoler une grandeur), et « tout masquer » depuis le menu ⋮ — les
+// pastilles restent, on rallume ensuite celle qu'on veut suivre.
+const visibles = () => p2.$$eval(PANE + '.chart-card',
+  (els) => [...els[0].querySelectorAll('.chip')].map((c) => !c.classList.contains('off')));
+const v0 = await visibles();
+await p2.locator(PANE + '.chart-card .chip').first().dblclick();
+await p2.waitForTimeout(350);
+const v1 = await visibles();
+const menuFerme = await p2.locator('.popmenu').count();
+await p2.locator(PANE + '.chart-card .chip').first().dblclick();
+await p2.waitForTimeout(350);
+const v2 = await visibles();
+await p2.locator(PANE + '.chart-more').first().click();
+await p2.waitForTimeout(220);
+await p2.locator('.popmenu button', { hasText: 'Masquer toutes les courbes' }).click();
+await p2.waitForTimeout(350);
+const v3 = await visibles();
+await p2.locator(PANE + '.chart-more').first().click();
+await p2.waitForTimeout(220);
+await p2.locator('.popmenu button', { hasText: 'Afficher toutes les courbes' }).click();
+await p2.waitForTimeout(350);
+const v4 = await visibles();
+check('double-appui masque une courbe ; le menu ⋮ les masque toutes',
+  v0.every(Boolean) && v1[0] === false && v1.slice(1).every(Boolean) && menuFerme === 0 &&
+  v2.every(Boolean) && v3.every((x) => x === false) && v4.every(Boolean),
+  v0.length + ' courbes · une masquée puis rendue · toutes masquées puis rendues');
+
+// Une courbe se glisse d'un graphique à l'autre — déplacée, ou COPIÉE quand
+// Ctrl est enfoncé. Sa configuration voyage avec elle : sans cela, elle
+// arriverait dépouillée de sa couleur, de son échelle et de son décalage.
+const nbCourbes = () => p2.$$eval(PANE + '.chart-card',
+  (els) => [els[0].querySelectorAll('.chip').length,
+            els[els.length - 1].querySelectorAll('.chip').length]);
+// Cible : un graphique NEUF, créé pour l'occasion. Viser un voisin
+// quelconque exposerait au cas où il porte déjà la même courbe, et le test
+// mesurerait alors le refus de duplication plutôt que le déplacement.
+await p2.selectOption('#targetSel', 'new');
+await p2.waitForTimeout(400);
+const glisserCourbe = (indexChip, ctrl) => p2.evaluate(({ indexChip, ctrl }) => {
+  const cartes = [...document.querySelectorAll('.tabpane.on .chart-card')];
+  const chip = cartes[0].querySelectorAll('.chip')[indexChip];
+  const store = {};
+  const dt = { types: [], setData(t, v) { store[t] = v; this.types.push(t); },
+    getData(t) { return store[t] || ''; }, setDragImage() {}, effectAllowed: '', dropEffect: '' };
+  const ev = new Event('dragstart', { bubbles: true, cancelable: true });
+  Object.defineProperty(ev, 'dataTransfer', { value: dt });
+  chip.dispatchEvent(ev);
+  const cible = cartes[cartes.length - 1], r = cible.getBoundingClientRect();
+  const dt2 = { types: Object.keys(store), getData(t) { return store[t] || ''; },
+    setData() {}, dropEffect: '', effectAllowed: '' };
+  for (const type of ['dragover', 'drop']) {
+    const e2 = new MouseEvent(type, { bubbles: true, cancelable: true,
+      clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, ctrlKey: ctrl });
+    Object.defineProperty(e2, 'dataTransfer', { value: dt2 });
+    cible.dispatchEvent(e2);
+  }
+  document.dispatchEvent(new Event('dragend', { bubbles: true }));
+}, { indexChip, ctrl });
+const nb0 = await nbCourbes();
+await glisserCourbe(0, true);
+await p2.waitForTimeout(500);
+const nb1 = await nbCourbes();
+await glisserCourbe(1, false);
+await p2.waitForTimeout(500);
+const nb2 = await nbCourbes();
+await p2.locator(PANE + '.chart-card .chip').first().click();
+await p2.waitForTimeout(220);
+const menuVar = await p2.$$eval('.popmenu button', (b) => b.map((x) => x.textContent.trim()));
+await p2.mouse.click(5, 5);
+await p2.waitForTimeout(150);
+check('courbe glissée d’un graphique à l’autre : copie (Ctrl) et déplacement',
+  nb1[0] === nb0[0] && nb1[1] === nb0[1] + 1 &&      // copie : la source garde la sienne
+  nb2[0] === nb1[0] - 1 && nb2[1] === nb1[1] + 1 &&  // déplacement : elle quitte la source
+  menuVar.some((t) => /^Copier l’adresse \(/.test(t)) &&
+  menuVar.some((t) => /^Copier vers «/.test(t)),
+  nb0.join('/') + ' → copie ' + nb1.join('/') + ' → déplacement ' + nb2.join('/'));
+
 // Plein écran depuis l'en-tête de la tuile : un bouton, pas seulement une
 // entrée de menu — c'est un geste qu'on fait souvent pour regarder une courbe
 // de près. La tuile sort de la mosaïque, donc sa place et sa taille sont

@@ -217,9 +217,19 @@
     const pw = popEl.offsetWidth;
     const mh = popEl.offsetHeight;
     popEl.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pw - 8)) + 'px';
-    // Sous l'ancre si la place le permet, sinon au-dessus (jamais hors écran)
-    let top = r.bottom + 6;
-    if (top + mh > window.innerHeight - 8) top = Math.max(8, r.top - mh - 6);
+    // Sous l'ancre si la place le permet, sinon au-dessus. Trop haut pour les
+    // deux : il DÉFILE, borné au côté le plus large — un menu qui recouvrirait
+    // son ancre empêcherait de le refermer par un second appui, et c'est ce
+    // qui arrivait sur téléphone dès que le menu s'allongeait.
+    const bas = window.innerHeight - r.bottom - 14;
+    const haut = r.top - 14;
+    let top, maxH;
+    if (mh <= bas) { top = r.bottom + 6; maxH = bas; }
+    else if (mh <= haut) { top = r.top - mh - 6; maxH = haut; }
+    else if (bas >= haut) { top = r.bottom + 6; maxH = bas; }
+    else { top = 8; maxH = haut; }
+    popEl.style.maxHeight = Math.max(120, maxH) + 'px';
+    popEl.style.overflowY = 'auto';
     popEl.style.top = (top + window.scrollY) + 'px';
   }
 
@@ -469,6 +479,17 @@
           this.app.onChange();
         }, null, 'Afficher sur les pastilles la description de la variable (repère de ' +
           'l’exploitant) au lieu de son adresse (repère de l’automaticien)');
+        // Tout masquer d'un coup : les pastilles restent, on rallume celles
+        // qu'on veut suivre — d'un double-appui.
+        if (this.series.length) {
+          const visibles = this.series.filter((x) => x.visible).length;
+          mk(visibles ? 'Masquer toutes les courbes' : 'Afficher toutes les courbes',
+            () => this.setToutesVisibles(!visibles), null,
+            visibles
+              ? 'Retirer toutes les courbes du tracé sans les supprimer ; les pastilles ' +
+                'restent, un double-appui rallume celle qu’on veut suivre'
+              : 'Remettre toutes les courbes sur le tracé');
+        }
         mk('Taille de départ', () => this.resetSize(), null,
           'Annuler le dimensionnement fait à la poignée ◢ et revenir à la taille de départ ' +
           'd’un graphique (une demi-largeur)');
@@ -1026,7 +1047,31 @@
           ' · rafraîchissement ' + (s.periodMs || DW.CONFIG.defaultPeriodMs) + ' ms' +
           (s.offsetY ? ' · décalage ' + DW.fmtVal(s.offsetY, s.meta) : '') +
           ' · appuyez pour le nom, la couleur, l’échelle dédiée, le décalage ou le retrait';
+        // Une courbe se glisse comme une ligne de tableau : vers un autre
+        // graphique, un tableau, un onglet, ou une autre fenêtre. Ctrl (ou ⌘)
+        // enfoncé au dépôt : elle est COPIÉE au lieu d'être déplacée.
+        chip.draggable = true;
+        chip.addEventListener('dragstart', (ev) => {
+          if (!DW.dnd) { ev.preventDefault(); return; }
+          DW.dnd.startDrag(ev, {
+            kind: 'vars', tabId: this.app.tabIdOf(this), chartId: this.id,
+            table: [{ addr: s.addr, periodMs: s.periodMs, name: s.name }],
+            // La configuration complète voyage avec la courbe : couleur,
+            // échelle, décalage. Sans elle, une courbe copiée d'un graphique
+            // à l'autre y arriverait dépouillée de tous ses réglages.
+            series: [this.serializeSeries(s)],
+          }, () => this.removeSeries(s.addr));
+        });
         chip.addEventListener('click', () => this.openSeriesMenu(s, chip));
+        // Double-appui : masquer / afficher la courbe. C'est le geste qu'on
+        // fait dix fois pour isoler une grandeur au milieu des autres ; passer
+        // par le menu à chaque fois est trop lent. Le menu ouvert par le
+        // premier appui est refermé, sans quoi il resterait en travers.
+        chip.addEventListener('dblclick', (ev) => {
+          ev.preventDefault();
+          closePopover();
+          this.setSeriesVisible(s, !s.visible);
+        });
         this.legendEl.appendChild(chip);
       }
       this.hintEl.classList.toggle('hide', this.series.length > 0);
@@ -1035,13 +1080,31 @@
     openSeriesMenu(s, chip) {
       openPopover(s, chip, (mk, add) => {
         add(this.buildColorPicker(s));
+        // L'adresse est ce qu'on recopie ailleurs : dans une autre fenêtre
+        // Diagweb, dans un tableur, dans un message à un collègue.
+        mk('Copier l’adresse (' + s.addr + ')', () => this.app.copierTexte(s.addr,
+          'Adresse copiée : ' + s.addr), null,
+          'Mettre l’adresse de cette variable dans le presse-papiers, pour la ' +
+          'réutiliser ailleurs');
+        // Chemin tactile de la copie entre graphiques : le glisser-déposer
+        // HTML5 n'existe pas sur écran tactile.
+        for (const autre of this.app.otherCharts(this)) {
+          mk('Copier vers « ' + autre.title + ' »', () => {
+            const cfg = this.serializeSeries(s);
+            if (autre.addSeriesFromConfig(cfg)) {
+              this.app.toast(s.addr + ' copiée vers « ' + autre.title + ' ».');
+            } else {
+              this.app.toast(s.addr + ' est déjà dans « ' + autre.title + ' ».', 'err');
+            }
+          }, null, 'Ajouter cette courbe au graphique « ' + autre.title +
+            ' » avec sa couleur, son échelle et son décalage — l’original reste ici');
+        }
         mk('Renommer la courbe…', () => this.renameSeries(s), null,
           'Nom d’affichage dans la légende (vide = adresse ou libellé du catalogue)');
-        mk(s.visible ? 'Masquer la courbe' : 'Afficher la courbe', () => {
-          s.visible = !s.visible;
-          this.rebuildLegend();
-          this.app.onChange();
-        }, null, 'Retirer la courbe du tracé sans la supprimer (elle reste abonnée)');
+        mk(s.visible ? 'Masquer la courbe' : 'Afficher la courbe',
+          () => this.setSeriesVisible(s, !s.visible), null,
+          'Retirer la courbe du tracé sans la supprimer (elle reste abonnée) — ' +
+          'double-appui sur la pastille pour aller plus vite');
         mk('Bornes de l’échelle…', () => {
           const key = this.axisKey(s);
           this.openAxisMenu(key, chip);
@@ -1520,6 +1583,64 @@
       this.tipEl.style.top = (mT + 4) + 'px';
     }
 
+    /**
+     * Masque ou affiche une courbe. Elle reste **abonnée** : la retirer du
+     * tracé n'interrompt pas son historique, qui sera là quand on la
+     * réaffichera — et le journal continue de l'enregistrer.
+     */
+    setSeriesVisible(s, visible) {
+      if (s.visible === visible) return;
+      s.visible = visible;
+      this.rebuildLegend();
+      this.app.onChange();
+    }
+
+    /**
+     * Masque toutes les courbes, ou les réaffiche toutes. Sur un graphique
+     * chargé, c'est la façon rapide d'en isoler une : tout masquer, puis
+     * rallumer celle qu'on veut suivre.
+     */
+    setToutesVisibles(visible) {
+      let n = 0;
+      for (const s of this.series) if (s.visible !== visible) { s.visible = visible; n++; }
+      if (!n) return;
+      this.rebuildLegend();
+      this.app.onChange();
+      this.app.toast(visible ? n + ' courbe(s) réaffichée(s).' : n + ' courbe(s) masquée(s).');
+    }
+
+    /**
+     * Ajoute une courbe depuis une configuration (copie ou dépôt). Rend faux
+     * si l'adresse est déjà tracée ici : on ne duplique pas une courbe dans
+     * le même graphique, cela ferait deux tracés superposés.
+     */
+    addSeriesFromConfig(cfg) {
+      if (!cfg || !cfg.addr) return false;
+      if (this.series.some((x) => x.addr === cfg.addr)) return false;
+      const p = DW.parseAddr(cfg.addr);
+      if (!p.ok) return false;
+      const r = this.addSeries(p.addr, {
+        axisMode: cfg.axisMode, visible: cfg.visible !== false,
+        periodMs: cfg.periodMs, offsetY: cfg.offsetY,
+        colorIdx: cfg.colorIdx, color: cfg.color, name: cfg.name,
+      });
+      return !!(r && r.ok);
+    }
+
+    /** Configuration d'une courbe : ce qui la suit lors d'une copie. */
+    serializeSeries(s) {
+      return {
+        addr: s.addr,
+        name: s.name || undefined,
+        axisMode: s.axisMode,
+        visible: s.visible,
+        periodMs: s.periodMs,
+        offsetY: s.offsetY || undefined,
+        colorIdx: s.colorIdx,
+        color: s.color || undefined,
+      };
+    }
+
     serialize() {
       return {
         title: this.title,
@@ -1527,16 +1648,7 @@
         x: this.x, y: this.y, w: this.w, h: this.h,
         axisNames: Object.keys(this.axisNames).length ? Object.assign({}, this.axisNames) : undefined,
         chipLabel: this.chipLabel ? 'label' : undefined,
-        series: this.series.map((s) => ({
-          addr: s.addr,
-          name: s.name || undefined,
-          axisMode: s.axisMode,
-          visible: s.visible,
-          periodMs: s.periodMs,
-          offsetY: s.offsetY || undefined,
-          colorIdx: s.colorIdx,
-          color: s.color || undefined,
-        })),
+        series: this.series.map((s) => this.serializeSeries(s)),
       };
     }
 

@@ -82,6 +82,17 @@
     moveChartToTab,
     duplicateChart,
     relayout,
+    /** Onglet portant ce graphique (identifiant, pour le glisser-déposer). */
+    tabIdOf(chart) {
+      const tab = state.tabs.find((t) => t.charts.includes(chart));
+      return tab ? tab.id : (state.active && state.active.id);
+    },
+    /** Les autres graphiques du même onglet (menus « Copier vers »). */
+    otherCharts(chart) {
+      const tab = state.tabs.find((t) => t.charts.includes(chart)) || state.active;
+      return tab ? tab.charts.filter((c) => c !== chart) : [];
+    },
+    copierTexte,
     /** Toutes les tuiles de l'onglet auquel appartient cette carte. */
     tilesOfCard(el) {
       const tab = state.tabs.find((t) => t.chartsGridEl === el.parentElement) || state.active;
@@ -1119,6 +1130,19 @@
     rows[sugIndex].scrollIntoView({ block: 'nearest' });
   }
 
+  /**
+   * Met un texte dans le presse-papiers. Le repli affiche le texte à
+   * sélectionner : `navigator.clipboard` est refusé hors contexte sûr (page
+   * ouverte en fichier local, par exemple), et un « copié » qui n'aurait rien
+   * copié serait pire que pas de bouton du tout.
+   */
+  function copierTexte(txt, message) {
+    copyText(txt).then((ok) => {
+      if (ok) toast(message || 'Copié dans le presse-papiers.');
+      else showTextModal('À copier', txt);
+    });
+  }
+
   // ---------- Sérialisation -------------------------------------------
   function serializeTable(tbl) {
     return tbl.entries.map((e) => ({ addr: e.addr, periodMs: e.periodMs, name: e.name }));
@@ -1254,8 +1278,29 @@
       }
       if (!n) { removeTable(tbl); toast('Ces variables sont déjà présentes.', 'err'); return false; }
     } else if (o.kind === 'vars' && o.table) {
-      // Variable seule : elle va dans le tableau visé s'il y en a un sous le
-      // curseur, sinon dans le premier de l'onglet.
+      // Variable seule lâchée sur un GRAPHIQUE : elle y devient une courbe,
+      // avec sa couleur, son échelle et son décalage. C'est le geste qu'on
+      // attend d'une légende — la faire atterrir dans un tableau serait une
+      // surprise.
+      const surGraphique = place && place.overEl &&
+        target.charts.find((c) => c.root === place.overEl);
+      if (surGraphique) {
+        const cfgs = o.series && o.series.length
+          ? o.series
+          : o.table.map((e) => ({ addr: e.addr, periodMs: e.periodMs, name: e.name }));
+        let k = 0;
+        for (const cfg of cfgs) if (surGraphique.addSeriesFromConfig(cfg)) k++;
+        if (!k) {
+          toast('Déjà tracée dans « ' + surGraphique.title + ' ».', 'err');
+          return false;
+        }
+        toast(DW.dnd.describe(o) + ' → « ' + surGraphique.title + ' ».');
+        refreshTargets();
+        onChange();
+        return true;
+      }
+      // Sinon : le tableau visé s'il y en a un sous le curseur, sinon le
+      // premier de l'onglet.
       const vise = place && place.overEl &&
         target.tables.find((t) => t.cardEl === place.overEl);
       const tbl = vise || defaultTable(target);
@@ -2397,7 +2442,9 @@
           ]) +
           S('Courbes') +
           L([
-            ['Pastille de légende', 'Couleur (palette ou teinte libre), masquer, échelle dédiée, décalage vertical, retrait.'],
+            ['Pastille de légende', 'Couleur (palette ou teinte libre), masquer, échelle, décalage vertical, retrait — et <b>Copier l’adresse</b>, pour la réutiliser ailleurs (autre fenêtre, tableur, message).'],
+            ['Masquer une courbe', '<b>Double-appui</b> sur sa pastille la retire du tracé, un second la remet. Le menu ⋮ du graphique porte <b>Masquer toutes les courbes</b> : les pastilles restent, on rallume ensuite celle qu’on veut suivre. Une courbe masquée reste <b>abonnée</b> — son historique continue, et le journal l’enregistre toujours.'],
+            ['Déplacer une courbe', 'Glissez sa <b>pastille</b> sur un autre graphique : elle y va avec sa couleur, son échelle et son décalage. <b>Ctrl</b> (ou ⌘) enfoncé au dépôt : elle est <b>copiée</b>, l’original reste en place. Au tact, le menu de la pastille propose « Copier vers « … » ». Une pastille se dépose aussi sur un tableau, un onglet ou une autre fenêtre.'],
             ['Badge Én', 'Numéro de l’échelle utilisée ; 🔒 signale un réglage manuel.'],
             ['Échelles — regrouper, séparer, nommer', 'Par défaut les courbes de même unité partagent une échelle. Le menu d’une pastille permet de choisir : <b>Échelle automatique</b> (par unité), <b>Échelle dédiée</b> (cette courbe seule), ou <b>Mettre sur l’échelle « … »</b> pour rejoindre celle d’une autre courbe — même si les unités diffèrent. <b>Renommer l’échelle</b> lui donne un nom qui remplace l’unité en tête de sa règle.'],
             ['Plein écran', '<b>⛶</b> dans l’en-tête d’une tuile l’affiche seule sur toute la page, et l’y ramène. La tuile sort de la mosaïque le temps du plein écran : sa place et sa taille sont intactes au retour. Sortie aussi par <b>Échap</b>.'],

@@ -277,6 +277,28 @@ moins de 55 % de l'échelle pendant plus de 2 s ; transitions lissées.
 « Échelles automatiques » du menu ⋮ ré-arme tous les axes du graphique.
 Historique conservé : 330 s glissantes.
 
+## 2 quater. Déplacer et copier une variable
+
+Une **ligne de tableau** et une **pastille de légende** se glissent de la même
+façon — c'est la même chose, une variable avec sa configuration :
+
+- vers un **autre graphique** : elle y devient une courbe, avec sa couleur, son
+  échelle et son décalage (la configuration voyage dans la charge utile ; sans
+  elle, la courbe arriverait dépouillée de ses réglages) ;
+- vers un **tableau**, un **onglet**, ou une **autre fenêtre** du navigateur ;
+- **Ctrl** (ou ⌘) enfoncé au dépôt : **copie** au lieu de déplacement — la
+  source garde la sienne. Le curseur l'annonce (`dropEffect`).
+
+Une adresse déjà tracée dans le graphique visé est **refusée** plutôt que
+dupliquée : deux tracés superposés n'apprendraient rien.
+
+Chemin tactile (pas de glisser-déposer HTML5 sur écran tactile) : le menu de la
+pastille porte « **Copier vers « … »** » pour chaque autre graphique de
+l'onglet, et « **Copier l'adresse** » met l'adresse dans le presse-papiers —
+pour la réutiliser dans une autre fenêtre, un tableur ou un message. Le repli
+affiche le texte à sélectionner quand le presse-papiers est refusé (page
+ouverte en fichier local).
+
 ## 3 ter. Plein écran par tuile
 
 **⛶** dans l'en-tête d'une tuile — tableau comme graphique — l'affiche seule
@@ -618,6 +640,10 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
 - La barre reste **empilée** (onglets / zone de configuration) jusqu'à
   1100 px — y compris téléphone en paysage — et passe sur une seule ligne
   au-delà.
+- **Menus contextuels** : posés sous leur ancre, au-dessus si la place manque
+  en bas. Trop hauts pour les deux, ils **défilent** et sont bornés au côté le
+  plus large — un menu qui recouvrirait son ancre empêcherait de le refermer
+  d'un second appui, ce qui arrivait sur téléphone dès qu'il s'allongeait.
 - **Infobulles partout** : chaque objet interactif (onglets, boutons,
   champs, sélecteurs, badges de famille, lignes du tableau, suggestions,
   filtres, pastilles de légende, poignées, entrées de menu, nuancier)
