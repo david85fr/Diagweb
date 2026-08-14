@@ -20,6 +20,22 @@ sys.exit(0 if s.connect_ex(("127.0.0.1", int(sys.argv[1]))) == 0 else 1)
 PY
 }
 
+# Libère le port avant de démarrer autre chose dessus.
+#
+# On vise le processus qui ÉCOUTE, jamais un motif de ligne de commande :
+# « pkill -f tools/serve.py » attrape aussi le shell dont la commande contient
+# ce texte — y compris celui qui exécute ce script. Tuer son propre terminal
+# est vite arrivé, et le symptôme n'a alors plus rien à voir avec la cause.
+liberer_port() {
+  local pids pid
+  pids=$(ss -ltnpH "sport = :$PORT" 2> /dev/null |
+           grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u)
+  for pid in $pids; do
+    [ "$pid" = "$$" ] && continue
+    kill "$pid" 2> /dev/null
+  done
+}
+
 if [ "$MODE" = "serveur" ]; then
   # 1. Compilation du serveur de diagnostic si nécessaire
   if [ ! -x build/diagweb-server ]; then
@@ -33,11 +49,9 @@ if [ "$MODE" = "serveur" ]; then
     meson setup build > /dev/null || exit 1
     meson compile -C build > /dev/null || exit 1
   fi
-  # 2. Un aperçu Python occupe peut-être déjà le port. Le motif ne porte PAS
-  #    sur « --port » : postAttachCommand lance serve.py sans cet argument,
-  #    et un motif trop précis laissait le port occupé.
-  pkill -f "tools/serve.py" 2>/dev/null
-  pkill -x diagweb-server 2>/dev/null
+  # 2. Un aperçu Python occupe peut-être déjà le port : postAttachCommand le
+  #    lance à l'attachement, sans argument « --port ».
+  liberer_port
   sleep 0.5
   echo "→ Démarrage du serveur de diagnostic (port $PORT)"
   nohup ./build/diagweb-server --port "$PORT" --root . --data-dir .diag-data \
