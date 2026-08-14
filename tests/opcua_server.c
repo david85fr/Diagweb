@@ -55,6 +55,28 @@ int main(int argc, char **argv) {
     UA_Server *server = UA_Server_new();
     UA_ServerConfig *config = UA_Server_getConfig(server);
     UA_ServerConfig_setMinimal(config, (UA_UInt16)port, NULL);
+
+    /* Écoute confinée à la boucle locale.
+     *
+     * setMinimal seul laisse serverUrls vide, et open62541 se rabat alors sur
+     * « opc.tcp://:<port> » — hôte vide, donc 0.0.0.0 et ::. Le message
+     * ci-dessous annonçait 127.0.0.1 sans que ce soit vrai. Tant que ce serveur
+     * ne vivait que quelques secondes sur un port tiré au sort, la portée était
+     * nulle ; le banc d'essai le fait vivre des heures sur un port fixe et
+     * devinable, et une session anonyme sans chiffrement (securityPolicy None)
+     * y serait ouverte par quiconque atteint la machine.
+     *
+     * L'allocation passe par UA_Array_new, et non par un pointeur vers la pile :
+     * UA_Server_delete libère ce tableau, et lui donner une adresse de pile
+     * échangerait une faille contre un plantage à l'arrêt. */
+    char url_texte[64];
+    snprintf(url_texte, sizeof url_texte, "opc.tcp://127.0.0.1:%d", port);
+    UA_Array_delete(config->serverUrls, config->serverUrlsSize,
+                    &UA_TYPES[UA_TYPES_STRING]);
+    config->serverUrls = (UA_String *)UA_Array_new(1, &UA_TYPES[UA_TYPES_STRING]);
+    config->serverUrls[0] = UA_STRING_ALLOC(url_texte);
+    config->serverUrlsSize = 1;
+
     config->logging->log = NULL;                      /* silence : la sortie sert aux tests */
 
     UA_Double pression = 2.5;
@@ -74,7 +96,13 @@ int main(int argc, char **argv) {
 
     fprintf(stderr, "serveur OPC UA de test sur opc.tcp://127.0.0.1:%d\n", port);
     fflush(stderr);
-    const UA_StatusCode st = UA_Server_runUntilInterrupt(server);
+    /* UA_Server_run, et non UA_Server_runUntilInterrupt : celui-ci installe son
+     * propre gestionnaire de SIGINT et ne regarde jamais `tourne` — les deux
+     * signal() ci-dessus étaient donc du code mort, et un SIGTERM ne faisait
+     * rien du tout. Sans conséquence tant que ce serveur ne vivait que le temps
+     * d'un test ; le banc d'essai, lui, doit pouvoir l'arrêter, sans quoi il
+     * garde son port fixe indéfiniment. */
+    const UA_StatusCode st = UA_Server_run(server, &tourne);
     UA_Server_delete(server);
     return st == UA_STATUSCODE_GOOD ? 0 : 1;
 }

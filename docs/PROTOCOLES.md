@@ -814,8 +814,27 @@ export DIAGWEB_SECRET_AGENT_PRIV=motdepassepriv
 ```
 
 Sans elles, le lien v3 refuse de s'ouvrir : jamais de repli en clair. `snmpd`
-ou `diagweb-opcua-test-server` absent, le lien correspondant est posé
-**désactivé** et le banc le dit — aucune valeur inventée.
+ou `diagweb-opcua-test-server` absent — ou démarré puis mort aussitôt, ce que
+le banc vérifie en interrogeant le port et non le lancement — le lien
+correspondant est posé **désactivé** et le banc le dit. Aucune valeur inventée.
+
+Trois choses à savoir avant de s'étonner :
+
+- **Ouvrir la page servie par le serveur lui-même** (`/web/index.html` sur son
+  port), et non l'Artifact ni GitHub Pages : ces deux-là n'ont aucun serveur
+  derrière eux et afficheront tout en « simulé ».
+- **Recharger l'onglet** s'il était déjà ouvert. L'interface ne lit la
+  configuration des liens qu'au chargement ; sans rechargement le banc y est
+  invisible, et un enregistrement depuis ☰ → « Liens réseau » réécrirait la
+  configuration **sans** ses liens.
+- `PUT /api/protocols` réapplique la configuration **entière** : les liens de
+  l'exploitant sont conservés, mais brièvement rouverts, et l'historique des
+  points réseau repart de zéro.
+
+Tous les équipements écoutent sur `127.0.0.1` — y compris le serveur OPC UA,
+qui s'annonçait local sans l'être tant que `serverUrls` n'était pas renseigné.
+Rien n'est donc exposé au réseau, même si le port du serveur de diagnostic est
+rendu public.
 
 ### Simulateur d'équipements — un équipement, décrit et configurable
 

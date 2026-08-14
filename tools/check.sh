@@ -45,6 +45,10 @@ attendre() {   # attendre <url>
 syntaxe_js() {
   local f
   for f in web/js/*.js; do node --check "$f" || return 1; done
+  # Les .mjs de l'outillage et des tests n'étaient vérifiés nulle part : une
+  # faute de frappe n'apparaissait qu'à l'exécution, et jamais du tout pour
+  # ceux que la CI ne joue pas (tools/bench.mjs, tests/interop.mjs).
+  for f in tools/*.mjs tests/*.mjs; do node --check "$f" || return 1; done
 }
 
 syntaxe_outillage() {

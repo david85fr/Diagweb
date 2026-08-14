@@ -106,6 +106,7 @@ jobs:
       - name: Syntaxe des sources JavaScript
         run: |
           for f in web/js/*.js; do node --check "$f" || exit 1; done
+          for f in tools/*.mjs tests/*.mjs; do node --check "$f" || exit 1; done
 
       - name: Syntaxe de l'outillage (Python et shell)
         run: |

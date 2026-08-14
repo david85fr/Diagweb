@@ -80,7 +80,13 @@ export function startModbusSlave(port = 0) {
     });
     sock.on('error', () => {});
   });
-  return new Promise((res) => server.listen(port, '127.0.0.1', () => res({ server, port: server.address().port })));
+  return new Promise((res, rej) => {
+    // Sans écouteur 'error', un port déjà pris relance l'événement : la promesse
+    // ne se règle jamais et l'appelant meurt sur une trace brute. Les tests ne
+    // le voyaient pas (port 0, jamais occupé) ; le banc utilise des ports fixes.
+    server.once('error', rej);
+    server.listen(port, '127.0.0.1', () => res({ server, port: server.address().port }));
+  });
 }
 
 /**
@@ -105,10 +111,17 @@ function cp56(date) {
 }
 
 export function startIec104Station(port = 0) {
-  let timer = null;
   const server = net.createServer((sock) => {
     let buf = Buffer.alloc(0);
     let tx = 0;
+    // Le minuteur appartient à CETTE connexion, et non à la station.
+    // Partagé, il produisait un défaut redoutable pour un banc de longue durée :
+    // le bouton « Tester » de l'interface ouvre une seconde connexion puis la
+    // referme, et sa fermeture arrêtait l'émission spontanée de la PREMIÈRE.
+    // Le lien restait « up » — TESTFR répondait toujours — mais plus aucune
+    // valeur ne remontait. Un outil de diagnostic affichant des courbes figées
+    // sans le dire est pire qu'un outil en panne.
+    let timer = null;
     const sendU = (code) => sock.write(Buffer.from([0x68, 4, code, 0, 0, 0]));
     const sendI = (asdu) => {
       const ctrl = Buffer.alloc(4);
@@ -174,7 +187,13 @@ export function startIec104Station(port = 0) {
     sock.on('close', () => { if (timer) { clearInterval(timer); timer = null; } });
     sock.on('error', () => {});
   });
-  return new Promise((res) => server.listen(port, '127.0.0.1', () => res({ server, port: server.address().port })));
+  return new Promise((res, rej) => {
+    // Sans écouteur 'error', un port déjà pris relance l'événement : la promesse
+    // ne se règle jamais et l'appelant meurt sur une trace brute. Les tests ne
+    // le voyaient pas (port 0, jamais occupé) ; le banc utilise des ports fixes.
+    server.once('error', rej);
+    server.listen(port, '127.0.0.1', () => res({ server, port: server.address().port }));
+  });
 }
 
 // --- BER minimal, partagé par l'agent simulé et la sonde d'un agent réel ---
@@ -290,7 +309,10 @@ export function startSnmpAgent(port = 0) {
       sock.send(resp, rinfo.port, rinfo.address);
     } catch { /* trame incohérente : l'agent reste muet, comme un vrai */ }
   });
-  return new Promise((res) => sock.bind(port, '127.0.0.1', () => res({ sock, port: sock.address().port })));
+  return new Promise((res, rej) => {
+    sock.once('error', rej);                      // même raison que ci-dessus
+    sock.bind(port, '127.0.0.1', () => res({ sock, port: sock.address().port }));
+  });
 }
 
 /**

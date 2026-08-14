@@ -13,6 +13,8 @@
  *
  * Les équipements sont ceux de tests/protocols.mjs (tests/devices.mjs), mais
  * sur des PORTS FIXES et pour longtemps, au lieu de vivre le temps d'un test.
+ * Tous écoutent sur 127.0.0.1 : rien n'est exposé au réseau, même si le port
+ * du serveur de diagnostic est rendu public.
  *
  * Ports : non standard, et volontairement. Modbus 502, MMS 102 et SNMP 161
  * sont des ports privilégiés (< 1024) : l'utilisateur d'un Codespace n'est pas
@@ -20,8 +22,13 @@
  *
  * Le banc ne possède QUE ses propres liens, préfixés « banc- ». Les liens que
  * tu as créés toi-même sont relus, conservés et remis en place — un banc ne
- * doit jamais effacer une configuration d'exploitation.
+ * doit jamais effacer une configuration d'exploitation. Note tout de même que
+ * PUT /api/protocols réapplique la configuration ENTIÈRE : tes liens sont
+ * conservés mais brièvement rouverts, et l'historique des points réseau repart
+ * de zéro.
  */
+import net from 'node:net';
+import fs from 'node:fs';
 import {
   startModbusSlave, startIec104Station, startSnmpAgent, startSnmpd,
   startMmsIed, startOpcUaServer, SNMPD,
@@ -51,6 +58,18 @@ async function api(chemin, options) {
   catch { return { status: r.status, text: texte }; }
 }
 
+/** Quelqu'un accepte-t-il vraiment une connexion sur ce port ? */
+function portOuvert(port) {
+  return new Promise((res) => {
+    const s = net.connect({ host: '127.0.0.1', port });
+    const fini = (v) => { s.destroy(); res(v); };
+    s.setTimeout(1200);
+    s.on('connect', () => fini(true));
+    s.on('timeout', () => fini(false));
+    s.on('error', () => fini(false));
+  });
+}
+
 /* ------------------------------------------------------- serveur de diag */
 
 const sante = await api('/api/health').catch(() => ({ status: 0 }));
@@ -63,7 +82,13 @@ if (sante.status !== 200 || sante.json?.role !== 'diag-server') {
 /** Remplace les liens « banc- » sans toucher aux autres. */
 async function poserLiens(liensDuBanc) {
   const avant = await api('/api/protocols');
-  const autres = (avant.json?.config?.links || [])
+  if (avant.status !== 200 || !avant.json?.config) {
+    // Sans lecture fiable de l'existant, écrire écraserait la configuration de
+    // l'exploitant. On refuse plutôt que de parier.
+    return { ok: false, autres: 0, reponse: avant,
+             motif: 'configuration actuelle illisible — rien n’a été écrit' };
+  }
+  const autres = (avant.json.config.links || [])
     .filter((l) => !String(l.id).startsWith(PREFIXE));
   const r = await api('/api/protocols', {
     method: 'PUT',
@@ -74,10 +99,10 @@ async function poserLiens(liensDuBanc) {
 }
 
 if (STOP) {
-  const { ok, autres } = await poserLiens([]);
+  const { ok, autres, motif } = await poserLiens([]);
   console.log(ok
     ? `Liens du banc retirés. ${autres} lien(s) qui ne sont pas à lui : conservés.`
-    : 'Échec du retrait des liens.');
+    : `Échec du retrait des liens${motif ? ' — ' + motif : ''}.`);
   process.exit(ok ? 0 : 1);
 }
 
@@ -86,28 +111,72 @@ if (STOP) {
 console.log(`Banc d'essai Diagweb — cible ${BASE}\n`);
 console.log('→ Montage des équipements simulés');
 
-const modbus = await startModbusSlave(PORTS.modbus);
-const iec = await startIec104Station(PORTS.iec104);
-const snmp = await startSnmpAgent(PORTS.snmp);
-const snmpd = await startSnmpd(PORTS.snmpd);
-const ied = await startMmsIed(PORTS.mms);
-const ua = await startOpcUaServer(PORTS.opcua);
+// Tout ce qui est monté est enregistré ici AU FUR ET À MESURE : si le montage
+// s'interrompt en chemin, l'arrêt d'urgence sait quand même quoi fermer.
+const montes = { serveurs: [], sockets: [], procs: [], dossiers: [] };
+let modbus, iec, snmp, snmpd, ied, ua;
+
+// Déclaré AVANT le montage, et pas en fin de fichier : le premier appelant de
+// nettoyer() est le catch ci-dessous, et un `let` déclaré plus bas serait
+// encore dans sa zone morte — l'échec du montage se serait alors soldé par une
+// ReferenceError masquant la vraie cause.
+let nettoye = false;
+function nettoyer() {
+  if (nettoye) return;
+  nettoye = true;
+  for (const s of montes.serveurs) { try { s.close(); } catch { /* déjà fermé */ } }
+  for (const s of montes.sockets) { try { s.close(); } catch { /* déjà fermée */ } }
+  for (const p of montes.procs) { try { p.kill(); } catch { /* déjà mort */ } }
+  // snmpd écrit ses phrases secrètes EN CLAIR dans son fichier de configuration
+  // temporaire : le laisser derrière soi à chaque Ctrl-C serait une fuite lente.
+  for (const d of montes.dossiers) {
+    try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* déjà parti */ }
+  }
+}
+
+try {
+  modbus = await startModbusSlave(PORTS.modbus); montes.serveurs.push(modbus.server);
+  iec = await startIec104Station(PORTS.iec104);  montes.serveurs.push(iec.server);
+  snmp = await startSnmpAgent(PORTS.snmp);       montes.sockets.push(snmp.sock);
+  snmpd = await startSnmpd(PORTS.snmpd);
+  if (snmpd.proc) montes.procs.push(snmpd.proc);
+  if (snmpd.dir) montes.dossiers.push(snmpd.dir);
+  ied = await startMmsIed(PORTS.mms);            if (ied.proc) montes.procs.push(ied.proc);
+  ua = await startOpcUaServer(PORTS.opcua);      if (ua.proc) montes.procs.push(ua.proc);
+} catch (e) {
+  // Le cas courant : un port fixe déjà pris parce qu'un banc tourne déjà.
+  const occupe = e && e.code === 'EADDRINUSE';
+  console.error(occupe
+    ? `\n   Port ${e.port ?? ''} déjà occupé — un banc tourne-t-il déjà ?` +
+      '\n   L’arrêter, ou libérer les ports 15020, 12404, 11161, 11162, 10102, 14840.'
+    : `\n   Échec du montage : ${e && e.message ? e.message : e}`);
+  nettoyer();
+  process.exit(1);
+}
+
+// « Le processus a démarré » ne veut pas dire « l'équipement répond ». Les deux
+// équipements lancés en processus fils peuvent mourir aussitôt (bibliothèque
+// absente, port pris) : on interroge le port plutôt que de croire le spawn.
+const iedVivant = !!ied.proc && await portOuvert(PORTS.mms);
+const uaVivant = !ua.absent && await portOuvert(PORTS.opcua);
 
 const equipements = [
-  ['Modbus TCP (esclave)', modbus.port, 'TCP', false],
-  ['IEC 60870-5-104 (station)', iec.port, 'TCP', false],
-  ['SNMP v1/v2c (agent simulé)', snmp.port, 'UDP', false],
-  ['SNMP v3 authPriv (snmpd réel)', snmpd.port, 'UDP', snmpd.absent],
-  ['IEC 61850 MMS (IED)', ied.port, 'TCP', false],
-  ['OPC UA (open62541)', ua.port, 'TCP', ua.absent],
+  ['Modbus TCP (esclave)', modbus.port, 'TCP', true, ''],
+  ['IEC 60870-5-104 (station)', iec.port, 'TCP', true, ''],
+  ['SNMP v1/v2c (agent simulé)', snmp.port, 'UDP', true, ''],
+  ['SNMP v3 authPriv (snmpd réel)', snmpd.port, 'UDP', !snmpd.absent,
+   'snmpd absent : sudo apt-get install -y snmpd'],
+  ['IEC 61850 MMS (IED)', ied.port, 'TCP', iedVivant,
+   'le processus n’écoute pas — voir tests/mms_ied.mjs'],
+  ['OPC UA (open62541)', ua.port, 'TCP', uaVivant,
+   ua.absent ? 'cible non compilée : meson compile -C build'
+             : 'compilé mais n’écoute pas sur son port'],
 ];
-for (const [nom, port, tr, absent] of equipements) {
-  console.log(absent
-    ? `   ✗ ${nom.padEnd(32)} indisponible — lien laissé désactivé`
-    : `   ✓ ${nom.padEnd(32)} ${tr} ${port}`);
+for (const [nom, port, tr, vivant, raison] of equipements) {
+  console.log(vivant
+    ? `   ✓ ${nom.padEnd(32)} ${tr} 127.0.0.1:${port}`
+    : `   ✗ ${nom.padEnd(32)} lien laissé désactivé — ${raison}`);
 }
-if (snmpd.absent) console.log('     (snmpd absent : sudo apt-get install -y snmpd)');
-if (ua.absent) console.log('     (cible non compilée : meson compile -C build)');
 
 /* ------------------------------------------------------------------ liens */
 
@@ -175,7 +244,8 @@ const liens = [
     ],
   },
   {
-    id: PREFIXE + 'iec61850', label: 'Banc — IEC 61850 (MMS)', protocol: 'iec61850', enabled: true,
+    id: PREFIXE + 'iec61850', label: 'Banc — IEC 61850 (MMS)', protocol: 'iec61850',
+    enabled: iedVivant,
     params: { host: '127.0.0.1', port: ied.port, mode: 'mms', iedName: 'IED1', timeoutMs: 3000 },
     points: [
       { id: 'courant', label: 'Courant phase A', unit: 'A', kind: 'float', periodMs: 300,
@@ -185,7 +255,7 @@ const liens = [
     ],
   },
   {
-    id: PREFIXE + 'opcua', label: 'Banc — OPC UA', protocol: 'opcua', enabled: !ua.absent,
+    id: PREFIXE + 'opcua', label: 'Banc — OPC UA', protocol: 'opcua', enabled: uaVivant,
     params: { endpoint: 'opc.tcp://127.0.0.1:' + ua.port, securityPolicy: 'None',
               securityMode: 'None', auth: 'anonymous', mode: 'subscribe',
               publishMs: 200, sessionTimeoutS: 60 },
@@ -204,9 +274,18 @@ const liens = [
 ];
 
 console.log('\n→ Configuration des liens dans le serveur de diagnostic');
-const pose = await poserLiens(liens);
+let pose;
+try {
+  pose = await poserLiens(liens);
+} catch (e) {
+  console.error('   Serveur injoignable :', e && e.message ? e.message : e);
+  nettoyer();
+  process.exit(1);
+}
 if (!pose.ok) {
-  console.error('   Échec :', JSON.stringify(pose.reponse.json || pose.reponse.text));
+  console.error('   Échec :', pose.motif ||
+    JSON.stringify(pose.reponse.json || pose.reponse.text));
+  nettoyer();
   process.exit(1);
 }
 console.log(`   ${liens.length} lien(s) du banc posés` +
@@ -217,55 +296,91 @@ console.log(`   ${liens.length} lien(s) du banc posés` +
 // Laisse aux pilotes le temps d'ouvrir leurs connexions avant de juger.
 await sleep(3000);
 
-const etat = await api('/api/protocols/status');
-const parId = new Map((etat.json || []).map((s) => [s.id, s]));
+let parId = new Map();
+try {
+  const etat = await api('/api/protocols/status');
+  parId = new Map((etat.json || []).map((s) => [s.id, s]));
+} catch (e) {
+  console.log(`\n   (état des liens indisponible : ${e && e.message ? e.message : e})`);
+}
 console.log('\n→ État des liens');
+let v3EnDefaut = false;
 for (const l of liens) {
   const s = parId.get(l.id);
+  const etat = s ? (s.state || s.status || '?') : (parId.size ? 'inconnu' : '—');
   const dit = !l.enabled ? 'désactivé (équipement absent)'
-            : s ? (s.state || s.status || JSON.stringify(s)) : 'inconnu';
+            : etat + (s && s.detail && etat !== 'up' ? ` — ${s.detail}` : '');
+  if (l.id === PREFIXE + 'snmpv3' && l.enabled && etat !== 'up') v3EnDefaut = true;
   console.log(`   ${l.label.padEnd(38)} ${dit}`);
 }
 
-const secrets = process.env.DIAGWEB_SECRET_AGENT_AUTH && process.env.DIAGWEB_SECRET_AGENT_PRIV;
-if (!snmpd.absent && !secrets) {
-  console.log('\n   ⚠ SNMP v3 : le serveur de diagnostic doit porter les phrases');
-  console.log('     secrètes dans SON environnement — jamais dans la configuration :');
+// Le banc ne peut PAS lire l'environnement du serveur de diagnostic : c'est un
+// autre processus. On ne devine donc rien — on lit l'état réel du lien, et on
+// ne parle que s'il est en défaut, seul moment où le rappel sert.
+if (v3EnDefaut) {
+  console.log('\n   Le lien v3 n’est pas ouvert. Cause la plus fréquente : les phrases');
+  console.log('   secrètes doivent être dans l’environnement du SERVEUR, jamais dans la');
+  console.log('   configuration. Les poser puis relancer le serveur :');
   console.log(`       export DIAGWEB_SECRET_AGENT_AUTH=${SNMPD.auth}`);
   console.log(`       export DIAGWEB_SECRET_AGENT_PRIV=${SNMPD.priv}`);
-  console.log('     puis relancer le serveur. Sans elles, le lien v3 refuse de');
-  console.log("     s'ouvrir — jamais de repli en clair.");
+  console.log('   Sans elles, v3 refuse de s’ouvrir — jamais de repli en clair.');
 }
 
 console.log(`
 ────────────────────────────────────────────────────────────────
- Banc monté. Ouvrir l'interface, puis ☰ → « Liens réseau » :
- les points sont adressés @<lien>.<point>, par exemple
+ Banc monté. Ouvrir la page servie par le serveur lui-même —
+ ${BASE}/web/index.html — et non l'Artifact ni GitHub Pages,
+ qui n'ont aucun serveur derrière eux.
+
+ RECHARGER l'onglet s'il était déjà ouvert : l'interface ne lit la
+ configuration des liens qu'au chargement. Sans rechargement le banc
+ y est invisible, et un enregistrement depuis ☰ → « Liens réseau »
+ réécrirait la configuration sans ses liens.
+
+ Les points sont adressés @<lien>.<point>, par exemple
 
    @${PREFIXE}modbus.temperature      @${PREFIXE}iec104.tension
    @${PREFIXE}snmp.uptime             @${PREFIXE}opcua.pression
 
- Ctrl-C arrête les équipements. Les liens restent configurés et
- s'afficheront « non branché » — « node tools/bench.mjs --stop »
- les retire proprement.
+ Ctrl-C arrête les équipements ; les liens restent configurés et
+ passeront « en défaut ». « node tools/bench.mjs --stop » les retire.
 ────────────────────────────────────────────────────────────────`);
 
 /* ------------------------------------------------------------- entretien */
 
-let arret = false;
-const fermer = () => {
-  if (arret) return;
-  arret = true;
+function fermer() {
+  if (nettoye) process.exit(0);
   console.log('\n→ Arrêt des équipements');
-  try { modbus.server.close(); } catch { /* déjà fermé */ }
-  try { iec.server.close(); } catch { /* déjà fermé */ }
-  try { snmp.sock.close(); } catch { /* déjà fermé */ }
-  for (const e of [snmpd, ied, ua]) { try { e.proc?.kill(); } catch { /* déjà mort */ } }
-  console.log('   Liens conservés — « node tools/bench.mjs --stop » pour les retirer.');
-  process.exit(0);
-};
-process.on('SIGINT', fermer);
-process.on('SIGTERM', fermer);
+  nettoyer();
+  // Filet : un fils qui ignore SIGTERM garderait son port fixe et empêcherait
+  // le banc suivant de démarrer. On lui laisse un instant, puis on n'insiste
+  // plus. Ces équipements n'ont aucun état à préserver.
+  setTimeout(() => {
+    for (const p of montes.procs) { try { p.kill('SIGKILL'); } catch { /* déjà mort */ } }
+    console.log('   Liens conservés — « node tools/bench.mjs --stop » pour les retirer.');
+    process.exit(0);
+  }, 400);
+}
+
+// SIGHUP compte autant que les deux autres : fermer l'onglet du terminal ou
+// perdre la liaison du Codespace l'envoie, et snmpd, lui, le prend pour une
+// relecture de configuration — il survivrait en gardant son port.
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, fermer);
+
+// Dernier filet : toute sortie non prévue passe encore par le nettoyage. Sans
+// lui, une exception laissait trois processus fils tenir leurs ports fixes,
+// et le banc suivant échouait sans que rien ne dise pourquoi.
+process.on('exit', nettoyer);
+process.on('uncaughtException', (e) => {
+  console.error('\nErreur non rattrapée :', e && e.message ? e.message : e);
+  nettoyer();
+  process.exit(1);
+});
+process.on('unhandledRejection', (e) => {
+  console.error('\nPromesse rejetée sans traitement :', e && e.message ? e.message : e);
+  nettoyer();
+  process.exit(1);
+});
 
 // Maintient le processus en vie sans consommer : les équipements tournent sur
 // leurs propres sockets, il n'y a rien à faire ici qu'attendre.
