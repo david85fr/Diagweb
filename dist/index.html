@@ -1144,7 +1144,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
 
     <div class="topIcons">
       <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" title="Figer ou reprendre d’un coup tous les graphiques de l’onglet actif">⏸ Figer</button>
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">7a97b92 · #98</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">f867693 · #100</span>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
@@ -3557,9 +3557,19 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     const pw = popEl.offsetWidth;
     const mh = popEl.offsetHeight;
     popEl.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pw - 8)) + 'px';
-    // Sous l'ancre si la place le permet, sinon au-dessus (jamais hors écran)
-    let top = r.bottom + 6;
-    if (top + mh > window.innerHeight - 8) top = Math.max(8, r.top - mh - 6);
+    // Sous l'ancre si la place le permet, sinon au-dessus. Trop haut pour les
+    // deux : il DÉFILE, borné au côté le plus large — un menu qui recouvrirait
+    // son ancre empêcherait de le refermer par un second appui, et c'est ce
+    // qui arrivait sur téléphone dès que le menu s'allongeait.
+    const bas = window.innerHeight - r.bottom - 14;
+    const haut = r.top - 14;
+    let top, maxH;
+    if (mh <= bas) { top = r.bottom + 6; maxH = bas; }
+    else if (mh <= haut) { top = r.top - mh - 6; maxH = haut; }
+    else if (bas >= haut) { top = r.bottom + 6; maxH = bas; }
+    else { top = 8; maxH = haut; }
+    popEl.style.maxHeight = Math.max(120, maxH) + 'px';
+    popEl.style.overflowY = 'auto';
     popEl.style.top = (top + window.scrollY) + 'px';
   }
 
@@ -4366,6 +4376,21 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
           ' · rafraîchissement ' + (s.periodMs || DW.CONFIG.defaultPeriodMs) + ' ms' +
           (s.offsetY ? ' · décalage ' + DW.fmtVal(s.offsetY, s.meta) : '') +
           ' · appuyez pour le nom, la couleur, l’échelle dédiée, le décalage ou le retrait';
+        // Une courbe se glisse comme une ligne de tableau : vers un autre
+        // graphique, un tableau, un onglet, ou une autre fenêtre. Ctrl (ou ⌘)
+        // enfoncé au dépôt : elle est COPIÉE au lieu d'être déplacée.
+        chip.draggable = true;
+        chip.addEventListener('dragstart', (ev) => {
+          if (!DW.dnd) { ev.preventDefault(); return; }
+          DW.dnd.startDrag(ev, {
+            kind: 'vars', tabId: this.app.tabIdOf(this), chartId: this.id,
+            table: [{ addr: s.addr, periodMs: s.periodMs, name: s.name }],
+            // La configuration complète voyage avec la courbe : couleur,
+            // échelle, décalage. Sans elle, une courbe copiée d'un graphique
+            // à l'autre y arriverait dépouillée de tous ses réglages.
+            series: [this.serializeSeries(s)],
+          }, () => this.removeSeries(s.addr));
+        });
         chip.addEventListener('click', () => this.openSeriesMenu(s, chip));
         this.legendEl.appendChild(chip);
       }
@@ -4375,6 +4400,25 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     openSeriesMenu(s, chip) {
       openPopover(s, chip, (mk, add) => {
         add(this.buildColorPicker(s));
+        // L'adresse est ce qu'on recopie ailleurs : dans une autre fenêtre
+        // Diagweb, dans un tableur, dans un message à un collègue.
+        mk('Copier l’adresse (' + s.addr + ')', () => this.app.copierTexte(s.addr,
+          'Adresse copiée : ' + s.addr), null,
+          'Mettre l’adresse de cette variable dans le presse-papiers, pour la ' +
+          'réutiliser ailleurs');
+        // Chemin tactile de la copie entre graphiques : le glisser-déposer
+        // HTML5 n'existe pas sur écran tactile.
+        for (const autre of this.app.otherCharts(this)) {
+          mk('Copier vers « ' + autre.title + ' »', () => {
+            const cfg = this.serializeSeries(s);
+            if (autre.addSeriesFromConfig(cfg)) {
+              this.app.toast(s.addr + ' copiée vers « ' + autre.title + ' ».');
+            } else {
+              this.app.toast(s.addr + ' est déjà dans « ' + autre.title + ' ».', 'err');
+            }
+          }, null, 'Ajouter cette courbe au graphique « ' + autre.title +
+            ' » avec sa couleur, son échelle et son décalage — l’original reste ici');
+        }
         mk('Renommer la courbe…', () => this.renameSeries(s), null,
           'Nom d’affichage dans la légende (vide = adresse ou libellé du catalogue)');
         mk(s.visible ? 'Masquer la courbe' : 'Afficher la courbe', () => {
@@ -4860,6 +4904,38 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       this.tipEl.style.top = (mT + 4) + 'px';
     }
 
+    /**
+     * Ajoute une courbe depuis une configuration (copie ou dépôt). Rend faux
+     * si l'adresse est déjà tracée ici : on ne duplique pas une courbe dans
+     * le même graphique, cela ferait deux tracés superposés.
+     */
+    addSeriesFromConfig(cfg) {
+      if (!cfg || !cfg.addr) return false;
+      if (this.series.some((x) => x.addr === cfg.addr)) return false;
+      const p = DW.parseAddr(cfg.addr);
+      if (!p.ok) return false;
+      const r = this.addSeries(p.addr, {
+        axisMode: cfg.axisMode, visible: cfg.visible !== false,
+        periodMs: cfg.periodMs, offsetY: cfg.offsetY,
+        colorIdx: cfg.colorIdx, color: cfg.color, name: cfg.name,
+      });
+      return !!(r && r.ok);
+    }
+
+    /** Configuration d'une courbe : ce qui la suit lors d'une copie. */
+    serializeSeries(s) {
+      return {
+        addr: s.addr,
+        name: s.name || undefined,
+        axisMode: s.axisMode,
+        visible: s.visible,
+        periodMs: s.periodMs,
+        offsetY: s.offsetY || undefined,
+        colorIdx: s.colorIdx,
+        color: s.color || undefined,
+      };
+    }
+
     serialize() {
       return {
         title: this.title,
@@ -4867,16 +4943,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
         x: this.x, y: this.y, w: this.w, h: this.h,
         axisNames: Object.keys(this.axisNames).length ? Object.assign({}, this.axisNames) : undefined,
         chipLabel: this.chipLabel ? 'label' : undefined,
-        series: this.series.map((s) => ({
-          addr: s.addr,
-          name: s.name || undefined,
-          axisMode: s.axisMode,
-          visible: s.visible,
-          periodMs: s.periodMs,
-          offsetY: s.offsetY || undefined,
-          colorIdx: s.colorIdx,
-          color: s.color || undefined,
-        })),
+        series: this.series.map((s) => this.serializeSeries(s)),
       };
     }
 
@@ -5280,6 +5347,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       dragId, origin: winId,
       kind: payload.kind,
       chartId: payload.chartId,
+      series: payload.series,
       tabId: payload.tabId,
       tableId: payload.tableId,
       chart: payload.chart,
@@ -5398,10 +5466,13 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     return false;
   }
 
+  /** Ctrl (ou ⌘) enfoncé : la source garde son widget, la cible en reçoit une copie. */
+  const copie = (e) => !!(e && (e.ctrlKey || e.metaKey));
+
   function onDragOver(e) {
     if (!api || !hasWidget(e.dataTransfer)) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
+    e.dataTransfer.dropEffect = copie(e) ? 'copy' : 'move';
     clearHighlight();
     const tabEl = e.target.closest && e.target.closest('.tab');
     if (tabEl) { tabEl.classList.add('dnd-over'); return; }
@@ -5452,9 +5523,17 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     if (!ok) return;
 
     if (o.origin === winId) {
-      // Même fenêtre : le déplacement est immédiat
       dragging = null;
-      completeMove(o.dragId);
+      // Ctrl / ⌘ : on garde l'original. Sans modificateur, c'est un
+      // déplacement — la source retire son widget maintenant que la cible a
+      // accusé réception.
+      if (copie(e)) {
+        const p = pending.get(o.dragId);
+        if (p) { clearTimeout(p.timer); pending.delete(o.dragId); }
+        api.toast('Copié (Ctrl enfoncé) — l’original reste en place.');
+      } else {
+        completeMove(o.dragId);
+      }
     } else if (bc) {
       bc.postMessage({ type: 'widget-accepted', dragId: o.dragId });
     } else {
@@ -7188,6 +7267,17 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     moveChartToTab,
     duplicateChart,
     relayout,
+    /** Onglet portant ce graphique (identifiant, pour le glisser-déposer). */
+    tabIdOf(chart) {
+      const tab = state.tabs.find((t) => t.charts.includes(chart));
+      return tab ? tab.id : (state.active && state.active.id);
+    },
+    /** Les autres graphiques du même onglet (menus « Copier vers »). */
+    otherCharts(chart) {
+      const tab = state.tabs.find((t) => t.charts.includes(chart)) || state.active;
+      return tab ? tab.charts.filter((c) => c !== chart) : [];
+    },
+    copierTexte,
     /** Toutes les tuiles de l'onglet auquel appartient cette carte. */
     tilesOfCard(el) {
       const tab = state.tabs.find((t) => t.chartsGridEl === el.parentElement) || state.active;
@@ -8225,6 +8315,19 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     rows[sugIndex].scrollIntoView({ block: 'nearest' });
   }
 
+  /**
+   * Met un texte dans le presse-papiers. Le repli affiche le texte à
+   * sélectionner : `navigator.clipboard` est refusé hors contexte sûr (page
+   * ouverte en fichier local, par exemple), et un « copié » qui n'aurait rien
+   * copié serait pire que pas de bouton du tout.
+   */
+  function copierTexte(txt, message) {
+    copyText(txt).then((ok) => {
+      if (ok) toast(message || 'Copié dans le presse-papiers.');
+      else showTextModal('À copier', txt);
+    });
+  }
+
   // ---------- Sérialisation -------------------------------------------
   function serializeTable(tbl) {
     return tbl.entries.map((e) => ({ addr: e.addr, periodMs: e.periodMs, name: e.name }));
@@ -8360,8 +8463,29 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       }
       if (!n) { removeTable(tbl); toast('Ces variables sont déjà présentes.', 'err'); return false; }
     } else if (o.kind === 'vars' && o.table) {
-      // Variable seule : elle va dans le tableau visé s'il y en a un sous le
-      // curseur, sinon dans le premier de l'onglet.
+      // Variable seule lâchée sur un GRAPHIQUE : elle y devient une courbe,
+      // avec sa couleur, son échelle et son décalage. C'est le geste qu'on
+      // attend d'une légende — la faire atterrir dans un tableau serait une
+      // surprise.
+      const surGraphique = place && place.overEl &&
+        target.charts.find((c) => c.root === place.overEl);
+      if (surGraphique) {
+        const cfgs = o.series && o.series.length
+          ? o.series
+          : o.table.map((e) => ({ addr: e.addr, periodMs: e.periodMs, name: e.name }));
+        let k = 0;
+        for (const cfg of cfgs) if (surGraphique.addSeriesFromConfig(cfg)) k++;
+        if (!k) {
+          toast('Déjà tracée dans « ' + surGraphique.title + ' ».', 'err');
+          return false;
+        }
+        toast(DW.dnd.describe(o) + ' → « ' + surGraphique.title + ' ».');
+        refreshTargets();
+        onChange();
+        return true;
+      }
+      // Sinon : le tableau visé s'il y en a un sous le curseur, sinon le
+      // premier de l'onglet.
       const vise = place && place.overEl &&
         target.tables.find((t) => t.cardEl === place.overEl);
       const tbl = vise || defaultTable(target);
@@ -9503,7 +9627,8 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
           ]) +
           S('Courbes') +
           L([
-            ['Pastille de légende', 'Couleur (palette ou teinte libre), masquer, échelle dédiée, décalage vertical, retrait.'],
+            ['Pastille de légende', 'Couleur (palette ou teinte libre), masquer, échelle, décalage vertical, retrait — et <b>Copier l’adresse</b>, pour la réutiliser ailleurs (autre fenêtre, tableur, message).'],
+            ['Déplacer une courbe', 'Glissez sa <b>pastille</b> sur un autre graphique : elle y va avec sa couleur, son échelle et son décalage. <b>Ctrl</b> (ou ⌘) enfoncé au dépôt : elle est <b>copiée</b>, l’original reste en place. Au tact, le menu de la pastille propose « Copier vers « … » ». Une pastille se dépose aussi sur un tableau, un onglet ou une autre fenêtre.'],
             ['Badge Én', 'Numéro de l’échelle utilisée ; 🔒 signale un réglage manuel.'],
             ['Échelles — regrouper, séparer, nommer', 'Par défaut les courbes de même unité partagent une échelle. Le menu d’une pastille permet de choisir : <b>Échelle automatique</b> (par unité), <b>Échelle dédiée</b> (cette courbe seule), ou <b>Mettre sur l’échelle « … »</b> pour rejoindre celle d’une autre courbe — même si les unités diffèrent. <b>Renommer l’échelle</b> lui donne un nom qui remplace l’unité en tête de sa règle.'],
             ['Plein écran', '<b>⛶</b> dans l’en-tête d’une tuile l’affiche seule sur toute la page, et l’y ramène. La tuile sort de la mosaïque le temps du plein écran : sa place et sa taille sont intactes au retour. Sortie aussi par <b>Échap</b>.'],
