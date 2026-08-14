@@ -30,12 +30,13 @@ journalisation, le lien avec le `controller` viendra en phase 2.
 ```
 web/                sources de l'application (ouvrir web/index.html)
 server/             serveur de diagnostic C++23 (HTTP + WebSocket)
+simulator/          simulateur d'équipements C++23 (esclave Modbus TCP)
 tools/build.py      assemble dist/index.html (autonome) + dist/artifact.html
 tools/serve.py      serveur d'aperçu local (port 8080, sans cache)
 tools/gen-catalog.mjs régénère le catalogue C++ depuis web/js/config.js
 tools/setup-tests.sh installe Playwright + Chromium (facultatif)
 tests/ui.mjs        tests d'interface (mobile + desktop)
-docs/               PROJET.md (description) · SPECS.md (spécifications)
+docs/               PROJET.md · SPECS.md · PROTOCOLES.md · SIMULATEUR.md
 .devcontainer/      configuration GitHub Codespaces
 CLAUDE.md           instructions pour l'IA (conventions, contraintes)
 ```
@@ -52,6 +53,19 @@ La page servie par ce serveur bascule automatiquement sur son **flux
 WebSocket** (au lieu de la simulation navigateur) ; `?src=sim` force la
 simulation. Détails, protocole et point d'accroche pour brancher le vrai
 contrôleur : `server/README.md`.
+
+### Simulateur d'équipements
+
+```bash
+./build/diagweb-simulator --port 5020 --list    # table des registres
+./build/diagweb-simulator --port 5020           # écoute (502 par défaut)
+```
+
+Un second processus qui joue les **équipements tiers** que le serveur de
+diagnostic interroge : Modbus TCP aujourd'hui, SNMP, OPC UA et IEC 61850
+ensuite. Il éprouve les **vrais pilotes**, trames comprises, sans matériel —
+là où `--sim-protocols` fabrique des valeurs sans rien émettre. Détails et
+configuration : `docs/SIMULATEUR.md`.
 
 Build : `python3 tools/build.py` — vérification : `node --check web/js/*.js`.
 Vanilla HTML/CSS/JS, sans dépendance externe (contrainte de déploiement

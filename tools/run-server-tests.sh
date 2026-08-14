@@ -2,8 +2,11 @@
 # Diagweb — vérifications qui demandent le serveur en fonctionnement.
 #
 # Lance diagweb-server sur un port libre, attend qu'il réponde, joue
-# tests/protocols.mjs puis tests/server.mjs, et l'arrête quoi qu'il arrive.
-# Appelé par `meson test`, utilisable seul.
+# tests/protocols.mjs, tests/simulator.mjs puis tests/server.mjs, et l'arrête
+# quoi qu'il arrive. Appelé par `meson test`, utilisable seul.
+#
+# tests/simulator.mjs lance lui-même le second processus du dépôt, le
+# simulateur d'équipements (DIAGWEB_SIMULATOR_BIN, voir docs/SIMULATEUR.md).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -46,6 +49,7 @@ demarrer || exit 1
 
 ECHECS=0
 node tests/protocols.mjs "http://localhost:$PORT" || ECHECS=$((ECHECS + 1))
+node tests/simulator.mjs "http://localhost:$PORT" || ECHECS=$((ECHECS + 1))
 node tests/server.mjs "http://localhost:$PORT" || ECHECS=$((ECHECS + 1))
 
 kill "$SRV" 2>/dev/null; wait "$SRV" 2>/dev/null; SRV=""

@@ -69,9 +69,10 @@ if [ "$CIBLE" = tout ] || [ "$CIBLE" = serveur ]; then
   titre "Serveur de diagnostic (C++23, Meson)"
   etape "configuration" configurer
   etape "compilation (avertissements = erreurs)" meson compile -C "$BUILD"
-  # meson test enchaîne le décodage puis les vérifications qui demandent le
-  # serveur en fonctionnement (liens réseau, forçage, journalisation).
-  etape "tests du serveur (décodage, liens réseau, forçage, journalisation)" \
+  # meson test enchaîne le décodage et le simulateur d'équipements, puis les
+  # vérifications qui demandent le serveur en fonctionnement (liens réseau —
+  # simulateur compris —, forçage, journalisation).
+  etape "tests du serveur (décodage, simulateur, liens réseau, forçage, journalisation)" \
     meson test -C "$BUILD" --suite serveur --print-errorlogs
 fi
 

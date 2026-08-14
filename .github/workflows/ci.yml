@@ -81,7 +81,7 @@ jobs:
           meson setup build
           meson compile -C build
 
-      - name: Tests du serveur (décodage, liens réseau, forçage, journalisation)
+      - name: Tests du serveur (décodage, simulateur, liens réseau, forçage, journalisation)
         # Les phrases secrètes de l'agent SNMPv3 de test passent par
         # l'environnement du serveur : le pilote refuse de les lire ailleurs.
         # meson test lance le serveur, joue les vérifications et l'arrête.

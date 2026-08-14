@@ -26,6 +26,7 @@ endif
 
 threads = dependency('threads')
 src_inc = include_directories('server/src')
+sim_inc = include_directories('simulator/src')
 
 deps = [threads]
 defs = []
@@ -73,6 +74,15 @@ diagweb_server = executable('diagweb-server',
   cpp_args: defs,
   install: true)
 
+# --------------------------------------------------- simulateur d'équipements
+# Second exécutable : le banc d'équipements virtuels (docs/SIMULATEUR.md).
+# Il n'est pas installé — c'est un outil de mise au point et de démonstration,
+# pas un composant du produit embarqué.
+diagweb_simulator = executable('diagweb-simulator',
+  'simulator/src/main.cpp',
+  include_directories: [src_inc, sim_inc],
+  dependencies: [threads])
+
 # ------------------------------------------------------------------- tests
 decode_test = executable('diagweb-decode-test',
   'tests/decode.cpp',
@@ -80,6 +90,13 @@ decode_test = executable('diagweb-decode-test',
   build_by_default: false)
 
 test('decodage des protocoles', decode_test, suite: 'serveur', timeout: 120)
+
+simulator_test = executable('diagweb-simulator-test',
+  'tests/simulator.cpp',
+  include_directories: [src_inc, sim_inc],
+  build_by_default: false)
+
+test('simulateur d equipements', simulator_test, suite: 'serveur', timeout: 120)
 
 node = find_program('node', required: false)
 python3 = find_program('python3')
@@ -102,6 +119,7 @@ if node.found()
     suite: 'serveur', timeout: 600, workdir: meson.project_source_root(),
     env: {'DIAGWEB_PORT': '8099',
           'DIAGWEB_SERVER_BIN': meson.project_build_root() / 'diagweb-server',
+          'DIAGWEB_SIMULATOR_BIN': meson.project_build_root() / 'diagweb-simulator',
           'DIAGWEB_OPCUA_TEST_SERVER': meson.project_build_root() / 'diagweb-opcua-test-server'})
 
   # Interface : demande Playwright et Chromium (bash tools/setup-tests.sh).

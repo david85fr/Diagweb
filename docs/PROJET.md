@@ -116,6 +116,11 @@ responsive, tactile en priorité).
 - Les **liens réseau** sont opérationnels côté serveur : les pilotes Modbus,
   IEC 60870-5-104 et CAN/J1939/CANopen lisent de vrais équipements, et la
   configuration se saisit depuis l'interface (☰ → Liens réseau).
+- Un **simulateur d'équipements** (`simulator/`, second exécutable du dépôt)
+  tient le rôle des équipements tiers du schéma ci-dessus : les vrais pilotes
+  du serveur de diagnostic s'éprouvent donc **trames comprises**, sans
+  matériel. Modbus TCP aujourd'hui ; SNMP, OPC UA et IEC 61850 ensuite, comme
+  autant de façades sur les mêmes signaux (`docs/SIMULATEUR.md`).
 - Toutes les fonctions d'interface sont opérationnelles : recherche/ajout,
   tableau numérique, graphiques multi-échelles, dispositions
   (navigateur + export/import fichier ; l'enregistrement « contrôleur » est

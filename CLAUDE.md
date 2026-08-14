@@ -122,7 +122,11 @@ server/         serveur de diagnostic C++20 (HTTP + WebSocket ; open62541 pour
   src/capture.hpp    capture tcpdump : quota, durée, déclenchement par variable
   src/jvalue.hpp     analyseur JSON complet (configuration imbriquée)
   src/main.cpp       HTTP/WS, REST, boucle d'émission
-meson.build     construction du serveur et des tests (Ninja, C++23)
+simulator/      simulateur d'équipements C++23 — 2ᵉ processus (docs/SIMULATEUR.md)
+  src/bench.hpp      modèle des équipements simulés : signaux animés, lois, image
+  src/modbus_tcp.hpp façade Modbus TCP (esclave) : MBAP, fonctions, exceptions
+  src/main.cpp       processus : écoute (502 par défaut), config JSON, --list
+meson.build     construction du serveur, du simulateur et des tests (Ninja, C++23)
 tools/build.py  assemble dist/ à partir de web/
 tools/gen-all.py régénère les en-têtes dérivés des sources web
 tools/run-server-tests.sh  serveur lancé + tests qui en dépendent (meson test)
@@ -140,13 +144,15 @@ tests/devices.mjs    équipements simulés, partagés par les tests et le banc
 tests/protocols.mjs  liens réseau bout en bout (équipements simulés + agent snmpd
                 réel pour SNMPv3 ; serveur requis, secrets dans son environnement)
 tests/decode.cpp     décodage des protocoles (cible diagweb-decode-test)
+tests/simulator.cpp  simulateur : trames, exceptions, bornes (diagweb-simulator-test)
+tests/simulator.mjs  le serveur de diagnostic lisant le simulateur (bout en bout)
 tests/opcua_server.c serveur OPC UA de test (cible diagweb-opcua-test-server)
 tests/mms_ied.mjs    IED IEC 61850 simulé (pile ISO, MMS, rapports)
 tests/server.mjs     forçage, journalisation autonome, apparence, audit,
                 LLDP, capture (serveur requis ; second passage --apres-redemarrage
                 pour la persistance des réglages de capture)
 dist/           livrables générés (commités) : index.html autonome + artifact.html
-docs/           PROJET.md, SPECS.md, PROTOCOLES.md
+docs/           PROJET.md, SPECS.md, PROTOCOLES.md, SIMULATEUR.md
 .devcontainer/  configuration GitHub Codespaces (Python + Node + aperçu 8080)
   on-create.sh    outillage système (apt, open62541) — cuit dans le prebuild
   post-create.sh  ce qui dépend du dépôt (syntaxe, compilation du serveur)

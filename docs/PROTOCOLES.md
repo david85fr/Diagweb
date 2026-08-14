@@ -752,8 +752,18 @@ configuration.
 
 ## Démonstration sans matériel
 
+Trois moyens, qui ne prouvent pas la même chose.
+
+| Moyen | Réseau | Protocoles | Ce qu'il apporte |
+|---|---|---|---|
+| `--sim-protocols` | **aucun** | tous, en trompe-l'œil | l'interface et les courbes ; les pilotes ne travaillent pas |
+| `node tools/bench.mjs` | vraies sockets | les six | les pilotes au travail contre les équipements des tests, en une commande |
+| `build/diagweb-simulator` | vraies sockets | Modbus TCP (puis les autres) | un **équipement** décrit en JSON : registres, unités, écritures, exceptions |
+
+### Sans aucune trame — `--sim-protocols`
+
 ```bash
-./server/build/diagweb-server --port 8080 --root . --sim-protocols
+./build/diagweb-server --port 8080 --root . --sim-protocols
 ```
 
 `--sim-protocols` remplace tous les pilotes par un générateur : les liens
@@ -806,6 +816,26 @@ export DIAGWEB_SECRET_AGENT_PRIV=motdepassepriv
 Sans elles, le lien v3 refuse de s'ouvrir : jamais de repli en clair. `snmpd`
 ou `diagweb-opcua-test-server` absent, le lien correspondant est posé
 **désactivé** et le banc le dit — aucune valeur inventée.
+
+### Simulateur d'équipements — un équipement, décrit et configurable
+
+```bash
+./build/diagweb-simulator --port 5020 --list   # ce qu'il expose
+./build/diagweb-simulator --port 5020          # écoute (502 par défaut)
+./build/diagweb-server --port 8080 --root .
+```
+
+`diagweb-simulator` est le **second exécutable** du dépôt (`simulator/`,
+C++23) : là où le banc monte les équipements des tests pour voir vivre
+l'interface, celui-ci simule **un équipement** qu'on décrit — table de
+registres, unités Modbus multiples, lois de mouvement, cellules libres
+accessibles en écriture, exceptions sur adresse hors table — et qui sert le
+port **502** comme un automate. Il est écrit d'après la spécification, sans
+rien connaître du pilote : chacun sert donc de contre-épreuve à l'autre.
+
+Il ne sert aujourd'hui que Modbus TCP ; SNMP, OPC UA et IEC 61850 viendront
+comme autant de **façades** sur les mêmes signaux. Configuration, table des
+registres et détails : `docs/SIMULATEUR.md`.
 
 ## Bibliothèques externes et licences
 
@@ -916,6 +946,7 @@ partir de la description.
 ```bash
 meson test -C build --suite serveur    # décodage, liens réseau, forçage
 node tests/protocols.mjs        # serveur de diagnostic en fonctionnement
+node tests/simulator.mjs        # idem, contre le simulateur d'équipements
 ```
 
 `tests/decode.cpp` couvre le décodage (champs de bits Intel/Motorola, PGN
@@ -934,6 +965,13 @@ association MMS, service Read, activation de bloc de rapport et émission
 d'`InformationReport`) en Node, configure les liens par
 REST et vérifie que les
 valeurs arrivent jusqu'au flux WebSocket.
+
+`tests/simulator.mjs` fait le même trajet contre le **simulateur d'équipements**
+(`docs/SIMULATEUR.md`), et vaut mieux qu'un bouchon : les deux moitiés du
+dialogue Modbus sont écrites séparément — le maître dans `drivers/modbus/`,
+l'esclave dans `simulator/` — d'après la spécification, et chacune sert de
+contre-épreuve à l'autre. Un bouchon qui renvoie ce que le pilote attend ne
+prouve pas cela.
 
 Deux équipements ne sont pas simulés, parce qu'ils ne peuvent pas l'être
 honnêtement :
