@@ -70,8 +70,13 @@ button { font-family: var(--sans); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ---------- Barre supérieure ---------- */
+/* Elle s'escamote quand on descend et revient dès qu'on remonte : sur un écran
+   de supervision, la place gagnée va aux courbes, et le geste pour retrouver
+   la barre est celui qu'on fait déjà (remonter). Elle réapparaît aussi dès que
+   la page est en haut, pour ne jamais rester introuvable. */
 .topbar {
   position: sticky; top: 0; z-index: 40;
+  transition: transform .18s ease, opacity .18s ease;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
@@ -246,6 +251,17 @@ button { font-family: var(--sans); }
 .iconbtn:hover { color: var(--ink); border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
 .iconbtn.on { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
 
+/* Retard sur le temps réel, dans l'en-tête d'une tuile figée. Il doit se voir :
+   des valeurs figées sans indication se lisent comme des valeurs actuelles. */
+.lag {
+  flex: none;
+  font: 600 11px var(--mono);
+  color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line));
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border-radius: 999px; padding: 1px 7px; white-space: nowrap;
+}
+
 /* ---------- Badges de famille ---------- */
 /* Largeur commune, calée sur « ext.MB » (six caractères) : sans elle, les
    adresses ne s'alignaient pas d'une ligne à l'autre — le regard doit pouvoir
@@ -330,6 +346,11 @@ button { font-family: var(--sans); }
 .v-id { display: grid; min-width: 0; }
 .v-addr { font-family: var(--mono); font-size: 13px; }
 .v-label { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Description en tête : les deux lignes échangent leur rôle typographique —
+   c'est la mise en avant qui change, pas l'information disponible. */
+.vrow.label-first .v-addr { font-family: var(--sans); font-size: 13px; font-weight: 560;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vrow.label-first .v-label { font-family: var(--mono); font-size: 11.5px; }
 .v-label.renamed { color: var(--ink); font-style: italic; }
 .v-rename, .chip-rename {
   font: inherit; color: var(--ink);
@@ -986,9 +1007,8 @@ body.dnd-over-pane #panes {
     gap: 12px;
   }
   .searchrow .searchbox { grid-column: auto; }
-  body.cfg-hidden .topbar { grid-template-columns: minmax(180px, 1fr) auto; grid-template-areas: "tabs icons"; }
 }
-body.cfg-hidden .searchrow { display: none; }
+body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-events: none; }
 /* Grands écrans : les colonnes s'élargissent d'elles-mêmes (elles sont
    fractionnaires) ; seules les rangées gagnent en hauteur, pour que la même
    disposition ne s'écrase pas verticalement sur un 32 pouces. */
@@ -1111,8 +1131,7 @@ body.cfg-hidden .searchrow { display: none; }
 
     <div class="topIcons">
       <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" title="Figer ou reprendre d’un coup tous les graphiques de l’onglet actif">⏸ Figer</button>
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">d3ac564 · #91</span>
-      <button id="cfgToggle" class="iconbtn" type="button" title="Masquer / afficher la zone de configuration">⌃</button>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">012d6d1 · #94</span>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
@@ -1148,9 +1167,7 @@ body.cfg-hidden .searchrow { display: none; }
 
   <section id="emptyState" class="empty hide">
     <h2>Aucune variable dans cet onglet</h2>
-    <p>Saisissez une adresse dans la barre de recherche pour l'ajouter au tableau
-       numérique ou à un graphique&nbsp;: <b>I1.2.3.4</b>, <b>Q14.15</b>, <b>M1.14</b>,
-       <b>S0.4</b>, <b>MB414</b> ou un signal modèle comme <b>Regulation.mesure.vitesse</b>.</p>
+    <p>Saisissez une adresse dans la barre de recherche pour l'ajouter au tableau numérique ou à un graphique — par exemple I1.2.3.4, Q14.15, M1.14, S0.4, MB414, ou un signal de modèle comme Regulation.mesure.vitesse.</p>
     <div class="cta">
       <button id="demoBtn" class="btn primary" type="button"
               title="Remplir cet onglet avec un exemple : 6 variables au tableau et 2 graphiques">Charger la disposition de démonstration</button>
@@ -1168,6 +1185,200 @@ body.cfg-hidden .searchrow { display: none; }
 <div id="toasts" aria-live="polite"></div>
 <div id="modalRoot"></div>
 
+<script>
+/* Diagweb — dictionnaire anglais de l'interface.
+ *
+ * La clé est le texte français affiché, à l'identique (voir js/i18n.js). Une
+ * entrée absente laisse le français : l'interface reste utilisable pendant que
+ * la traduction se complète. `node tools/check-i18n.mjs` mesure la couverture
+ * en parcourant toutes les vues de l'application.
+ */
+(function () {
+  "use strict";
+  const DW = (window.DW = window.DW || {});
+  DW.DICTS = DW.DICTS || {};
+  DW.DICTS.en = {
+  };
+})();
+
+</script>
+<script>
+/* Diagweb — interface bilingue (français / anglais).
+ *
+ * La clé de traduction est **le texte français lui-même**, pas un identifiant
+ * inventé. Trois raisons, dans un logiciel déjà écrit et déjà volumineux :
+ *
+ *   1. une traduction manquante retombe sur le français — jamais une clé
+ *      brute ni un libellé vide à l'écran ;
+ *   2. le code source reste lisible tel quel : on lit la phrase, pas
+ *      `menu.table.duplicate` ;
+ *   3. la reprise ne demande pas de toucher aux 900 appels existants.
+ *
+ * La traduction s'applique au DOM, pas aux appels : un `MutationObserver`
+ * traduit ce qui apparaît — fenêtres, menus, messages éphémères, pages
+ * réseau — sans que le reste du code ait à savoir qu'il existe une seconde
+ * langue. Seuls les textes dessinés au canevas passent par `DW.t()`, faute
+ * de nœud à observer.
+ *
+ * Changer de langue **recharge la page**. La session (onglets, mosaïque,
+ * journalisation) est déjà restaurée au chargement : on évite ainsi tout état
+ * à moitié traduit, et il n'y a aucun inventaire de nœuds à tenir.
+ */
+(function () {
+  "use strict";
+  const DW = (window.DW = window.DW || {});
+
+  const CLE = 'diagweb.lang';
+  const LANGUES = { fr: 'Français', en: 'English' };
+
+  let lang = 'fr';
+  try {
+    const v = localStorage.getItem(CLE);
+    if (v && LANGUES[v]) lang = v;
+  } catch (e) { /* stockage indisponible : français */ }
+
+  const DICT = (lang !== 'fr' && DW.DICTS && DW.DICTS[lang]) || null;
+
+  /** Traduit une chaîne ; rend le français si la traduction manque. */
+  function t(fr) {
+    if (!DICT || typeof fr !== 'string') return fr;
+    const s = DICT[fr];
+    return s === undefined ? fr : s;
+  }
+
+  /**
+   * Traduit une chaîne dont les bords portent des espaces ou de la
+   * ponctuation d'assemblage : le DOM contient souvent « Fermer » entouré de
+   * blancs d'indentation, qui ne doivent pas empêcher la correspondance.
+   */
+  function tNoeud(txt) {
+    const brut = txt.trim();
+    if (!brut) return null;
+    // Espaces internes ramenés à un seul : un texte du HTML porte les retours
+    // à la ligne et l'indentation de la source, qui ne doivent pas faire
+    // manquer la correspondance.
+    const cle = brut.replace(/\s+/g, ' ');
+    const trad = t(cle);
+    if (trad === cle) return null;
+    return txt.replace(brut, trad);
+  }
+
+  const ATTRS = ['title', 'placeholder', 'aria-label', 'alt'];
+  const IGNORE = { SCRIPT: 1, STYLE: 1, CANVAS: 1, CODE: 1 };
+  // Mise en forme en ligne : les seules balises admises à l'intérieur d'un
+  // bloc traduit d'une pièce. Tout le reste (span porteur de données, cellule
+  // de tableau, carte…) est traité nœud par nœud — sans quoi on remplacerait
+  // du texte mêlé à des valeurs mesurées.
+  const ENLIGNE = { B: 1, I: 1, EM: 1, STRONG: 1, BR: 1, CODE: 1, SMALL: 1, U: 1 };
+
+  /** L'élément est-il un bloc de texte enrichi, traduisible d'une pièce ? */
+  function bloc(el) {
+    if (!el.children.length) return false;
+    for (const c of el.children) if (!ENLIGNE[c.tagName]) return false;
+    return true;
+  }
+
+  function traduireBloc(el) {
+    if (!bloc(el)) return false;
+    const cle = el.innerHTML.trim().replace(/\s+/g, ' ');
+    const trad = t(cle);
+    if (trad === cle) return false;
+    el.innerHTML = trad;
+    return true;
+  }
+
+  function traduireElement(el) {
+    for (const a of ATTRS) {
+      const v = el.getAttribute && el.getAttribute(a);
+      if (!v) continue;
+      const trad = t(v.trim());
+      if (trad !== v.trim()) el.setAttribute(a, trad);
+    }
+  }
+
+  /** Traduit un nœud et toute sa descendance (textes + attributs). */
+  function traduire(racine) {
+    if (!DICT || !racine) return;
+    if (racine.nodeType === 3) {
+      const s = tNoeud(racine.nodeValue);
+      if (s !== null) racine.nodeValue = s;
+      return;
+    }
+    if (racine.nodeType !== 1) return;
+    if (IGNORE[racine.tagName]) return;
+    traduireElement(racine);
+    // Un paragraphe d'aide contient des <b> : ses textes seraient sinon
+    // découpés en morceaux de phrase, intraduisibles proprement. Quand tout
+    // l'intérieur d'un élément est du texte enrichi — aucun élément
+    // interactif, donc aucun écouteur à perdre — il est traduit d'un bloc.
+    if (traduireBloc(racine)) return;
+    // Les textes sont parcourus à part : innerHTML serait réécrit à chaque
+    // passage, ce qui casserait les écouteurs déjà posés sur les enfants.
+    const it = document.createTreeWalker(racine, NodeFilter.SHOW_TEXT, {
+      acceptNode(n) {
+        return IGNORE[n.parentNode && n.parentNode.tagName]
+          ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    const textes = [];
+    for (let n = it.nextNode(); n; n = it.nextNode()) textes.push(n);
+    for (const n of textes) {
+      const s = tNoeud(n.nodeValue);
+      if (s !== null) n.nodeValue = s;
+    }
+    for (const el of racine.querySelectorAll('[title], [placeholder], [aria-label], [alt]')) {
+      traduireElement(el);
+    }
+  }
+
+  /** Change la langue : mémorisée, partagée, puis la page est rechargée. */
+  function setLang(l) {
+    if (!LANGUES[l] || l === lang) return;
+    try { localStorage.setItem(CLE, l); } catch (e) { /* ignoré */ }
+    if (DW.dnd && DW.dnd.shareLang) DW.dnd.shareLang(l);
+    location.reload();
+  }
+
+  if (DICT) {
+    const demarrer = () => {
+      traduire(document.body);
+      traduireElement(document.documentElement);
+      const titre = document.querySelector('title');
+      if (titre) traduire(titre);
+      // Tout ce qui naît ensuite — menus, fenêtres, messages, pages réseau —
+      // est traduit à son apparition : le reste du code ignore la traduction.
+      new MutationObserver((lots) => {
+        for (const lot of lots) {
+          if (lot.type === 'attributes') {
+            traduireElement(lot.target);
+          } else {
+            for (const n of lot.addedNodes) traduire(n);
+          }
+        }
+      }).observe(document.body, {
+        childList: true, subtree: true, characterData: false,
+        attributes: true, attributeFilter: ATTRS,
+      });
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', demarrer);
+    } else {
+      demarrer();
+    }
+    try { document.documentElement.setAttribute('lang', lang); } catch (e) { /* ignoré */ }
+  }
+
+  DW.i18n = {
+    get lang() { return lang; },
+    langues: LANGUES,
+    autre: () => (lang === 'fr' ? 'en' : 'fr'),
+    t, traduire, setLang,
+  };
+  /** Raccourci pour les textes sans nœud DOM (dessin au canevas). */
+  DW.t = t;
+})();
+
+</script>
 <script>
 /* Diagweb — configuration globale & catalogue de variables simulées */
 (function () {
@@ -3240,6 +3451,36 @@ body.cfg-hidden .searchrow { display: none; }
 
   const MAX_AXES = 4;
 
+  /**
+   * Valeur d'une variable à un INSTANT ABSOLU (tuile figée). `past()` recule
+   * d'un délai depuis le dernier échantillon reçu : le repère bouge donc avec
+   * les échantillons qui continuent d'arriver, et la valeur affichée sautait
+   * d'un cran de temps en temps sous une pause. Ici le repère est le temps.
+   */
+  DW.valeurA = function (addr, t) {
+    const d = DW.source.data(addr);
+    if (!d || !d.ts || !d.ts.length) return null;
+    let lo = 0, hi = d.ts.length - 1;
+    if (d.ts[0] > t) return null;
+    while (lo < hi) {
+      const m = (lo + hi + 1) >> 1;
+      if (d.ts[m] <= t) lo = m; else hi = m - 1;
+    }
+    return d.vs[lo];
+  };
+
+  /** Durée courte et lisible : « 12,4 s », « 3 min 20 s », « 1 h 05 ». */
+  DW.fmtDuree = function (s) {
+    if (!isFinite(s) || s < 0) s = 0;
+    if (s < 60) return (s < 10 ? s.toFixed(1) : Math.round(s)) + ' s';
+    if (s < 3600) {
+      const m = Math.floor(s / 60);
+      return m + ' min ' + String(Math.round(s - m * 60)).padStart(2, '0') + ' s';
+    }
+    const h = Math.floor(s / 3600);
+    return h + ' h ' + String(Math.round((s - h * 3600) / 60)).padStart(2, '0');
+  };
+
   // ---------- Popover partagé (légende & menu ⋮) ----------------------
   let popEl = null, popOwner = null, popAnchor = null;
   // Bascule : un appui sur l'ancre du menu ouvert le ferme sans le rouvrir.
@@ -3342,6 +3583,11 @@ body.cfg-hidden .searchrow { display: none; }
       this.fullscreen = false;
       this.moveSeries = null;      // adresse en cours de décalage (mode explicite)
       this.axisState = new Map();  // clé de groupe -> état d'échelle
+      this.axisNames = Object.assign({}, opts.axisNames);  // clé -> nom donné
+      // Ce qu'on lit sur les pastilles : l'adresse (repère de l'automaticien)
+      // ou le libellé (repère de l'exploitant). Les deux publics existent,
+      // d'où la bascule plutôt qu'un choix imposé.
+      this.chipLabel = opts.chipLabel === 'label';
       this._cw = 0; this._ch = 0; this._dpr = 0;
       this._ptrs = new Map();
       this._gesture = null;
@@ -3363,6 +3609,8 @@ body.cfg-hidden .searchrow { display: none; }
             'fenêtre du navigateur">⠿</span>' +
           '<input class="chart-title" maxlength="48" aria-label="Titre du graphique" ' +
             'title="Nom du graphique — cliquez pour le modifier ; il sert aussi de destination d’ajout">' +
+          '<span class="lag hide" title="Retard sur le temps réel : la vue et les ' +
+            'valeurs affichées sont celles de cet instant passé"></span>' +
           '<div class="chart-tools">' +
             '<button class="iconbtn card-add" type="button" ' +
               'title="Ajouter des courbes à ce graphique : ouvre le catalogue complet, ' +
@@ -3477,6 +3725,16 @@ body.cfg-hidden .searchrow { display: none; }
       this.pauseBtn.textContent = frozen ? '▶' : '⏸';
       this.pauseBtn.classList.toggle('on', frozen);
       this.liveBtn.classList.toggle('hide', !frozen);
+      this.majRetard();
+    }
+
+    /** Retard sur le temps réel, affiché dans l'en-tête quand la vue est figée. */
+    majRetard() {
+      const el = this.root.querySelector('.lag');
+      if (!el) return;
+      if (this.viewEnd === null) { el.classList.add('hide'); return; }
+      el.classList.remove('hide');
+      el.textContent = '⏱ −' + DW.fmtDuree(Math.max(0, DW.source.now() - this.viewEnd));
     }
 
     syncWinSel() {
@@ -3518,6 +3776,12 @@ body.cfg-hidden .searchrow { display: none; }
           'Créer une copie avec les mêmes courbes, couleurs, échelles et fenêtre de temps, juste après celui-ci');
         mk('Échelles automatiques', () => this.resetAxes(), null,
           'Remettre toutes les échelles de ce graphique en cadrage automatique (annule les réglages manuels 🔒)');
+        mk((this.chipLabel ? '✓ ' : '') + 'Légende : description plutôt qu’adresse', () => {
+          this.chipLabel = !this.chipLabel;
+          this.rebuildLegend();
+          this.app.onChange();
+        }, null, 'Afficher sur les pastilles la description de la variable (repère de ' +
+          'l’exploitant) au lieu de son adresse (repère de l’automaticien)');
         mk('Taille de départ', () => this.resetSize(), null,
           'Annuler le dimensionnement fait à la poignée ◢ et revenir à la taille de départ ' +
           'd’un graphique (une demi-largeur)');
@@ -3570,11 +3834,31 @@ body.cfg-hidden .searchrow { display: none; }
 
     /** Libellé d'une échelle : son unité, ou les courbes qui la partagent. */
     axisTitle(key) {
+      // Un nom donné par l'utilisateur l'emporte : « Températures four »
+      // dit ce que l'axe regroupe, là où « Échelle « °C » » ne dit que l'unité.
+      if (this.axisNames && this.axisNames[key]) return this.axisNames[key];
       const series = this.series.filter((s) => this.axisKey(s) === key);
       if (!series.length) return 'Échelle';
       const unit = series[0].meta.unit;
-      if (key.startsWith('solo:')) return (series[0].name || series[0].addr) + (unit ? ' (' + unit + ')' : '');
+      if (key.startsWith('solo:') && series.length === 1) {
+        return (series[0].name || series[0].addr) + (unit ? ' (' + unit + ')' : '');
+      }
       return unit ? 'Échelle « ' + unit + ' »' : 'Échelle sans unité';
+    }
+
+    /**
+     * Nom court d'une échelle, pour les entrées de menu : sans l'habillage
+     * « Échelle « … » », qui donnerait des guillemets imbriqués.
+     */
+    axisShort(key) {
+      if (this.axisNames && this.axisNames[key]) return this.axisNames[key];
+      const series = this.series.filter((s) => this.axisKey(s) === key);
+      if (!series.length) return 'échelle';
+      const unit = series[0].meta.unit;
+      if (key.startsWith('solo:') && series.length === 1) {
+        return (series[0].name || series[0].addr);
+      }
+      return unit || (series[0].name || series[0].addr);
     }
 
     /** Applique des bornes à une échelle, ou à toutes (réglage groupé). */
@@ -3636,6 +3920,9 @@ body.cfg-hidden .searchrow { display: none; }
           closePopover();
         };
         form.querySelector('.ax-ok').addEventListener('click', appliquer);
+        mk('Renommer cette échelle…', () => this.renommerAxe(key), null,
+          'Nommer l’axe — « Températures four » dit ce qu’il regroupe, là où ' +
+          'l’unité seule ne le dit pas');
         form.addEventListener('keydown', (e) => { if (e.key === 'Enter') appliquer(); });
         // Un appui dans le formulaire ne doit pas être pris pour un geste
         // sur le canvas, ni refermer le menu.
@@ -3914,7 +4201,11 @@ body.cfg-hidden .searchrow { display: none; }
         addr, meta, colorIdx,
         color: typeof opts.color === 'string' ? opts.color : undefined,
         name: typeof opts.name === 'string' && opts.name ? opts.name : undefined,
-        axisMode: opts.axisMode === 'solo' ? 'solo' : 'auto',
+        // 'auto' | 'solo' | 'k:<clé>' — le dernier cas est une échelle
+        // explicitement choisie, elle doit survivre à l'enregistrement.
+        axisMode: (opts.axisMode === 'solo' ||
+                   (typeof opts.axisMode === 'string' && opts.axisMode.startsWith('k:')))
+          ? opts.axisMode : 'auto',
         visible: opts.visible !== false,
         periodMs: opts.periodMs || undefined,
         offsetY: isFinite(opts.offsetY) ? opts.offsetY : 0,
@@ -3934,6 +4225,60 @@ body.cfg-hidden .searchrow { display: none; }
     }
 
     /** Renommage en place du nom d'affichage d'une courbe (dans sa pastille). */
+    /**
+     * Nomme une échelle. Le nom vit avec le graphique, pas avec la courbe :
+     * il décrit ce que l'axe regroupe (« Températures four ») et survit au
+     * retrait d'une des courbes qui s'y trouvent.
+     */
+    renommerAxe(key) {
+      closePopover();
+      const actuel = (this.axisNames && this.axisNames[key]) || '';
+      const back = document.createElement('div');
+      back.className = 'modal-back';
+      back.innerHTML =
+        '<div class="modal" role="dialog" aria-label="Nommer l’échelle">' +
+          '<header class="m-head"><h3>Nommer l’échelle</h3>' +
+            '<button class="iconbtn m-close" type="button" title="Fermer cette fenêtre">✕</button>' +
+          '</header>' +
+          '<p class="m-note">Ce nom remplace l’unité en tête de la règle et dans les ' +
+            'menus. Laissé vide, l’intitulé automatique revient.</p>' +
+          '<div class="m-row"><input class="ax-nom" maxlength="40" ' +
+            'aria-label="Nom de l’échelle" ' +
+            'title="Nom affiché en tête de cette règle d’axe"></div>' +
+          '<div class="m-actions">' +
+            '<button class="btn primary ax-ok" type="button" ' +
+              'title="Appliquer ce nom à l’échelle">Enregistrer</button>' +
+            '<button class="btn ax-non" type="button" ' +
+              'title="Fermer sans changer le nom">Annuler</button>' +
+          '</div>' +
+        '</div>';
+      const root = document.getElementById('modalRoot');
+      root.innerHTML = '';
+      root.appendChild(back);
+      const champ = back.querySelector('.ax-nom');
+      champ.value = actuel;
+      champ.placeholder = this.axisTitle(key);
+      champ.focus();
+      champ.select();
+      const fermer = () => { root.innerHTML = ''; };
+      const valider = () => {
+        const v = champ.value.trim();
+        if (v) this.axisNames[key] = v;
+        else delete this.axisNames[key];
+        this.app.onChange();
+        this.app.toast(v ? 'Échelle nommée « ' + v + ' ».' : 'Nom de l’échelle retiré.');
+        fermer();
+      };
+      back.querySelector('.ax-ok').addEventListener('click', valider);
+      back.querySelector('.ax-non').addEventListener('click', fermer);
+      back.querySelector('.m-close').addEventListener('click', fermer);
+      back.addEventListener('pointerdown', (e) => { if (e.target === back) fermer(); });
+      champ.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') valider();
+        if (e.key === 'Escape') fermer();
+      });
+    }
+
     renameSeries(s) {
       closePopover();
       let chip = null;
@@ -3985,7 +4330,9 @@ body.cfg-hidden .searchrow { display: none; }
           '<span class="chip-val">—</span>' +
           '<span class="chip-off hide" title="Courbe décalée verticalement">Δ</span>' +
           '<span class="chip-axis"></span>';
-        chip.querySelector('.chip-addr').textContent = s.name || s.addr;
+        chip.querySelector('.chip-addr').textContent = this.chipLabel
+          ? (s.name || s.meta.label || s.addr)
+          : (s.name || s.addr);
         chip.querySelector('.sw').style.background = colorOf(s);
         chip.title = s.addr + ' — ' + (s.name ? s.name + ' (' + s.meta.label + ')' : s.meta.label) +
           (s.meta.unit ? ' (' + s.meta.unit + ')' : '') +
@@ -4013,11 +4360,36 @@ body.cfg-hidden .searchrow { display: none; }
           this.openAxisMenu(key, chip);
         }, null, 'Saisir le minimum et le maximum de l’axe de cette courbe, ' +
           'ou les donner à toutes les échelles du graphique');
-        mk((s.axisMode === 'solo' ? '✓ ' : '') + 'Échelle dédiée', () => {
-          s.axisMode = s.axisMode === 'solo' ? 'auto' : 'solo';
+        // Choix explicite de l'échelle : automatique, dédiée, ou celle d'une
+        // autre courbe. C'est ce qui permet d'associer deux grandeurs d'unités
+        // différentes sur un même axe, ou de scinder deux grandeurs de même
+        // unité que le regroupement automatique avait réunies.
+        const mienne = this.axisKey(s);
+        mk((s.axisMode === 'auto' ? '✓ ' : '') + 'Échelle automatique (par unité)', () => {
+          s.axisMode = 'auto';
           this.app.onChange();
-          this.app.toast(s.addr + ' : ' + (s.axisMode === 'solo' ? 'échelle dédiée' : 'échelle partagée par unité') + '.');
-        }, null, 'Donner à cette courbe son propre axe, au lieu de partager celui de son unité');
+          this.app.toast(s.addr + ' : échelle partagée par unité.');
+        }, null, 'Laisser cette courbe rejoindre les autres courbes de même unité');
+        mk((s.axisMode === 'solo' ? '✓ ' : '') + 'Échelle dédiée', () => {
+          s.axisMode = 'solo';
+          this.app.onChange();
+          this.app.toast(s.addr + ' : échelle dédiée.');
+        }, null, 'Donner à cette courbe son propre axe, séparé de toutes les autres');
+        for (const autre of this.series) {
+          if (autre === s || !autre.visible) continue;
+          const cle = this.axisKey(autre);
+          if (cle === mienne) continue;
+          if (this.series.some((x) => x !== s && x !== autre && this.axisKey(x) === cle &&
+                                      this.series.indexOf(x) < this.series.indexOf(autre))) continue;
+          mk('Mettre sur l’échelle « ' + this.axisShort(cle) + ' »', () => {
+            s.axisMode = 'k:' + cle;
+            this.app.onChange();
+            this.app.toast(s.addr + ' → échelle « ' + this.axisShort(cle) + ' ».');
+          }, null, 'Faire partager à cette courbe l’axe de « ' +
+            ((autre.name || autre.addr)) + ' », même si les unités diffèrent');
+        }
+        mk('Renommer l’échelle de cette courbe…', () => this.renommerAxe(mienne), null,
+          'Donner un nom à l’axe (il apparaît en tête de sa règle et dans les menus)');
         mk('Décaler verticalement (glisser)', () => this.startMoveMode(s), null,
           'Séparer visuellement cette courbe des autres ; les valeurs affichées restent les valeurs vraies');
         if (s.offsetY) {
@@ -4077,12 +4449,20 @@ body.cfg-hidden .searchrow { display: none; }
       return wrap;
     }
 
-    /** Mise à jour des valeurs vivantes de la légende (~5 Hz). */
+    /** Mise à jour des valeurs de la légende (~5 Hz). */
     updateLive() {
       const chips = this.legendEl.children;
+      // Graphique figé : on lit la valeur à l'instant du gel. Une légende qui
+      // continuerait de défiler sous une pause contredirait le tracé.
+      const recul = this.viewEnd === null ? 0 : Math.max(0, DW.source.now() - this.viewEnd);
+      this.majRetard();
       for (let i = 0; i < this.series.length && i < chips.length; i++) {
         const s = this.series[i];
-        const last = DW.source.latest(s.addr);
+        let last = DW.source.latest(s.addr);
+        if (last && recul > 0) {
+          const v = DW.valeurA(s.addr, this.viewEnd);
+          last = v == null ? null : { t: this.viewEnd, v };
+        }
         const valEl = chips[i].querySelector('.chip-val');
         valEl.textContent = last ? DW.fmtVal(last.v, s.meta) + (s.meta.unit ? ' ' + s.meta.unit : '') : '—';
         chips[i].querySelector('.chip-off').classList.toggle('hide', !s.offsetY);
@@ -4099,8 +4479,19 @@ body.cfg-hidden .searchrow { display: none; }
     }
 
     // ---------- Échelles ----------------------------------------------
+    /**
+     * Échelle d'une courbe. Trois cas :
+     *   'auto'      regroupement automatique par unité (le défaut) ;
+     *   'solo'      échelle dédiée à cette seule courbe ;
+     *   'k:<clé>'   échelle explicitement choisie — celle d'une autre courbe.
+     * Le troisième cas est ce qui permet d'associer deux grandeurs d'unités
+     * différentes sur un même axe, ou de scinder deux grandeurs de même unité.
+     */
     axisKey(s) {
       if (s.axisMode === 'solo') return 'solo:' + s.addr;
+      if (typeof s.axisMode === 'string' && s.axisMode.startsWith('k:')) {
+        return s.axisMode.slice(2);
+      }
       if (s.meta.kind === 'bit') return 'bool';
       if (s.meta.unit) return 'u:' + s.meta.unit;
       return s.meta.kind === 'word' ? 'mot' : 'sans-unité';
@@ -4282,11 +4673,13 @@ body.cfg-hidden .searchrow { display: none; }
         for (const s of g.series) this._axisBadge[s.addr] = tag;
       });
 
+      // Toutes les règles du MÊME côté, à gauche : en alternant gauche et
+      // droite, lire une valeur demandait de chercher de quel bord venait
+      // l'échelle de la courbe qu'on suit. Empilées à gauche, elles se lisent
+      // dans l'ordre des badges Én, et le tracé garde toute la droite.
       const shown = groups.slice(0, maxShown);
-      const leftAxes = shown.filter((_, i) => i % 2 === 0);
-      const rightAxes = shown.filter((_, i) => i % 2 === 1);
-      const mL = 8 + (leftAxes.length ? leftAxes.length * axisW : 26);
-      const mR = 8 + rightAxes.length * axisW;
+      const mL = 8 + (shown.length ? shown.length * axisW : 26);
+      const mR = 8;
       const mT = 18, mB = 22;
       const pw = Math.max(10, cw - mL - mR), ph = Math.max(10, chh - mT - mB);
       this._plot = {
@@ -4296,12 +4689,11 @@ body.cfg-hidden .searchrow { display: none; }
       const X = (t) => mL + ((t - tStart) / this.windowS) * pw;
       const yOf = (g) => (v) => mT + ph * (1 - (v - g.min) / (g.max - g.min));
 
-      // Zones des règles (hit-test des gestes d'axe)
+      // Zones des règles (hit-test des gestes d'axe) : la première règle est
+      // collée au tracé, les suivantes s'empilent vers le bord gauche.
       this._bands = shown.map((g, i) => {
-        const side = i % 2 === 0 ? 'L' : 'R';
-        const slot = Math.floor(i / 2);
-        const x0 = side === 'L' ? mL - (slot + 1) * axisW : cw - mR + slot * axisW;
-        return { key: g.key, x0: Math.max(0, x0), x1: x0 + axisW, side };
+        const x0 = mL - (i + 1) * axisW;
+        return { key: g.key, x0: Math.max(0, x0), x1: x0 + axisW, side: 'L' };
       });
 
       this._yFns = {};
@@ -4317,17 +4709,18 @@ body.cfg-hidden .searchrow { display: none; }
 
       ctx.font = fontPx + 'px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 
-      // Grille temporelle (graduations relatives au bord direct)
-      const nowT = DW.source.now();
+      // Grille temporelle, ancrée sur le BORD DROIT DE LA VUE. Ancrée sur
+      // l'heure courante, elle continuait de glisser sous un graphique figé —
+      // ce qui donnait l'impression que la pause ne prenait pas. Le retard sur
+      // le temps réel se lit dans l'en-tête, en clair.
       const tickS = niceTimeStep(this.windowS / (compact ? 4 : 5));
       ctx.strokeStyle = IK.line;
       ctx.fillStyle = IK.faint;
       ctx.lineWidth = 1;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      const firstK = Math.ceil((nowT - tEnd) / tickS - 1e-9);
-      for (let k = firstK; ; k++) {
-        const t = nowT - k * tickS;
+      for (let k = 0; ; k++) {
+        const t = tEnd - k * tickS;
         if (t < tStart - 1e-9) break;
         const x = Math.round(X(t)) + 0.5;
         ctx.beginPath(); ctx.moveTo(x, mT); ctx.lineTo(x, mT + ph); ctx.stroke();
@@ -4345,27 +4738,26 @@ body.cfg-hidden .searchrow { display: none; }
         }
       }
 
-      // Règles d'axes
+      // Règles d'axes, toutes à gauche
       shown.forEach((g, i) => {
-        const side = i % 2 === 0 ? 'L' : 'R';
-        const slot = Math.floor(i / 2);
-        const xr = side === 'L' ? mL - slot * axisW : cw - mR + slot * axisW;
+        const xr = mL - i * axisW;
         const yG = yOf(g);
         ctx.strokeStyle = g.color; ctx.globalAlpha = 0.55; ctx.lineWidth = 1;
-        const xl = Math.round(xr) + (side === 'L' ? -0.5 : 0.5);
+        const xl = Math.round(xr) - 0.5;
         ctx.beginPath(); ctx.moveTo(xl, mT); ctx.lineTo(xl, mT + ph); ctx.stroke();
         ctx.globalAlpha = 1;
         ctx.fillStyle = g.color;
-        ctx.textAlign = side === 'L' ? 'right' : 'left';
+        ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
-        const tx = side === 'L' ? xr - 4 : xr + 4;
+        const tx = xr - 4;
         for (const v of g.ticks) {
           const y = yG(v);
           if (y < mT - 2 || y > mT + ph + 2) continue;
           ctx.fillText(fmtAxisTick(v, g.tickStep || 1), tx, y);
         }
         ctx.textBaseline = 'bottom';
-        const lbl = (g.manual ? '🔒' : '') + (g.label || '');
+        const nom = this.axisNames && this.axisNames[g.key];
+        const lbl = (g.manual ? '🔒' : '') + (nom || g.label || '');
         if (lbl) ctx.fillText(lbl, tx, mT - 4);
       });
 
@@ -4401,7 +4793,7 @@ body.cfg-hidden .searchrow { display: none; }
         if (xp >= mL - 2 && xp <= mL + pw + 2) cursorX = xp;
       }
       if (cursorX !== null && groups.length) {
-        this.drawCursor(ctx, groups, tStart, X, mL, mT, pw, ph, cursorX, nowT);
+        this.drawCursor(ctx, groups, tStart, X, mL, mT, pw, ph, cursorX, DW.source.now());
       } else {
         this.tipEl.classList.add('hide');
       }
@@ -4446,6 +4838,8 @@ body.cfg-hidden .searchrow { display: none; }
         title: this.title,
         windowS: Math.round(this.windowS * 10) / 10,
         x: this.x, y: this.y, w: this.w, h: this.h,
+        axisNames: Object.keys(this.axisNames).length ? Object.assign({}, this.axisNames) : undefined,
+        chipLabel: this.chipLabel ? 'label' : undefined,
         series: this.series.map((s) => ({
           addr: s.addr,
           name: s.name || undefined,
@@ -6950,6 +7344,10 @@ body.cfg-hidden .searchrow { display: none; }
           'title="Nom du tableau — cliquez pour le modifier ; il sert aussi de ' +
           'destination d’ajout dans la barre du haut">' +
         '<span class="tcount" title="Nombre de variables dans ce tableau"></span>' +
+        '<span class="lag hide" title="Retard sur le temps réel : les valeurs affichées ' +
+          'sont celles de cet instant passé"></span>' +
+        '<button class="iconbtn table-pause" type="button" ' +
+          'title="Figer les valeurs de ce tableau sur l’instant courant, ou revenir au temps réel">⏸</button>' +
         '<button class="iconbtn card-add" type="button" ' +
           'title="Ajouter des variables à ce tableau : ouvre le catalogue complet, ' +
           'avec filtres et sélection multiple">+</button>' +
@@ -6970,6 +7368,8 @@ body.cfg-hidden .searchrow { display: none; }
       name: opts.name || (tab.tables.length ? 'Tableau ' + (tab.tables.length + 1)
                                             : 'Valeurs numériques'),
       entries: [],
+      frozen: null,       // null = temps réel ; sinon instant figé (s)
+      labelFirst: !!opts.labelFirst,   // description en tête plutôt que l'adresse
       // Tuile de la mosaïque (cf. mosaic.js) : colonne, rangée, largeur, hauteur.
       x: opts.x, y: opts.y,
       w: opts.w || DW.mosaic.defaut('table').w,
@@ -6997,6 +7397,9 @@ body.cfg-hidden .searchrow { display: none; }
     card.querySelector('.card-add').addEventListener('click', () => {
       openVarPicker({ kind: 'table', table: tbl });
     });
+    card.querySelector('.table-pause').addEventListener('click', () => {
+      setTableFrozen(tbl, tbl.frozen == null);
+    });
     card.querySelector('.table-more').addEventListener('click', (e) =>
       openTableMenu(tbl, e.currentTarget));
     tab.chartsGridEl.appendChild(card);
@@ -7010,6 +7413,29 @@ body.cfg-hidden .searchrow { display: none; }
     return tbl;
   }
 
+  /**
+   * Fige (ou libère) les valeurs d'un tableau. Le retard sur le temps réel
+   * s'affiche dans l'en-tête, sinon on ne saurait pas de quand datent les
+   * valeurs qu'on lit.
+   */
+  function setTableFrozen(tbl, gel) {
+    tbl.frozen = gel ? DW.source.now() : null;
+    const b = tbl.cardEl.querySelector('.table-pause');
+    b.textContent = gel ? '▶' : '⏸';
+    b.classList.toggle('on', !!gel);
+    majRetard(tbl);
+    updatePauseAllUi();
+  }
+
+  /** Badge « retard » d'un tableau figé (rafraîchi par la boucle de rendu). */
+  function majRetard(tbl) {
+    const el = tbl.cardEl.querySelector('.lag');
+    if (!el) return;
+    if (tbl.frozen == null) { el.classList.add('hide'); return; }
+    el.classList.remove('hide');
+    el.textContent = '⏱ −' + DW.fmtDuree(Math.max(0, DW.source.now() - tbl.frozen));
+  }
+
   /** Menu ⋮ d'un tableau (le pendant de celui d'un graphique). */
   function openTableMenu(tbl, anchor) {
     DW.popup(anchor, (mk) => {
@@ -7018,6 +7444,12 @@ body.cfg-hidden .searchrow { display: none; }
       mk('Vider le tableau', () => {
         for (const e of [...tbl.entries]) removeFromTable(tbl, e.addr);
       }, null, 'Retirer toutes les variables sans supprimer le tableau');
+      mk((tbl.labelFirst ? '✓ ' : '') + 'Mettre la description en tête', () => {
+        tbl.labelFirst = !tbl.labelFirst;
+        renderTable(tbl);
+        onChange();
+      }, null, 'Intervertir l’adresse et la description : la description en gros et ' +
+        'l’adresse en dessous, ou l’inverse');
       mk('Taille de départ', () => {
         const d = DW.mosaic.defaut('table');
         tbl.w = d.w; tbl.h = d.h;
@@ -7076,7 +7508,8 @@ body.cfg-hidden .searchrow { display: none; }
   function duplicateTable(tbl) {
     const copie = serializeTable(tbl);
     const neuf = createTable(tbl.tab, { name: tbl.name + ' (copie)', w: tbl.w, h: tbl.h,
-                                        x: tbl.x, y: tbl.y + tbl.h });
+                                        x: tbl.x, y: tbl.y + tbl.h,
+                                        labelFirst: tbl.labelFirst });
     for (const e of copie) {
       const p = DW.parseAddr(e.addr);
       if (p.ok) addToTable(neuf, p.addr, e.periodMs, e.name);
@@ -7281,11 +7714,25 @@ body.cfg-hidden .searchrow { display: none; }
           '<b class="val">—</b><span class="v-unit"></span><span class="v-trend"></span></div>' +
         '<button class="v-edit" type="button" title="Renommer l’affichage de cette variable">✎</button>' +
         '<button class="v-del" type="button" title="Retirer du tableau">✕</button>';
-      row.querySelector('.v-addr').textContent = e.addr;
-      const labelEl = row.querySelector('.v-label');
-      labelEl.textContent = displayLabel(e) +
-        (e.periodMs && e.periodMs !== CFG.defaultPeriodMs ? ' · rafr. ' + e.periodMs + ' ms' : '');
-      labelEl.classList.toggle('renamed', !!e.name);
+      // Mise en avant : l'adresse en tête (repère de l'automaticien) ou la
+      // description (repère de l'exploitant). Les deux publics lisent le même
+      // tableau, d'où la bascule par tableau.
+      const enTete = row.querySelector('.v-addr');
+      const dessous = row.querySelector('.v-label');
+      const suffixe = (e.periodMs && e.periodMs !== CFG.defaultPeriodMs)
+        ? ' · rafr. ' + e.periodMs + ' ms' : '';
+      if (tbl.labelFirst) {
+        enTete.textContent = displayLabel(e);
+        dessous.textContent = e.addr + suffixe;
+      } else {
+        enTete.textContent = e.addr;
+        dessous.textContent = displayLabel(e) + suffixe;
+      }
+      row.classList.toggle('label-first', !!tbl.labelFirst);
+      dessous.classList.toggle('renamed', !!e.name && !tbl.labelFirst);
+      // Le renommage porte sur la DESCRIPTION : il vise donc l'élément qui la
+      // montre, quel que soit le sens de la bascule.
+      const labelEl = tbl.labelFirst ? enTete : dessous;
       row.querySelector('.v-unit').textContent = e.meta.unit || '';
       row.title = e.addr + ' — ' + displayLabel(e) +
         (e.name ? ' (' + e.meta.label + ')' : '') +
@@ -7332,12 +7779,19 @@ body.cfg-hidden .searchrow { display: none; }
     if (!tab) return;
     const nowT = DW.source.now();
     const canForce = typeof DW.source.forced === 'function';
-    for (const tbl of tab.tables) majValeurs(tbl, nowT, canForce);
+    for (const tbl of tab.tables) {
+      majValeurs(tbl, nowT, canForce);
+      majRetard(tbl);
+    }
   }
 
   /** Valeurs vivantes d'un tableau (~5 Hz). */
   function majValeurs(tbl, nowT, canForce) {
     const rows = tbl.rowsEl.children;
+    // Tableau figé : les valeurs sont lues à l'instant du gel, pas au dernier
+    // échantillon. Une valeur qui continuerait de courir sous un bouton
+    // « Figer » enlevé toute confiance à ce qu'on lit.
+    const recul = tbl.frozen == null ? 0 : Math.max(0, nowT - tbl.frozen);
     for (let i = 0; i < tbl.entries.length && i < rows.length; i++) {
       const e = tbl.entries[i];
       // Marquage « forcé » : valeur imposée côté serveur (diagnostic)
@@ -7346,11 +7800,17 @@ body.cfg-hidden .searchrow { display: none; }
         rows[i].classList.toggle('forced', f != null);
         rows[i].querySelector('.v-forced').classList.toggle('hide', f == null);
       }
-      const last = DW.source.latest(e.addr);
+      let last = DW.source.latest(e.addr);
+      if (last && recul > 0) {
+        const v = DW.valeurA(e.addr, tbl.frozen);
+        last = v == null ? null : { t: tbl.frozen, v };
+      }
       const valEl = rows[i].querySelector('.val');
       if (!last) { valEl.textContent = '—'; continue; }
       // Flash : la variable était immobile depuis ≥ 2 s et vient de changer
-      if (e._lastV === undefined) {
+      if (recul > 0) {
+        e._lastV = last.v;
+      } else if (e._lastV === undefined) {
         e._lastV = last.v; e._lastChangeT = nowT;
       } else if (last.v !== e._lastV) {
         if (nowT - e._lastChangeT >= 2) {
@@ -7371,9 +7831,10 @@ body.cfg-hidden .searchrow { display: none; }
       } else {
         valEl.textContent = DW.fmtVal(last.v, e.meta);
       }
-      // Tendance sur ~2,5 s
+      // Tendance sur ~2,5 s — reculée d'autant quand le tableau est figé.
       const trendEl = rows[i].querySelector('.v-trend');
-      const past = DW.source.past(e.addr, 2.5);
+      const past = recul > 0 ? DW.valeurA(e.addr, tbl.frozen - 2.5)
+                             : DW.source.past(e.addr, 2.5);
       if (past == null || e.meta.kind === 'bit') { trendEl.textContent = ''; trendEl.className = 'v-trend'; continue; }
       const eps = Math.max(Math.abs(last.v) * 0.004, 1e-6);
       const d = last.v - past;
@@ -7397,6 +7858,7 @@ body.cfg-hidden .searchrow { display: none; }
       windowS: opts.windowS,
       heightMode: opts.heightMode,          // dispositions v2 : converti en rangées
       x: opts.x, y: opts.y, w: opts.w, h: opts.h,
+      axisNames: opts.axisNames, chipLabel: opts.chipLabel,
     });
     tab.charts.push(chart);
     tab.chartsGridEl.appendChild(chart.root);
@@ -7709,7 +8171,9 @@ body.cfg-hidden .searchrow { display: none; }
     return {
       version: 3,
       tables: tab.tables.map((t) => Object.assign({ name: t.name },
-        tuile(t), { entries: serializeTable(t) })),
+        tuile(t),
+        t.labelFirst ? { labelFirst: true } : null,
+        { entries: serializeTable(t) })),
       charts: tab.charts.map((c) => c.serialize()),
     };
   }
@@ -7731,7 +8195,7 @@ body.cfg-hidden .searchrow { display: none; }
     const cell = place && place.cell;
     const chart = createChart({
       title: cfg.title, windowS: cfg.windowS, heightMode: cfg.heightMode,
-      w: cfg.w, h: cfg.h,
+      w: cfg.w, h: cfg.h, axisNames: cfg.axisNames, chipLabel: cfg.chipLabel,
       // Sans point de chute désigné, la tuile va à la première place libre :
       // c'est placerNouvelle qui décide (x/y laissés vides).
       x: cell ? cell.x : undefined, y: cell ? cell.y : undefined,
@@ -7887,7 +8351,8 @@ body.cfg-hidden .searchrow { display: none; }
     for (const t of tables) {
       if (!t) continue;
       const g = ancien ? migrerTuile(t, 'table') : t;
-      const tbl = createTable(tab, { name: t.name, x: g.x, y: g.y, w: g.w, h: g.h });
+      const tbl = createTable(tab, { name: t.name, x: g.x, y: g.y, w: g.w, h: g.h,
+                                     labelFirst: t.labelFirst });
       for (const entry of t.entries || []) {
         // Rétro-compatibilité : entrée sous forme de chaîne (format initial)
         const addr = typeof entry === 'string' ? entry : entry.addr;
@@ -7903,7 +8368,7 @@ body.cfg-hidden .searchrow { display: none; }
       const g = ancien ? migrerTuile(c, 'chart') : c;
       const chart = createChart({
         title: c.title, windowS: c.windowS, heightMode: c.heightMode,
-        x: g.x, y: g.y, w: g.w, h: g.h,
+        x: g.x, y: g.y, w: g.w, h: g.h, axisNames: c.axisNames, chipLabel: c.chipLabel,
       });
       if (!chart) break;
       for (const s of c.series || []) {
@@ -8800,11 +9265,15 @@ body.cfg-hidden .searchrow { display: none; }
     requestAnimationFrame(loop);
   }
 
+  /** « Figer » agit sur TOUTES les tuiles de l'onglet, tableaux compris. */
   function updatePauseBtn() {
     const tab = state.active;
-    const allPaused = tab && tab.charts.length && tab.charts.every((c) => c.paused);
-    $('pauseAllBtn').textContent = allPaused ? '▶ Reprendre' : '⏸ Figer';
+    const tuiles = tab ? tilesOf(tab) : [];
+    const fige = (t) => (t.entries ? t.frozen != null : t.paused);
+    const toutFige = tuiles.length && tuiles.every(fige);
+    $('pauseAllBtn').textContent = toutFige ? '▶ Reprendre' : '⏸ Figer';
   }
+  const updatePauseAllUi = updatePauseBtn;
 
   // ---------- Événements globaux --------------------------------------
   function bindUi() {
@@ -8854,8 +9323,13 @@ body.cfg-hidden .searchrow { display: none; }
     $('pauseAllBtn').addEventListener('click', () => {
       const tab = state.active;
       if (!tab) return;
-      const anyRunning = tab.charts.some((c) => !c.paused);
-      for (const c of tab.charts) c.setPaused(anyRunning);
+      // Figer un onglet fige ce qu'on y lit : les courbes ET les valeurs
+      // numériques. Un tableau qui continuerait de défiler à côté d'un
+      // graphique figé donnerait deux instants pour un même écran.
+      const enMarche = tab.charts.some((c) => !c.paused) ||
+                       tab.tables.some((t) => t.frozen == null);
+      for (const c of tab.charts) c.setPaused(enMarche);
+      for (const t of tab.tables) setTableFrozen(t, enMarche);
       updatePauseBtn();
     });
 
@@ -8920,7 +9394,7 @@ body.cfg-hidden .searchrow { display: none; }
             ['Menu ⋮ d’un graphique', 'Dupliquer, échelles automatiques, taille de départ, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
             ['Menu ⋮ d’un tableau', 'Les mêmes gestes : ajouter des variables, vider, taille de départ, <b>dupliquer ce tableau</b>, <b>déplacer vers un onglet</b>, <b>ouvrir dans une nouvelle fenêtre</b>, fermer.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
-            ['Barre du haut', 'Elle ne porte que ce qui sert à chaque instant : les onglets, la saisie d’une variable avec sa destination, et <b>⏸ Figer</b>, qui arrête d’un coup tous les graphiques de l’onglet actif. <b>Journal de données</b> et <b>Configurations</b> sont dans le menu ☰, avec les autres fonctions qui ne dépendent pas de ce qui est affiché.'],
+            ['Barre du haut', 'Elle ne porte que ce qui sert à chaque instant : les onglets, la saisie d’une variable avec sa destination, et <b>⏸ Figer</b>, qui arrête d’un coup tous les graphiques de l’onglet actif. Elle <b>s’escamote quand on descend</b> dans la page et revient dès qu’on remonte : la place gagnée va aux courbes. <b>Journal de données</b> et <b>Configurations</b> sont dans le menu ☰, avec les autres fonctions qui ne dépendent pas de ce qui est affiché.'],
           ]) +
           S('Pages réseau (☰)') +
           L([
@@ -8946,7 +9420,10 @@ body.cfg-hidden .searchrow { display: none; }
           L([
             ['Pastille de légende', 'Couleur (palette ou teinte libre), masquer, échelle dédiée, décalage vertical, retrait.'],
             ['Badge Én', 'Numéro de l’échelle utilisée ; 🔒 signale un réglage manuel.'],
-            ['Échelles verticales', 'Clic sur une <b>règle d’axe</b> (les graduations, curseur ↕) : saisir le minimum et le maximum exacts, pour cette échelle seule ou pour <b>toutes</b> celles du graphique. Glisser ou molette sur la règle : réglage à la volée ; double-clic : retour à l’automatique. Même réglage depuis le menu d’une pastille (« Bornes de l’échelle… »).'],
+            ['Échelles — regrouper, séparer, nommer', 'Par défaut les courbes de même unité partagent une échelle. Le menu d’une pastille permet de choisir : <b>Échelle automatique</b> (par unité), <b>Échelle dédiée</b> (cette courbe seule), ou <b>Mettre sur l’échelle « … »</b> pour rejoindre celle d’une autre courbe — même si les unités diffèrent. <b>Renommer l’échelle</b> lui donne un nom qui remplace l’unité en tête de sa règle.'],
+            ['Figer', '<b>⏸</b> sur une tuile, ou <b>⏸ Figer</b> en haut pour tout l’onglet : le tracé <b>et les valeurs numériques</b> s’arrêtent sur l’instant courant, et la grille cesse de défiler. Un badge <b>⏱ −durée</b> dans l’en-tête dit de quand datent les valeurs qu’on lit.'],
+            ['Adresse ou description', 'Menu ⋮ d’un tableau : <b>Mettre la description en tête</b> intervertit l’adresse et la description. Menu ⋮ d’un graphique : <b>Légende : description plutôt qu’adresse</b>. L’automaticien cherche une adresse, l’exploitant un nom — chaque tuile choisit.'],
+            ['Échelles verticales', 'Toutes les règles sont <b>à gauche</b>, empilées dans l’ordre des badges Én : on lit une valeur sans chercher de quel bord vient son échelle. Clic sur une <b>règle d’axe</b> (les graduations, curseur ↕) : saisir le minimum et le maximum exacts, pour cette échelle seule ou pour <b>toutes</b> celles du graphique. Glisser ou molette sur la règle : réglage à la volée ; double-clic : retour à l’automatique. Même réglage depuis le menu d’une pastille (« Bornes de l’échelle… »).'],
           ]) +
         '</div>';
       back.querySelector('.m-close').addEventListener('click', () => { root.innerHTML = ''; });
@@ -8976,22 +9453,33 @@ body.cfg-hidden .searchrow { display: none; }
       root.appendChild(back);
     });
 
-    // Repli de la zone de configuration : recherche + actions d'onglet (mémorisé)
-    const CFG_HIDDEN_KEY = 'diagweb.cfghidden.v1';
-    function setCfgHidden(hidden) {
-      document.body.classList.toggle('cfg-hidden', hidden);
-      const b = $('cfgToggle');
-      b.textContent = hidden ? '⌄' : '⌃';
-      b.title = hidden ? 'Afficher la zone de configuration' : 'Masquer la zone de configuration';
-      if (!hidden) return;
-      hideSuggest();
-    }
-    $('cfgToggle').addEventListener('click', () => {
-      const hidden = !document.body.classList.contains('cfg-hidden');
-      setCfgHidden(hidden);
-      try { window.localStorage.setItem(CFG_HIDDEN_KEY, hidden ? '1' : '0'); } catch (e) { /* stockage indisponible */ }
-    });
-    try { setCfgHidden(window.localStorage.getItem(CFG_HIDDEN_KEY) === '1'); } catch (e) { /* stockage indisponible */ }
+    // Barre du haut escamotable au défilement : sur un écran de supervision,
+    // la place gagnée va aux courbes. Elle revient dès qu'on remonte — le
+    // geste qu'on fait déjà pour chercher un réglage — et dès que la page est
+    // en haut, pour ne jamais rester introuvable. Un seuil de 8 px évite
+    // qu'un tremblement de molette la fasse clignoter.
+    let dernierY = 0;
+    let barreArmee = false;
+    const SEUIL = 8;
+    const suivreDefilement = () => {
+      barreArmee = false;
+      const y = Math.max(0, window.scrollY || window.pageYOffset || 0);
+      const haut = $('panes').getBoundingClientRect().height > window.innerHeight;
+      if (!haut) { document.body.classList.remove('topbar-off'); dernierY = y; return; }
+      const d = y - dernierY;
+      if (Math.abs(d) < SEUIL) return;
+      // Un menu ou une fenêtre ouverte garde la barre : la masquer sous le
+      // doigt de l'utilisateur serait une disparition inexpliquée.
+      const occupe = !$('menuPanel').classList.contains('hide') ||
+                     $('modalRoot').children.length > 0;
+      document.body.classList.toggle('topbar-off', d > 0 && y > 60 && !occupe);
+      dernierY = y;
+    };
+    window.addEventListener('scroll', () => {
+      if (barreArmee) return;
+      barreArmee = true;
+      requestAnimationFrame(suivreDefilement);
+    }, { passive: true });
 
     $('themeBtn').addEventListener('click', () => {
       const cur = document.documentElement.getAttribute('data-theme');
