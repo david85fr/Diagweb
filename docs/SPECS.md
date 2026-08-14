@@ -851,8 +851,10 @@ absence de voisins.
 - [x] Forçage de variables (diagnostic) par suffixe `= valeur`, refusé pour
       les points réseau (lecture seule)
 - [x] Infobulles sur tous les objets + fenêtre d'aide (gestes et commandes)
-- [x] Liens réseau : Modbus TCP/RTU, IEC 60870-5-104, CAN, J1939, CANopen
-      (pilotes implémentés et testés) ; IEC 61850 déclaré, pile ISO/MMS à venir
+- [x] Liens réseau : Modbus TCP/RTU, IEC 60870-5-104, CAN, J1939, CANopen,
+      SNMP v1/v2c/v3, OPC UA et IEC 61850 dans ses quatre mécanismes (GOOSE,
+      Sampled Values, lecture MMS, rapports BRCB/URCB, pile ISO comprise) —
+      pilotes implémentés et testés
 - [x] Intégration continue sur `main` : compilation `-Werror`, tests de
       décodage, liens réseau de bout en bout, interface, déplacement de
       widgets, en-têtes générés et livrables à jour (`.github/workflows/ci.yml`,

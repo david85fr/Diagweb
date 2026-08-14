@@ -114,8 +114,12 @@ if node.found()
   # attend qu'il réponde, joue les vérifications, puis l'arrête.
   # Port distinct de celui de l'aperçu (tools/serve.py) : les deux doivent
   # pouvoir tourner en même temps sur le poste du développeur.
+  # `depends` : le script reçoit le CHEMIN des exécutables, pas les cibles —
+  # sans cette dépendance, un `meson test` seul éprouverait le binaire du tour
+  # précédent et laisserait passer la modification qu'on vient d'écrire.
   test('liens reseau et fonctions serveur',
     find_program('tools/run-server-tests.sh'),
+    depends: [diagweb_server, diagweb_simulator],
     suite: 'serveur', timeout: 600, workdir: meson.project_source_root(),
     env: {'DIAGWEB_PORT': '8099',
           'DIAGWEB_SERVER_BIN': meson.project_build_root() / 'diagweb-server',

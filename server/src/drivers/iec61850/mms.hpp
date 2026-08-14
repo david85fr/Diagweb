@@ -89,6 +89,164 @@ inline bool mms_first_value(const uint8_t* d, size_t n, double& out) {
   return false;
 }
 
+/** Bit `k` d'une chaîne de bits BER (octet de bourrage en tête, bit 0 en tête). */
+inline bool mms_bit(const uint8_t* b, size_t n, size_t k) {
+  const size_t octet = 1 + k / 8;
+  if (octet >= n) return false;
+  return (b[octet] >> (7 - (k % 8))) & 1;
+}
+
+/**
+ * Indices du jeu de données inclus dans un rapport, dans l'ordre où leurs
+ * valeurs suivent.
+ *
+ * C'est le point sur lequel il est facile de se tromper : un rapport déclenché
+ * par changement ne porte QUE les membres qui ont changé. Le rang d'une valeur
+ * dans le rapport n'est donc pas son rang dans le jeu de données, et confondre
+ * les deux publie la mesure sur la mauvaise variable — silencieusement, ce qui
+ * est pire qu'une absence de valeur. Seul un rapport d'intégrité ou
+ * d'interrogation générale, où tout est inclus, fait coïncider les deux.
+ */
+inline std::vector<size_t> mms_included(const uint8_t* b, size_t n) {
+  std::vector<size_t> out;
+  if (n < 2) return out;
+  const size_t bourrage = b[0] & 7;
+  const size_t total = (n - 1) * 8 - bourrage;
+  for (size_t k = 0; k < total; ++k) {
+    if (mms_bit(b, n, k)) out.push_back(k);
+  }
+  return out;
+}
+
+/**
+ * TrgOps, les conditions de déclenchement d'un bloc de rapport :
+ * BIT STRING { reserved(0), data-change(1), quality-change(2), data-update(3),
+ * integrity(4), general-interrogation(5) } — bit 0 en tête du premier octet,
+ * comme OptFlds et la chaîne d'inclusion.
+ *
+ * Le bit d'interrogation générale est toujours posé : c'est lui qui autorise le
+ * cliché initial demandé juste après l'activation. Sans lui, un IED conforme
+ * refuse le GI et les points restent vides jusqu'au premier changement.
+ */
+inline std::vector<uint8_t> mms_trg_ops(const std::string& choix, bool integrite) {
+  uint8_t bits = 0x04;                            // bit 5 : interrogation générale
+  if (choix == "dchg") bits |= 0x40;              // bit 1 : changement de valeur
+  else if (choix == "qchg") bits |= 0x20;         // bit 2 : changement de qualité
+  else if (choix == "dupd") bits |= 0x10;         // bit 3 : mise à jour
+  else integrite = true;                          // « périodique » : intégrité seule
+  if (integrite) bits |= 0x08;                    // bit 4 : période d'intégrité
+  return {0x02, bits};                            // 6 bits utiles, 2 de bourrage
+}
+
+/**
+ * Identifiant d'invocation d'un PDU reçu, pour apparier une réponse à sa
+ * requête. Il ouvre le corps du PDU : INTEGER dans une réponse confirmée,
+ * `[0] IMPLICIT` dans une erreur confirmée.
+ */
+inline bool mms_invoke_id(const uint8_t* pdu, size_t n, int64_t& out) {
+  ber::Cursor c(pdu, n), corps;
+  uint8_t tag = 0;
+  if (!ber::read_into(c, tag, corps)) return false;
+  if (tag != 0xA1 && tag != 0xA2) return false;
+  const uint8_t* b = nullptr;
+  size_t l = 0;
+  if (!ber::read_tlv(corps, tag, b, l)) return false;
+  if (tag != ber::kInteger && tag != 0x80) return false;
+  return ber::read_int(b, l, out);
+}
+
+/** Un rapport décodé : la date de l'IED, et les valeurs avec leur indice. */
+struct MmsReport {
+  double t_source = 0;                                // TimeOfEntry, 0 si absent
+  std::vector<std::pair<size_t, double>> valeurs;      // indice dans le jeu, valeur
+};
+
+/**
+ * InformationReport. La liste contient, dans cet ordre : RptID, OptFlds, puis
+ * les champs optionnels ANNONCÉS PAR OptFlds, la chaîne d'inclusion,
+ * éventuellement les références de données, et enfin les valeurs.
+ *
+ * Il faut vraiment décoder OptFlds : se repérer sur « la chaîne de bits » ne
+ * suffit pas, OptFlds en est une aussi — et prendre la première fait lire le
+ * numéro de séquence à la place de la première valeur.
+ *
+ * Bits d'OptFlds (IEC 61850-8-1) : 1 numéro de séquence, 2 horodatage, 3 motif
+ * d'inclusion, 4 nom du jeu, 5 référence de données, 6 débordement de tampon,
+ * 7 identifiant d'entrée, 8 révision de configuration, 9 segmentation. Les
+ * motifs d'inclusion (bit 3) suivent les valeurs : ils n'entrent pas dans le
+ * décalage à franchir.
+ */
+inline bool mms_parse_report(const uint8_t* pdu, size_t n, MmsReport& out) {
+  out.t_source = 0;
+  out.valeurs.clear();
+  if (n == 0 || pdu[0] != 0xA3) return false;
+  const uint8_t* rapport = nullptr;
+  size_t rl = 0;
+  if (!iso::find_tag(pdu, n, 0xA0, rapport, rl)) return false;
+
+  // listOfAccessResult est le DERNIER élément de même étiquette : le premier
+  // est la spécification d'accès.
+  const uint8_t* liste = nullptr;
+  size_t ll = 0;
+  {
+    ber::Cursor t(rapport, rl);
+    uint8_t tg = 0;
+    const uint8_t* bb = nullptr;
+    size_t lb = 0;
+    while (ber::read_tlv(t, tg, bb, lb)) {
+      if (tg == 0xA0) { liste = bb; ll = lb; }
+      if (t.done()) break;
+    }
+  }
+  if (!liste) return false;
+
+  ber::Cursor c(liste, ll);
+  uint8_t tag = 0;
+  const uint8_t* b = nullptr;
+  size_t l = 0;
+
+  if (!ber::read_tlv(c, tag, b, l)) return false;                 // RptID
+  if (!ber::read_tlv(c, tag, b, l) || tag != 0x84) return false;  // OptFlds
+  const uint8_t* opt = b;
+  const size_t optn = l;
+
+  // Champs optionnels annoncés, dans l'ordre de la norme. L'horodatage d'entrée
+  // est retenu au passage : c'est la date que l'IED donne à l'événement, bien
+  // plus fidèle que l'instant de réception.
+  if (mms_bit(opt, optn, 1) && !ber::read_tlv(c, tag, b, l)) return false;   // n° de séquence
+  if (mms_bit(opt, optn, 2)) {
+    if (!ber::read_tlv(c, tag, b, l)) return false;                          // TimeOfEntry
+    out.t_source = binary_time_61850(b, l);
+  }
+  size_t a_sauter = 0;
+  if (mms_bit(opt, optn, 4)) ++a_sauter;          // nom du jeu de données
+  if (mms_bit(opt, optn, 6)) ++a_sauter;          // débordement de tampon
+  if (mms_bit(opt, optn, 7)) ++a_sauter;          // identifiant d'entrée
+  if (mms_bit(opt, optn, 8)) ++a_sauter;          // révision de configuration
+  if (mms_bit(opt, optn, 9)) a_sauter += 2;       // segmentation
+  for (size_t i = 0; i < a_sauter; ++i) {
+    if (!ber::read_tlv(c, tag, b, l)) return false;
+  }
+
+  if (!ber::read_tlv(c, tag, b, l) || tag != 0x84) return false;   // chaîne d'inclusion
+  const std::vector<size_t> inclus = mms_included(b, l);
+
+  // Références de données : une chaîne par membre inclus, avant les valeurs.
+  if (mms_bit(opt, optn, 5)) {
+    for (size_t i = 0; i < inclus.size(); ++i) {
+      if (!ber::read_tlv(c, tag, b, l)) return false;
+    }
+  }
+
+  for (size_t rang = 0; rang < inclus.size() && ber::read_tlv(c, tag, b, l); ++rang) {
+    double v = 0;
+    const bool ok = (tag == 0xA2 || tag == 0xA1) ? mms_first_value(b, l, v)
+                                                 : mms_value(tag, b, l, v);
+    if (ok) out.valeurs.emplace_back(inclus[rang], v);
+  }
+  return true;
+}
+
 class MmsDriver : public IProtocolDriver {
  public:
   MmsDriver(const LinkConfig& link, IPointSink& sink) : link_(link), sink_(sink) {
@@ -97,6 +255,7 @@ class MmsDriver : public IProtocolDriver {
       Point pt;
       pt.ref = p.str("ref");
       pt.fc = p.str("fc", "MX");
+      pt.index = static_cast<size_t>(std::max<double>(0, p.num("index", 0)));
       pt.period_s = std::max(0.05, p.period_ms / 1000.0);
       pt.gain = p.num("gain", 1);
       pt.offset = p.num("offset", 0);
@@ -112,7 +271,10 @@ class MmsDriver : public IProtocolDriver {
                            timeout_ms(), err);
     if (fd_ < 0) return false;
     if (!associer(err)) { close(); return false; }
-    if (!traduire(err)) { close(); return false; }
+    // En mode rapports, un point est désigné par son INDICE dans le jeu de
+    // données : il n'a pas de référence d'objet à traduire, et en réclamer une
+    // ferait clignoter le lien sur un défaut qui n'existe pas.
+    if (!rapports_ && !traduire(err)) { close(); return false; }
     if (rapports_ && !activer_rapport(err)) { close(); return false; }
     for (Point& p : points_) p.due = 0;
     return true;
@@ -149,6 +311,7 @@ class MmsDriver : public IProtocolDriver {
   struct Point {
     std::string ref, fc;
     std::string domaine, element;       // traduction MMS
+    size_t index = 0;                   // rang dans le jeu de données (rapports)
     bool valide = false;
     double period_s = 1, due = 0;
     double gain = 1, offset = 0;
@@ -189,7 +352,7 @@ class MmsDriver : public IProtocolDriver {
       if (p.valide) ++bons;
       else sink_.warn("référence illisible : « " + p.ref + " » (attendu LD/LN.DO.DA)");
     }
-    if (bons == 0 && !rapports_) {
+    if (bons == 0) {
       err = "aucune référence d'objet exploitable dans ce lien";
       return false;
     }
@@ -278,17 +441,14 @@ class MmsDriver : public IProtocolDriver {
     }
 
     std::vector<uint8_t> pdu;
-    if (!recevoir(pdu, timeout_ms(), err)) {
+    if (!attendre_reponse(invoke, pdu, err)) {
       if (err.empty()) err = "équipement muet (délai dépassé)";
       return false;
     }
-    if (pdu.empty()) return true;
-    if (pdu[0] == 0xA3) { traiter_rapport(pdu); return true; }   // rapport spontané
-    if (pdu[0] == 0xA2) {                                        // confirmedErrorPDU
+    if (pdu[0] == 0xA2) {                               // confirmedErrorPDU
       sink_.warn("lecture refusée par l'équipement");
       return true;
     }
-    if (pdu[0] != 0xA1) return true;
 
     // confirmed-ResponsePDU → read → listOfAccessResult, deux niveaux plus bas.
     const uint8_t* corps = nullptr;
@@ -299,6 +459,40 @@ class MmsDriver : public IProtocolDriver {
     if (!iso::find_tag(corps, cl, 0xA1, res, rl)) { res = corps; rl = cl; }
     publier_liste(res, rl, lot);
     return true;
+  }
+
+  /**
+   * Attend la réponse portant CET identifiant d'invocation.
+   *
+   * Deux raisons de ne pas se contenter du premier PDU qui arrive. D'abord
+   * l'appariement : sans lui, une réponse retardée décalerait le flux
+   * durablement — chaque lot de valeurs se poserait sur les points du lot
+   * suivant, sans qu'aucune erreur ne le signale (même garde-fou qu'en Modbus).
+   * Ensuite les rapports : un IED notifie quand il veut, y compris entre une
+   * requête et sa réponse. Les prendre pour la réponse ferait échouer
+   * l'activation d'un bloc dès le premier rapport un peu pressé ; ils sont donc
+   * traités au passage, et l'attente reprend.
+   *
+   * false avec `err` vide = délai dépassé, à l'appelant de le qualifier.
+   */
+  bool attendre_reponse(int32_t invoke, std::vector<uint8_t>& out, std::string& err) {
+    const double fin = net::mono_s() + timeout_ms() / 1000.0;
+    for (;;) {
+      const int restant = static_cast<int>((fin - net::mono_s()) * 1000);
+      if (restant <= 0) { err.clear(); return false; }
+
+      std::vector<uint8_t> pdu;
+      if (!recevoir(pdu, restant, err)) {
+        if (!err.empty()) return false;
+        continue;                                       // délai partiel : on attend
+      }
+      if (pdu.empty()) continue;
+      if (pdu[0] == 0xA3) { traiter_rapport(pdu); continue; }   // rapport spontané
+      int64_t id = 0;
+      if (!mms_invoke_id(pdu.data(), pdu.size(), id) || id != invoke) continue;
+      out = std::move(pdu);
+      return true;
+    }
   }
 
   /** Une valeur par point demandé, dans l'ordre de la requête. */
@@ -330,6 +524,16 @@ class MmsDriver : public IProtocolDriver {
    * Active le bloc de rapport : écriture de RptEna (et des attributs de
    * déclenchement si l'utilisateur les a réglés). C'est la seule écriture du
    * pilote, et elle ne porte que sur le bloc lui-même.
+   *
+   * Quatre écritures dans cet ordre, et l'ordre compte :
+   *   RptEna = faux    un bloc en service refuse qu'on change ses conditions
+   *                    de déclenchement — et un BRCB laissé actif par une
+   *                    session précédente est le cas courant, pas l'exception ;
+   *   TrgOps, IntgPd   le réglage proprement dit ;
+   *   RptEna = vrai    mise en service ;
+   *   GI = vrai        interrogation générale : un rapport complet tout de
+   *                    suite, pour partir d'un état connu au lieu d'attendre
+   *                    le premier changement. Même raison qu'en IEC-104.
    */
   bool activer_rapport(std::string& err) {
     const std::string rcb = link_.str("rcbRef");
@@ -345,15 +549,19 @@ class MmsDriver : public IProtocolDriver {
     rcb_domaine_ = domaine;
     rcb_element_ = element;
 
-    // TrgOps et IntgPd d'abord, RptEna en dernier : un bloc déjà actif refuse
-    // qu'on modifie ses conditions de déclenchement.
-    ecrire_rcb(element + "$TrgOps", ber::wrap(0x84, trg_ops()));
     const int intg = static_cast<int>(std::clamp<double>(link_.num("intgPd", 0), 0, 3600000));
+    ecrire_rcb(element + "$RptEna", ber::wrap(0x83, {0x00}));
+    ecrire_rcb(element + "$TrgOps",
+               ber::wrap(0x84, mms_trg_ops(link_.str("trgOps", "dchg"), intg > 0)));
     if (intg > 0) ecrire_rcb(element + "$IntgPd", ber::wrap(0x86, ber::put_uint_body(intg)));
     if (!ecrire_rcb(element + "$RptEna", ber::wrap(0x83, {0x01}))) {
       err = "l'équipement a refusé d'activer le bloc de rapport " + rcb;
       return false;
     }
+    // Un IED qui ignore l'interrogation générale reste parfaitement utilisable :
+    // ses points partent simplement du premier changement. L'échec n'abat donc
+    // pas le lien.
+    ecrire_rcb(element + "$GI", ber::wrap(0x83, {0x01}));
     return true;
   }
 
@@ -369,18 +577,6 @@ class MmsDriver : public IProtocolDriver {
     return !element.empty();
   }
 
-  /** Conditions de déclenchement, en chaîne de bits de 6 bits. */
-  std::vector<uint8_t> trg_ops() const {
-    const std::string t = link_.str("trgOps", "dchg");
-    uint8_t bits = 0;
-    if (t == "dchg") bits = 0x20;                 // bit 1 : changement de valeur
-    else if (t == "qchg") bits = 0x10;            // bit 2 : changement de qualité
-    else if (t == "dupd") bits = 0x08;            // bit 3 : mise à jour
-    else bits = 0x04;                             // intégrité (périodique)
-    if (link_.num("intgPd", 0) > 0) bits |= 0x04;
-    return {0x02, bits};                          // 2 bits de bourrage
-  }
-
   bool ecrire_rcb(const std::string& element, const std::vector<uint8_t>& valeur) {
     const int32_t invoke = ++invoke_;
     const std::vector<uint8_t> req = ber::wrap(
@@ -393,113 +589,21 @@ class MmsDriver : public IProtocolDriver {
     std::string err;
     if (!emettre(iso::cotp_data(iso::session_data(iso::presentation_data(req))), err)) return false;
     std::vector<uint8_t> pdu;
-    if (!recevoir(pdu, timeout_ms(), err)) return false;
-    return !pdu.empty() && pdu[0] == 0xA1;        // confirmed-ResponsePDU
+    if (!attendre_reponse(invoke, pdu, err)) return false;
+    return pdu[0] == 0xA1;                        // confirmed-ResponsePDU
   }
 
-  /** Bit `k` d'une chaîne de bits BER (octet de bourrage en tête). */
-  static bool bit_de(const uint8_t* b, size_t n, size_t k) {
-    const size_t octet = 1 + k / 8;
-    if (octet >= n) return false;
-    return (b[octet] >> (7 - (k % 8))) & 1;
-  }
-
-  /** Nombre de bits à 1 d'une chaîne de bits (membres inclus dans un rapport). */
-  static size_t bits_a_un(const uint8_t* b, size_t n) {
-    if (n < 2) return 0;
-    const size_t total = (n - 1) * 8 - (b[0] & 7);
-    size_t c = 0;
-    for (size_t k = 0; k < total; ++k) if (bit_de(b, n, k)) ++c;
-    return c;
-  }
-
-  /**
-   * InformationReport. La liste contient, dans cet ordre : RptID, OptFlds,
-   * puis les champs optionnels ANNONCÉS PAR OptFlds, la chaîne d'inclusion,
-   * éventuellement les références de données, et enfin les valeurs.
-   *
-   * Il faut vraiment décoder OptFlds : se repérer sur « la chaîne de bits »
-   * ne suffit pas, OptFlds en est une aussi — et prendre la première fait
-   * lire le numéro de séquence à la place de la première valeur.
-   *
-   * Bits d'OptFlds (IEC 61850-8-1) : 1 numéro de séquence, 2 horodatage,
-   * 3 motif d'inclusion, 4 nom du jeu, 5 référence de données, 6 débordement
-   * de tampon, 7 identifiant d'entrée, 8 révision de configuration,
-   * 9 segmentation.
-   */
+  /** Un rapport reçu : décodage, puis publication sur les points visés. */
   void traiter_rapport(const std::vector<uint8_t>& pdu) {
-    if (pdu.empty() || pdu[0] != 0xA3) return;
-    const uint8_t* rapport = nullptr;
-    size_t rl = 0;
-    if (!iso::find_tag(pdu.data(), pdu.size(), 0xA0, rapport, rl)) return;
-
-    // listOfAccessResult est le DERNIER élément de même étiquette : le premier
-    // est la spécification d'accès.
-    const uint8_t* liste = nullptr;
-    size_t ll = 0;
-    {
-      ber::Cursor t(rapport, rl);
-      uint8_t tg = 0;
-      const uint8_t* bb = nullptr;
-      size_t lb = 0;
-      while (ber::read_tlv(t, tg, bb, lb)) {
-        if (tg == 0xA0) { liste = bb; ll = lb; }
-        if (t.done()) break;
-      }
-    }
-    if (!liste) return;
-
-    ber::Cursor c(liste, ll);
-    uint8_t tag = 0;
-    const uint8_t* b = nullptr;
-    size_t l = 0;
-
-    if (!ber::read_tlv(c, tag, b, l)) return;              // RptID
-    if (!ber::read_tlv(c, tag, b, l) || tag != 0x84) return;   // OptFlds
-    const uint8_t* opt = b;
-    const size_t optn = l;
-
-    // Champs optionnels annoncés, dans l'ordre de la norme. L'horodatage
-    // d'entrée est retenu au passage : c'est la date que l'IED donne à
-    // l'événement, bien plus fidèle que l'instant de réception.
-    double t_src = 0;
-    if (bit_de(opt, optn, 1) && !ber::read_tlv(c, tag, b, l)) return;   // n° de séquence
-    if (bit_de(opt, optn, 2)) {
-      if (!ber::read_tlv(c, tag, b, l)) return;                        // TimeOfEntry
-      t_src = binary_time_61850(b, l);
-    }
-    size_t a_sauter = 0;
-    if (bit_de(opt, optn, 4)) ++a_sauter;                  // nom du jeu de données
-    if (bit_de(opt, optn, 6)) ++a_sauter;                  // débordement de tampon
-    if (bit_de(opt, optn, 7)) ++a_sauter;                  // identifiant d'entrée
-    if (bit_de(opt, optn, 8)) ++a_sauter;                  // révision de configuration
-    if (bit_de(opt, optn, 9)) a_sauter += 2;               // segmentation
-    for (size_t i = 0; i < a_sauter; ++i) {
-      if (!ber::read_tlv(c, tag, b, l)) return;
-    }
-
-    if (!ber::read_tlv(c, tag, b, l) || tag != 0x84) return;   // chaîne d'inclusion
-    const size_t membres = bits_a_un(b, l);
-
-    // Références de données : une chaîne par membre inclus, avant les valeurs.
-    if (bit_de(opt, optn, 5)) {
-      for (size_t i = 0; i < membres; ++i) {
-        if (!ber::read_tlv(c, tag, b, l)) return;
-      }
-    }
-
-    for (size_t rang = 0; rang < membres && ber::read_tlv(c, tag, b, l); ++rang) {
-      double v = 0;
-      const bool ok = (tag == 0xA2 || tag == 0xA1) ? mms_first_value(b, l, v)
-                                                   : mms_value(tag, b, l, v);
-      if (ok) publier_rang(rang, v, t_src);
-    }
+    MmsReport r;
+    if (!mms_parse_report(pdu.data(), pdu.size(), r)) return;
+    for (const auto& [index, valeur] : r.valeurs) publier_rang(index, valeur, r.t_source);
   }
 
-  /** Publie sur tous les points qui visent ce rang du jeu de données. */
-  void publier_rang(size_t rang, double v, double t_source) {
+  /** Publie sur tous les points qui visent cet indice du jeu de données. */
+  void publier_rang(size_t index, double v, double t_source) {
     for (size_t i = 0; i < points_.size(); ++i) {
-      if (static_cast<size_t>(link_.points[i].num("index", 0)) != rang) continue;
+      if (points_[i].index != index) continue;
       sink_.publish(i, v * points_[i].gain + points_[i].offset, t_source);
     }
   }

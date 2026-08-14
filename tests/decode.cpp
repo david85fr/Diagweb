@@ -20,6 +20,7 @@
 #include "drivers/common/ber.hpp"
 #include "drivers/iec61850/goose.hpp"
 #include "drivers/iec104/iec104.hpp"
+#include "drivers/iec61850/mms.hpp"
 #include "drivers/iec61850/sv.hpp"
 #include "drivers/snmp/dateandtime.hpp"
 #include "lldp.hpp"
@@ -602,6 +603,152 @@ int main() {
             "qualité 0x" + std::to_string(q));
       lu = ok && sv_channel(asdus[0].data, asdus[0].data_len, 40, v);
       check("SV : voie au-delà du bloc de données", ok && !lu);
+    }
+  }
+
+  // ---- IEC 61850 : rapports MMS (BRCB/URCB) -----------------------------
+  // Trois décodages qui, faux, ne provoquent aucune panne visible : ils
+  // publient une valeur juste sur la mauvaise variable, programment l'IED pour
+  // une autre condition de déclenchement, ou appliquent une réponse retardée au
+  // lot de points suivant. Tous produisent des courbes crédibles et fausses.
+  {
+    // Chaîne de bits BER : un octet de bourrage en tête, bit 0 en tête du
+    // premier octet de données — la convention de TrgOps, d'OptFlds et de la
+    // chaîne d'inclusion.
+    {
+      const uint8_t tout[] = {0x06, 0xC0};             // bits 0 et 1, 6 de bourrage
+      const std::vector<size_t> a = mms_included(tout, sizeof tout);
+      check("rapport : jeu complet inclus", a.size() == 2 && a[0] == 0 && a[1] == 1,
+            std::to_string(a.size()) + " membre(s)");
+
+      const uint8_t seul[] = {0x06, 0x40};             // bit 1 seulement
+      const std::vector<size_t> b = mms_included(seul, sizeof seul);
+      check("rapport : membre isolé repéré par son indice, pas par son rang",
+            b.size() == 1 && b[0] == 1,
+            b.empty() ? "aucun" : "indice " + std::to_string(b[0]));
+
+      const uint8_t large[] = {0x02, 0x00, 0x44};      // bits 9 et 13, sur deux octets
+      const std::vector<size_t> c = mms_included(large, sizeof large);
+      check("rapport : chaîne d'inclusion sur plusieurs octets",
+            c.size() == 2 && c[0] == 9 && c[1] == 13,
+            c.size() == 2 ? std::to_string(c[0]) + " et " + std::to_string(c[1])
+                          : std::to_string(c.size()) + " membre(s)");
+
+      const uint8_t court[] = {0x00};
+      check("rapport : chaîne d'inclusion tronquée refusée",
+            mms_included(court, sizeof court).empty());
+    }
+
+    // TrgOps : reserved(0), data-change(1), quality-change(2), data-update(3),
+    // integrity(4), general-interrogation(5). Un décalage d'un bit programme
+    // l'IED pour une AUTRE condition, et le lien reste muet sans rien signaler.
+    {
+      const auto bit = [](const std::vector<uint8_t>& s, size_t k) {
+        return mms_bit(s.data(), s.size(), k);
+      };
+      const std::vector<uint8_t> dchg = mms_trg_ops("dchg", false);
+      check("TrgOps : changement de valeur = bit 1",
+            dchg.size() == 2 && bit(dchg, 1) && !bit(dchg, 2) && !bit(dchg, 4));
+      check("TrgOps : interrogation générale toujours demandée (bit 5)", bit(dchg, 5));
+      const std::vector<uint8_t> qchg = mms_trg_ops("qchg", false);
+      check("TrgOps : changement de qualité = bit 2",
+            bit(qchg, 2) && !bit(qchg, 1) && !bit(qchg, 3));
+      const std::vector<uint8_t> dupd = mms_trg_ops("dupd", false);
+      check("TrgOps : mise à jour = bit 3", bit(dupd, 3) && !bit(dupd, 2));
+      const std::vector<uint8_t> integ = mms_trg_ops("integrity", false);
+      check("TrgOps : périodique = bit 4 (intégrité)", bit(integ, 4) && !bit(integ, 3));
+      const std::vector<uint8_t> mixte = mms_trg_ops("dchg", true);
+      check("TrgOps : période d'intégrité ajoutée au déclenchement sur valeur",
+            bit(mixte, 1) && bit(mixte, 4));
+    }
+
+    // Un InformationReport tel qu'un IED l'émet : RptID, OptFlds, numéro de
+    // séquence, chaîne d'inclusion, puis les valeurs des seuls membres inclus.
+    {
+      const auto rapport = [](const std::vector<uint8_t>& inclusion,
+                              const std::vector<uint8_t>& valeurs,
+                              bool references) {
+        std::vector<uint8_t> opt = {0x06, 0x40, 0x00};        // bit 1 : n° de séquence
+        if (references) opt[1] |= 0x04;                       // bit 5 : réf. de données
+        std::vector<uint8_t> liste = ber::cat({
+            ber::put_str(0x8A, "brcb01"),                     // RptID
+            ber::wrap(0x84, opt),                             // OptFlds
+            ber::wrap(0x85, {0x07}),                          // SqNum
+        });
+        const std::vector<uint8_t> incl = ber::wrap(0x84, inclusion);
+        liste.insert(liste.end(), incl.begin(), incl.end());
+        if (references) {
+          // Une référence par membre inclus, entre la chaîne d'inclusion et
+          // les valeurs — c'est là que la norme les place.
+          for (size_t i = 0; i < mms_included(inclusion.data(), inclusion.size()).size(); ++i) {
+            const std::vector<uint8_t> r = ber::put_str(0x8A, "LD0/XCBR1$ST$Pos");
+            liste.insert(liste.end(), r.begin(), r.end());
+          }
+        }
+        liste.insert(liste.end(), valeurs.begin(), valeurs.end());
+        return ber::wrap(0xA3, ber::wrap(0xA0, ber::cat({ber::put_str(0x80, "RPT"),
+                                                         ber::wrap(0xA0, liste)})));
+      };
+      // Flottant IEC 61850 : largeur d'exposant, puis IEEE-754 gros-boutiste.
+      const std::vector<uint8_t> f50 = {0x87, 0x05, 0x08, 0x42, 0x48, 0x00, 0x00};
+      const std::vector<uint8_t> pos = {0x85, 0x01, 0x02};
+
+      {
+        const std::vector<uint8_t> pdu =
+            rapport({0x06, 0xC0}, ber::cat({pos, f50}), false);
+        MmsReport r;
+        const bool ok = mms_parse_report(pdu.data(), pdu.size(), r);
+        check("rapport complet : deux valeurs, aux indices 0 et 1",
+              ok && r.valeurs.size() == 2 && r.valeurs[0].first == 0 &&
+                  r.valeurs[0].second == 2 && r.valeurs[1].first == 1,
+              ok ? std::to_string(r.valeurs.size()) + " valeur(s)" : "échec");
+        if (ok && r.valeurs.size() == 2) near("rapport complet : flottant décodé",
+                                              r.valeurs[1].second, 50.0);
+      }
+      {
+        // Le cas qui compte : SEUL le membre d'indice 1 a changé. Se fier au
+        // rang publierait 50,0 sur la position du disjoncteur.
+        const std::vector<uint8_t> pdu = rapport({0x06, 0x40}, f50, false);
+        MmsReport r;
+        const bool ok = mms_parse_report(pdu.data(), pdu.size(), r);
+        check("rapport partiel : la valeur porte l'indice 1, pas le rang 0",
+              ok && r.valeurs.size() == 1 && r.valeurs[0].first == 1,
+              ok && !r.valeurs.empty() ? "indice " + std::to_string(r.valeurs[0].first)
+                                       : "échec");
+      }
+      {
+        // Références de données annoncées : elles précèdent les valeurs et
+        // doivent être sautées, sinon la première « valeur » est une chaîne.
+        const std::vector<uint8_t> pdu = rapport({0x06, 0x40}, f50, true);
+        MmsReport r;
+        const bool ok = mms_parse_report(pdu.data(), pdu.size(), r);
+        check("rapport : références de données sautées quand OptFlds les annonce",
+              ok && r.valeurs.size() == 1 && r.valeurs[0].first == 1 &&
+                  std::fabs(r.valeurs[0].second - 50.0) < 1e-6,
+              ok && !r.valeurs.empty() ? std::to_string(r.valeurs[0].second) : "échec");
+      }
+    }
+
+    // Appariement d'une réponse à sa requête : sans lui, une réponse retardée
+    // se poserait sur le lot de points suivant — toutes les valeurs fausses,
+    // durablement, et sans la moindre erreur signalée.
+    {
+      // Décodé AVANT check() : l'ordre d'évaluation des arguments n'étant pas
+      // garanti, le détail affiché serait sinon celui du tour précédent.
+      int64_t id = 0;
+      const std::vector<uint8_t> reponse =
+          ber::wrap(0xA1, ber::cat({ber::put_int(4242), ber::wrap(0xA4, {})}));
+      bool lu = mms_invoke_id(reponse.data(), reponse.size(), id);
+      check("MMS : identifiant d'invocation d'une réponse confirmée", lu && id == 4242,
+            std::to_string(id));
+      const std::vector<uint8_t> erreur =
+          ber::wrap(0xA2, ber::cat({ber::wrap(0x80, {0x11}), ber::wrap(0xA2, {})}));
+      lu = mms_invoke_id(erreur.data(), erreur.size(), id);
+      check("MMS : identifiant d'invocation d'une erreur confirmée", lu && id == 0x11,
+            std::to_string(id));
+      const std::vector<uint8_t> spontane = ber::wrap(0xA3, ber::wrap(0xA0, {}));
+      check("MMS : un rapport spontané ne porte pas d'identifiant d'invocation",
+            !mms_invoke_id(spontane.data(), spontane.size(), id));
     }
   }
 

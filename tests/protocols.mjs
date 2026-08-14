@@ -389,13 +389,27 @@ check('IEC 61850 : entier lu par MMS', last('@poste61850.pos') === 2,
   'valeur ' + last('@poste61850.pos'));
 check('IEC 61850 : objet inconnu ne publie rien',
   got.get('@poste61850.absent').length === 0);
+// L'IED simulé n'émet de rapport sur changement que si TrgOps porte vraiment le
+// bit « data-change », et ne répond à l'interrogation générale que si le bit
+// correspondant y est aussi : un client qui se décale d'un bit n'obtient rien.
 check('IEC 61850 : valeur reçue par rapport (indice 0 du jeu de données)',
   last('@rapports.pos') === 2, 'valeur ' + last('@rapports.pos'));
 check('IEC 61850 : flottant reçu par rapport (indice 1)',
-  Math.abs(last('@rapports.courant') - 50) < 1e-6, 'valeur ' + last('@rapports.courant'));
+  [50, 51.5].some((v) => Math.abs(last('@rapports.courant') - v) < 1e-6),
+  'valeur ' + last('@rapports.courant'));
 check('IEC 61850 : rapports reçus en flux (plusieurs notifications)',
   got.get('@rapports.pos').length >= 2,
   got.get('@rapports.pos').length + ' rapport(s) en 1,4 s');
+// Un rapport déclenché par changement ne porte QUE le membre qui a changé :
+// c'est la chaîne d'inclusion qui dit lequel, jamais le rang de la valeur.
+// Prendre le rang publierait le courant sur la position du disjoncteur —
+// une valeur fausse, et silencieuse.
+check('IEC 61850 : rapport partiel replacé par la chaîne d’inclusion',
+  got.get('@rapports.courant').some((v) => Math.abs(v - 51.5) < 1e-6),
+  'valeurs reçues : ' + [...new Set(got.get('@rapports.courant'))].join(', '));
+check('IEC 61850 : un rapport partiel ne déborde pas sur le membre voisin',
+  got.get('@rapports.pos').length > 0 && got.get('@rapports.pos').every((v) => v === 2),
+  'valeurs reçues : ' + [...new Set(got.get('@rapports.pos'))].join(', '));
 check('IEC 61850 : point GOOSE sans valeur si le lien n’ouvre pas',
   got.get('@goose.decl').length === 0);
 check('OPC UA : Double reçu par abonnement et mis à l’échelle',

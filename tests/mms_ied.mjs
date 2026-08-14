@@ -176,20 +176,64 @@ const writeResponse = (invoke) => tlv(0xa1, Buffer.concat([
   int(invoke), tlv(0xa5, tlv(0xa0, tlv(0x81, Buffer.from([])))),
 ]));
 
+/** Écriture : couples (nom d'objet, valeur), dans l'ordre de la requête. */
+function ecrituresDemandees(pdu) {
+  const parties = [];
+  let i = 0;
+  while (i < pdu.length) {
+    const t = readTlv(pdu, i);
+    if (!t) break;
+    if (t.tag === 0xa0) parties.push(t.body);
+    i = t.next;
+  }
+  if (parties.length < 2) return [];
+  const noms = nomsDemandes(parties[0]);
+  const valeurs = [];
+  let j = 0;
+  while (j < parties[1].length) {
+    const t = readTlv(parties[1], j);
+    if (!t) break;
+    valeurs.push(t);
+    j = t.next;
+  }
+  return noms.map((n, k) => [n, valeurs[k]]);
+}
+
+/** Bit `k` d'une chaîne de bits BER (octet de bourrage en tête, bit 0 devant). */
+const bitDe = (b, k) => (b.length > 1 + (k >> 3) ? (b[1 + (k >> 3)] >> (7 - (k & 7))) & 1 : 0);
+
+/** Chaîne d'inclusion : les indices du jeu de données réellement rapportés. */
+function chaineInclusion(indices, taille) {
+  const octets = Math.ceil(taille / 8);
+  const b = Buffer.alloc(octets);
+  for (const i of indices) b[i >> 3] |= 0x80 >> (i & 7);
+  return Buffer.from([octets * 8 - taille, ...b]);
+}
+
+const flottant = (v) => {
+  const b = Buffer.alloc(5);
+  b[0] = 0x08;                                            // largeur d'exposant
+  b.writeFloatBE(v, 1);
+  return tlv(0x87, b);
+};
+
+// Jeu de données du bloc de rapport : indice 0 = Pos.stVal, indice 1 = courant.
+const TAILLE_JEU = 2;
+
 /**
  * InformationReport : RptID, OptFlds, SqNum, puis la chaîne d'inclusion et les
- * valeurs du jeu de données — la forme qu'un IED réel produit.
+ * valeurs — la forme qu'un IED réel produit.
+ *
+ * `indices` dit QUELS membres du jeu de données sont rapportés : un rapport
+ * déclenché par changement ne porte que ceux qui ont changé, et c'est la chaîne
+ * d'inclusion — pas le rang de la valeur — qui dit lesquels.
  */
-function informationReport(n) {
-  const valeurs = [
-    tlv(0x85, [0x02]),                                    // Pos.stVal = 2
-    tlv(0x87, [0x08, 0x42, 0x48, 0x00, 0x00]),            // 50,0
-  ];
+function informationReport(n, indices, valeurs) {
   const liste = tlv(0xa0, Buffer.concat([
     tlv(0x8a, Buffer.from('brcb01')),                     // RptID
     tlv(0x84, Buffer.from([0x06, 0x40, 0x00])),           // OptFlds : numéro de séquence
     tlv(0x85, [n & 0xff]),                                // SqNum
-    tlv(0x84, Buffer.from([0x06, 0xc0])),                 // chaîne d'inclusion
+    tlv(0x84, chaineInclusion(indices, TAILLE_JEU)),
     ...valeurs,
   ]));
   return tlv(0xa3, tlv(0xa0, Buffer.concat([
@@ -198,13 +242,40 @@ function informationReport(n) {
   ])));
 }
 
+/** Tout le jeu de données : ce que produit une interrogation générale. */
+const rapportComplet = (n) =>
+  informationReport(n, [0, 1], [tlv(0x85, [0x02]), flottant(50)]);
+
+/** Seul l'indice 1 a changé : le cas courant d'un déclenchement sur valeur. */
+const rapportPartiel = (n) => informationReport(n, [1], [flottant(51.5)]);
+
 // ---------------------------------------------------------------- serveur
 const port = Number(process.argv[2] || 102);
-let compteur = 0;
 
 const server = net.createServer((sock) => {
   let buf = Buffer.alloc(0);
   let timer = null;
+  // État du bloc de rapport, tenu comme le ferait un IED : les conditions de
+  // déclenchement commandent réellement ce qui est émis. Un client qui se
+  // trompe de bit dans TrgOps n'obtient donc rien — c'est tout l'intérêt
+  // d'écrire ce simulateur d'après la norme, et non d'après le pilote.
+  let dchg = false;                                       // TrgOps bit 1
+  let gi = false;                                         // TrgOps bit 5
+  let seq = 0;
+
+  const envoyer = (pdu) => sock.write(cotpData(sessData(presData(pdu))));
+
+  /** RptEna = vrai : les rapports sur changement partent, si TrgOps le permet. */
+  const activer = (actif) => {
+    if (timer) { clearInterval(timer); timer = null; }
+    if (!actif || !dchg) return;
+    timer = setInterval(() => {
+      // Un rapport complet de loin en loin, des rapports partiels entre-temps :
+      // les deux formes qu'un client doit savoir replacer dans le jeu.
+      seq += 1;
+      envoyer(seq % 4 === 0 ? rapportComplet(seq) : rapportPartiel(seq));
+    }, 100);
+  };
   sock.on('data', (d) => {
     buf = Buffer.concat([buf, d]);
     while (buf.length >= 4) {
@@ -237,10 +308,18 @@ const server = net.createServer((sock) => {
           sock.write(cotpData(sessData(presData(readResponse(invoke, nomsDemandes(service.body))))));
         } else if (service && service.tag === 0xa5) {             // Write (bloc de rapport)
           sock.write(cotpData(sessData(presData(writeResponse(invoke)))));
-          if (!timer) {
-            timer = setInterval(() => {
-              sock.write(cotpData(sessData(presData(informationReport(++compteur)))));
-            }, 100);
+          for (const [nom, valeur] of ecrituresDemandees(service.body)) {
+            const attribut = nom.slice(nom.lastIndexOf('$') + 1);
+            const vrai = !!(valeur && valeur.body.length && valeur.body[valeur.body.length - 1]);
+            if (attribut === 'TrgOps' && valeur) {
+              dchg = !!bitDe(valeur.body, 1);
+              gi = !!bitDe(valeur.body, 5);
+            } else if (attribut === 'RptEna') {
+              activer(vrai);
+            } else if (attribut === 'GI' && vrai && gi) {
+              // Interrogation générale : tout le jeu de données, tout de suite.
+              envoyer(rapportComplet(++seq));
+            }
           }
         }
       }

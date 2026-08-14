@@ -480,20 +480,40 @@ qui annonce quels champs optionnels précèdent les données : numéro de séque
 horodatage, nom du jeu, débordement de tampon, identifiant d'entrée, révision
 de configuration, segmentation. Se repérer sur « la chaîne de bits » ne suffit
 pas — OptFlds en est une aussi, et la confondre avec la chaîne d'inclusion fait
-lire le numéro de séquence à la place de la première valeur. Le nombre de
-membres inclus se lit dans la chaîne d'inclusion, et les références de données
-qui la suivent sont sautées si OptFlds les annonce.
+lire le numéro de séquence à la place de la première valeur. Les références de
+données qui suivent la chaîne d'inclusion sont sautées si OptFlds les annonce.
+
+**Un rapport ne porte que ce qui a changé**, et c'est le piège du mécanisme :
+la chaîne d'inclusion ne dit pas seulement *combien* de membres sont présents,
+elle dit *lesquels*. Le rang d'une valeur dans le rapport n'est donc pas son
+indice dans le jeu de données. Sur un jeu de dix membres dont seul le septième
+change, le rapport porte une valeur, et la ranger au rang 0 la publierait sur
+la première variable du jeu — un courant affiché comme une position de
+disjoncteur, sans le moindre message d'erreur. Seuls un rapport d'intégrité et
+une interrogation générale, qui incluent tout, font coïncider rang et indice —
+ce qui rend l'erreur invisible tant qu'on ne l'éprouve pas sur un rapport
+partiel.
 
 **Un bloc bufférisé (BRCB) conserve les rapports pendant une coupure** et les
 rejoue à la reconnexion ; un URCB perd ce qui s'est produit hors ligne. Pour du
 diagnostic, le bufférisé est le choix sûr.
 
+**Une interrogation générale est lancée juste après l'activation** (`GI`), pour
+la même raison qu'en IEC-104 : sans elle, un point resterait vide jusqu'au
+premier changement de sa donnée — sur une installation calme, cela peut durer
+des heures, et une variable muette se lit comme une variable en panne. Le bit
+d'interrogation générale est donc toujours posé dans `TrgOps`, en plus de la
+condition choisie ; c'est lui qui autorise la demande. Un IED qui ignore le
+`GI` reste utilisable : ses points partent simplement du premier changement.
+
 ##### La seule écriture de tout Diagweb
 
-Activer un rapport suppose d'écrire dans son bloc de contrôle : `TrgOps` et
-`IntgPd` d'abord — un bloc déjà actif refuse qu'on change ses conditions de
-déclenchement — puis `RptEna`. C'est une **exception assumée** à la règle de
-lecture seule, du même ordre que la requête SDO de CANopen :
+Activer un rapport suppose d'écrire dans son bloc de contrôle, et **l'ordre
+compte** : `RptEna` à faux d'abord — un bloc en service refuse qu'on change ses
+conditions de déclenchement, et un BRCB laissé actif par une session
+précédente est le cas courant, pas l'exception —, puis `TrgOps` et `IntgPd`,
+puis `RptEna` à vrai, et enfin `GI`. C'est une **exception assumée** à la règle
+de lecture seule, du même ordre que la requête SDO de CANopen :
 
 - elle ne touche **que les attributs du bloc de rapport**, jamais une donnée de
   procédé ;
@@ -715,6 +735,13 @@ Quelques garde-fous qui expliquent le comportement observé :
 - **CAN** : les identifiants attendus sont posés en **filtres noyau** et
   analysés une seule fois au démarrage — sans cela, chaque trame du bus
   réveillerait le processus qui partage le processeur avec le temps réel.
+- **Lecture MMS** : la réponse est appariée à sa requête par l'**identifiant
+  d'invocation**, comme en Modbus et pour la même raison. Une réponse retardée,
+  ou un rapport spontané glissé entre la demande et la réponse, décalerait
+  sinon le flux durablement : chaque lot de valeurs se poserait sur les points
+  du lot suivant, sans qu'aucune erreur ne le signale. Un PDU dont
+  l'identifiant ne correspond pas est écarté, et l'attente reprend jusqu'au
+  délai du lien.
 
 ## Points d'entrée REST
 
@@ -984,6 +1011,16 @@ association MMS, service Read, activation de bloc de rapport et émission
 d'`InformationReport`) en Node, configure les liens par
 REST et vérifie que les
 valeurs arrivent jusqu'au flux WebSocket.
+
+L'IED simulé est écrit d'après la norme, pas d'après le pilote, et **tient
+l'état de son bloc de rapport** : il n'émet sur changement que si `TrgOps`
+porte réellement le bit *data-change*, ne répond à l'interrogation générale que
+si le bit correspondant y est, et alterne rapports **complets** et **partiels**
+— ces derniers ne portant qu'un seul membre du jeu. Un client qui se décale
+d'un bit dans `TrgOps` n'obtient donc rien du tout, et un client qui range les
+valeurs par leur rang plutôt que par la chaîne d'inclusion publie la mauvaise
+variable : les deux erreurs échouent au test au lieu de n'apparaître que sur
+site.
 
 `tests/simulator.mjs` fait le même trajet contre le **simulateur d'équipements**
 (`docs/SIMULATEUR.md`), et vaut mieux qu'un bouchon : les deux moitiés du
