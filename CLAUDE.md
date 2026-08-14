@@ -33,7 +33,15 @@ fonctionnelles + état d'avancement) avant toute modification.
    « Educational Community License » là où le fichier dit Apache-2.0. Toute
    dépendance retenue est inscrite dans `docs/PROTOCOLES.md`
    § « Bibliothèques externes et licences », avec sa licence vérifiée.
-3. **UI et documentation en français.**
+3. **Interface bilingue français / anglais ; code source en anglais.**
+   Le français reste la langue de référence de l'interface : c'est lui qui est
+   écrit dans le code, et il sert de **clé de traduction** (`web/js/i18n.js`).
+   L'anglais vit dans `web/js/i18n-en.js` ; une entrée manquante laisse le
+   français à l'écran plutôt qu'une clé brute. Toute chaîne visible ajoutée
+   doit recevoir sa traduction — `node tools/check-i18n.mjs` mesure la
+   couverture en parcourant toutes les vues. **Chantier en cours** : les
+   commentaires, les identifiants et la documentation passent progressivement
+   à l'anglais (décision du propriétaire).
 4. **Tout objet d'interface porte une infobulle** (`title`) expliquant ce
    qu'il fait — un test de couverture le vérifie. Le menu ☰ → Aide doit
    rester à jour, car les infobulles n'existent pas sur écran tactile.
@@ -72,6 +80,8 @@ web/            sources de l'application (page de dev : web/index.html)
   js/protocols.js  **source de vérité** des protocoles réseau (champs, aides)
   js/protocols-ui.js fenêtre « Liens réseau » (☰) : liens, points, test
   js/sim.js     source de données simulée — implémente le contrat DataSource
+  js/i18n.js    interface bilingue : la clé de traduction est le texte français
+  js/i18n-en.js dictionnaire anglais (une entrée absente laisse le français)
   js/mosaic.js  mosaïque : placement et taille libres des tuiles (12 colonnes)
   js/chart.js   moteur de graphiques canvas (multi-échelles, gestes, échelles)
   js/source-ws.js source WebSocket (même contrat que sim.js)
@@ -108,8 +118,9 @@ tools/check-dist.py  dist/ à jour + page autonome (aucune ressource externe)
 tools/gen-catalog.mjs  régénère server/src/catalog.generated.hpp depuis config.js
 tools/gen-protocols.mjs régénère server/src/protocols.generated.hpp depuis protocols.js
 tools/check-drivers.mjs  un dossier de pilote par protocole (rejoué par la CI)
+tools/check-i18n.mjs  couverture de la traduction (parcourt toutes les vues)
 tools/serve.py  serveur d'aperçu (port 8080, en-têtes anti-cache)
-tests/ui.mjs    tests d'interface Playwright (36 vérifications)
+tests/ui.mjs    tests d'interface Playwright (39 vérifications)
 tests/dnd.mjs   tests de placement et déplacement de tuiles (10 vérifications, http requis)
 tests/protocols.mjs  liens réseau bout en bout (équipements simulés + agent snmpd
                 réel pour SNMPv3 ; serveur requis, secrets dans son environnement)

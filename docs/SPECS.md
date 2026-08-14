@@ -631,6 +631,36 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
 - Palette de courbes : 8 teintes catégorielles validées (déclinaisons claire
   et sombre), ordre fixe.
 
+## 8 ter bis. Interface bilingue (français / anglais)
+
+Un sélecteur dans le menu ☰ bascule l'interface entre **français** et
+**anglais**. Le choix est mémorisé dans le navigateur et vaut pour toutes les
+fenêtres du poste (annoncé par `BroadcastChannel`, comme l'apparence).
+
+**La clé de traduction est le texte français lui-même**, pas un identifiant
+inventé. Dans un logiciel déjà écrit et déjà volumineux, c'est ce qui coûte le
+moins et rapporte le plus : une traduction manquante laisse le français à
+l'écran — jamais une clé brute ni un libellé vide — le code reste lisible tel
+quel (on lit la phrase, pas `menu.table.duplicate`), et la reprise n'a pas
+demandé de toucher aux centaines d'appels existants.
+
+La traduction s'applique **au DOM**, pas aux appels : un `MutationObserver`
+traduit ce qui apparaît — fenêtres, menus, messages éphémères, pages réseau —
+sans que le reste du code sache qu'il existe une seconde langue. Un paragraphe
+mêlant du texte et des `<b>` est traduit **d'une pièce** (sinon on n'aurait que
+des morceaux de phrase) ; tout élément portant autre chose que de la mise en
+forme en ligne est traité nœud par nœud, pour ne jamais remplacer du texte mêlé
+à des valeurs mesurées. Seuls les textes dessinés au canevas passent par
+`DW.t()`, faute de nœud à observer.
+
+Changer de langue **recharge la page** : la session est déjà restaurée au
+chargement, on évite ainsi tout état à moitié traduit.
+
+`node tools/check-i18n.mjs` mesure la couverture en parcourant toutes les vues
+de l'application **rendue** — une phrase construite par concaténation n'existe
+nulle part dans les sources, seulement à l'écran, et c'est elle que le
+dictionnaire doit porter.
+
 ## 8 bis. Apparence (logo et couleurs de l'installation)
 
 L'outil est déployé chez des exploitants différents : l'interface doit pouvoir

@@ -2251,6 +2251,13 @@
       }
       majCible();
     });
+    // Langue : le libellé annonce la langue vers laquelle on bascule, et il
+    // ne passe pas par le dictionnaire — un sélecteur de langue traduit dans
+    // la langue qu'on veut quitter ne se trouverait pas.
+    const lang = $('langBtn');
+    lang.textContent = '🌐 ' + DW.i18n.langues[DW.i18n.autre()];
+    lang.addEventListener('click', () => DW.i18n.setLang(DW.i18n.autre()));
+
     $('layoutsBtn').addEventListener('click', openLayoutsModal);
     $('logBtn').addEventListener('click', openLogModal);
     $('tabAdd').addEventListener('click', () => { createTab(); });

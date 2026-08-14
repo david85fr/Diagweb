@@ -41,6 +41,10 @@
       }
       // L'apparence appartient à l'installation : elle vaut pour toutes les
       // fenêtres ouvertes sur le même contrôleur, sans attendre un rechargement.
+      else if (m.type === 'lang' && m.origin !== winId) {
+        try { localStorage.setItem('diagweb.lang', m.value); } catch (e) { /* ignoré */ }
+        location.reload();
+      }
       else if (m.type === 'appearance' && m.origin !== winId &&
                DW.appearance && DW.appearance.recevoir) {
         DW.appearance.recevoir(m.value);
@@ -51,6 +55,15 @@
   /** Annonce un renommage aux autres fenêtres de la même origine. */
   function shareRename(addr, name) {
     if (bc) bc.postMessage({ type: 'variable-renamed', origin: winId, addr, name });
+  }
+
+  /**
+   * Annonce un changement de langue aux autres fenêtres du poste : la langue
+   * est un réglage de l'installation, pas de l'onglet. Elles se rechargent,
+   * comme celle qui a fait le choix.
+   */
+  function shareLang(l) {
+    if (bc) bc.postMessage({ type: 'lang', origin: winId, value: l });
   }
 
   /** Annonce un changement d'apparence aux autres fenêtres. */
@@ -277,6 +290,7 @@
     endDrag,
     shareRename,
     shareAppearance,
+    shareLang,
     openInNewWindow,
     consumeOpenParam,
     describe,
