@@ -61,8 +61,24 @@ fonctionnelles + état d'avancement) avant toute modification.
    - **Récupérer avant de pousser** (`git pull --ff-only origin main`) :
      plusieurs sessions travaillent en parallèle sur ce dépôt, et `main` peut
      avoir avancé pendant le travail en cours.
-   - **Annoncer ce qui a été poussé** : le hash, les fichiers touchés, ce qui
-     reste en suspens (Artifact, GitHub Pages).
+   - **Annoncer ce qui a été poussé** : le hash et les fichiers touchés.
+7. **Les deux pages publiées suivent `dist/`, toujours.** Dès qu'un commit
+   `build : <hash>` change `dist/`, republier **dans la foulée**, sans attendre
+   qu'on le demande :
+   - **GitHub Pages** — `dist/index.html` recopié en racine de `gh-pages`
+     (avec `.nojekyll`), page publique https://david85fr.github.io/Diagweb/ ;
+   - **l'Artifact** — `dist/artifact.html` redéployé **au même URL**, favicon
+     stable 📈.
+
+   Ces deux pages n'ont **aucun serveur derrière elles** : elles tournent en
+   simulation purement navigateur, côté client, et c'est leur raison d'être —
+   montrer et éprouver l'interface sans contrôleur ni serveur de diagnostic,
+   en parallèle de la page servie par le serveur. Ne jamais y attendre de flux
+   réel, ni y renvoyer quelqu'un qui cherche des valeurs d'équipement.
+
+   Avant de republier, vérifier ce qui est déjà en ligne : plusieurs sessions
+   travaillent en parallèle, et l'autre a pu le faire. Comparer le tag de
+   version (`id="buildTag"`) plutôt que republier à l'aveugle.
 
 ## Réglages de session
 
@@ -178,12 +194,10 @@ Espace de noms JS global : `window.DW`. Scripts en IIFE, pas de modules ES
    `hash court · #n` du commit de sources fraîchement créé.
 4. **Commit de `dist/`** (« build : <hash> ») — ne pas amender le commit de
    sources, sinon le hash affiché ne correspondrait plus.
-5. Republier l'Artifact **au même URL** (redéployer `dist/artifact.html`,
-   favicon stable 📈).
-6. Mettre à jour GitHub Pages : recopier `dist/index.html` en racine de la
-   branche `gh-pages` (avec `.nojekyll`) et pousser — la page publique est
-   https://david85fr.github.io/Diagweb/.
-7. Push sur `main` (contrainte n° 6) — après `git pull --ff-only origin main`,
+5. Republier l'Artifact et GitHub Pages — **contrainte n° 7**, jamais
+   facultatif, jamais reporté à plus tard. Vérifier d'abord le tag de version
+   déjà en ligne : une autre session a pu s'en charger.
+6. Push sur `main` (contrainte n° 6) — après `git pull --ff-only origin main`,
    d'autres sessions poussant sur la même branche.
 
 **Avant de pousser** : `bash tools/check.sh` rejoue exactement les
