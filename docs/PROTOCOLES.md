@@ -761,6 +761,52 @@ passent à l'état « simulé » et les points produisent des signaux plausibles
 Utile pour préparer une configuration ou faire une démonstration ; l'état du
 lien dit clairement que les valeurs ne viennent pas du terrain.
 
+### Banc d'essai — les pilotes travaillent pour de vrai
+
+```bash
+node tools/bench.mjs          # monte le banc, reste au premier plan
+node tools/bench.mjs --stop   # retire les liens du banc
+```
+
+Deux choses très différentes, à ne pas confondre :
+
+| | Réseau | Ce qui est éprouvé |
+|---|---|---|
+| `--sim-protocols` | **aucun** | rien du pilote : les valeurs naissent dans le serveur |
+| `tools/bench.mjs` | **vraies sockets** | encodage, trames, délais, exceptions, horodatage |
+
+Le banc monte les équipements simulés de `tests/devices.mjs` — les mêmes que
+les tests de bout en bout, mais sur des ports fixes et pour longtemps :
+
+| Équipement | Transport | Port | Norme |
+|---|---|---|---|
+| Esclave Modbus TCP | TCP | 15020 | 502 |
+| Station IEC 60870-5-104 | TCP | 12404 | 2404 |
+| Agent SNMP v1/v2c simulé | UDP | 11161 | 161 |
+| Agent SNMP v3 réel (`snmpd`) | UDP | 11162 | 161 |
+| IED IEC 61850 (MMS) | TCP | 10102 | 102 |
+| Serveur OPC UA (open62541) | TCP | 14840 | 4840 |
+
+Les ports sont décalés **volontairement** : 502, 102 et 161 sont privilégiés
+(< 1024) et l'utilisateur d'un Codespace n'est pas root. Un lien vise le port
+qu'on lui donne, la démonstration est identique.
+
+Le banc ne possède que ses propres liens, préfixés `banc-` : les liens créés à
+la main sont relus, conservés et remis en place. Un banc d'essai n'efface
+jamais une configuration d'exploitation.
+
+SNMP v3 demande que le **serveur** porte les phrases secrètes dans son
+environnement — jamais dans la configuration :
+
+```bash
+export DIAGWEB_SECRET_AGENT_AUTH=motdepasseauth
+export DIAGWEB_SECRET_AGENT_PRIV=motdepassepriv
+```
+
+Sans elles, le lien v3 refuse de s'ouvrir : jamais de repli en clair. `snmpd`
+ou `diagweb-opcua-test-server` absent, le lien correspondant est posé
+**désactivé** et le banc le dit — aucune valeur inventée.
+
 ## Bibliothèques externes et licences
 
 Le serveur de diagnostic peut s'appuyer sur une bibliothèque tierce pour un
