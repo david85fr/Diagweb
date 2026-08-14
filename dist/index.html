@@ -1140,10 +1140,11 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
 
     <div class="topIcons">
       <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" title="Figer ou reprendre d’un coup tous les graphiques de l’onglet actif">⏸ Figer</button>
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">012d6d1 · #94</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">4145341 · #96</span>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
+        <button id="langBtn" type="button" title="Basculer l’interface entre le français et l’anglais — le choix est mémorisé et vaut pour toutes les fenêtres de ce poste">🌐 English</button>
         <button id="skinBtn" type="button" title="Apparence : logo de l’installation et couleurs de l’interface — réglages partagés par tous les postes quand la page est servie par le contrôleur">Apparence — logo et couleurs…</button>
         <button id="layoutsBtn" type="button" title="Configurations : enregistrer, télécharger (JSON/CSV), charger, copier la disposition de cet onglet">Configurations…</button>
         <button id="logBtn" type="button" title="Journal de données : enregistrer tous les échantillons des variables de l’onglet actif (dans le navigateur ou sur le contrôleur), puis les télécharger en CSV/JSON">Journal de données…<i id="logInd" class="recdot hide"></i></button>
@@ -5226,6 +5227,10 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       }
       // L'apparence appartient à l'installation : elle vaut pour toutes les
       // fenêtres ouvertes sur le même contrôleur, sans attendre un rechargement.
+      else if (m.type === 'lang' && m.origin !== winId) {
+        try { localStorage.setItem('diagweb.lang', m.value); } catch (e) { /* ignoré */ }
+        location.reload();
+      }
       else if (m.type === 'appearance' && m.origin !== winId &&
                DW.appearance && DW.appearance.recevoir) {
         DW.appearance.recevoir(m.value);
@@ -5236,6 +5241,15 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
   /** Annonce un renommage aux autres fenêtres de la même origine. */
   function shareRename(addr, name) {
     if (bc) bc.postMessage({ type: 'variable-renamed', origin: winId, addr, name });
+  }
+
+  /**
+   * Annonce un changement de langue aux autres fenêtres du poste : la langue
+   * est un réglage de l'installation, pas de l'onglet. Elles se rechargent,
+   * comme celle qui a fait le choix.
+   */
+  function shareLang(l) {
+    if (bc) bc.postMessage({ type: 'lang', origin: winId, value: l });
   }
 
   /** Annonce un changement d'apparence aux autres fenêtres. */
@@ -5462,6 +5476,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     endDrag,
     shareRename,
     shareAppearance,
+    shareLang,
     openInNewWindow,
     consumeOpenParam,
     describe,
@@ -9325,6 +9340,13 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       }
       majCible();
     });
+    // Langue : le libellé annonce la langue vers laquelle on bascule, et il
+    // ne passe pas par le dictionnaire — un sélecteur de langue traduit dans
+    // la langue qu'on veut quitter ne se trouverait pas.
+    const lang = $('langBtn');
+    lang.textContent = '🌐 ' + DW.i18n.langues[DW.i18n.autre()];
+    lang.addEventListener('click', () => DW.i18n.setLang(DW.i18n.autre()));
+
     $('layoutsBtn').addEventListener('click', openLayoutsModal);
     $('logBtn').addEventListener('click', openLogModal);
     $('tabAdd').addEventListener('click', () => { createTab(); });
