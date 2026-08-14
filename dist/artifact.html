@@ -253,6 +253,12 @@ button { font-family: var(--sans); }
 
 /* Retard sur le temps réel, dans l'en-tête d'une tuile figée. Il doit se voir :
    des valeurs figées sans indication se lisent comme des valeurs actuelles. */
+/* Historique épuisé : la vue figée ne peut plus rester en place, elle suit le
+   plus ancien échantillon disponible. La teinte change pour que ce basculement
+   se remarque. */
+.lag.lag-fin { color: var(--crit);
+  border-color: color-mix(in srgb, var(--crit) 55%, var(--line));
+  background: color-mix(in srgb, var(--crit) 14%, transparent); }
 .lag {
   flex: none;
   font: 600 11px var(--mono);
@@ -1140,7 +1146,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
 
     <div class="topIcons">
       <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" aria-label="Figer ou reprendre tout l’onglet" title="Figer d’un coup tout l’onglet actif : les courbes ET les valeurs numériques s’arrêtent sur l’instant courant">⏸</button>
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">fe60019 · #126</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">6992af6 · #132</span>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
@@ -1399,6 +1405,11 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     defaultPeriodMs: 10,     // période de rafraîchissement par défaut d'une variable
     periodChoices: [10, 20, 50, 100, 200, 500, 1000],
     horizonS: 330,           // profondeur d'historique conservée (s)
+    // Une vue figée retient l'historique qu'elle montre, au-delà de l'horizon
+    // ordinaire : sans cela le tampon défilerait sous elle et la vue se
+    // remettrait à avancer toute seule. Plafonné, car retenir est de la
+    // mémoire : au-delà, la vue recommence à suivre, et le graphique le dit.
+    holdMaxS: 1800,          // rétention maximale d'une vue figée (s)
     windows: [15, 30, 60, 120, 300],
     defaultWindowS: 60,
     maxCharts: 8,
@@ -2625,9 +2636,13 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     if (rec.refs <= 0) regs.delete(addr);
   }
 
+  /** Instant en deçà duquel l'historique ne doit pas être purgé (vue figée). */
+  let holdT = null;
+
   function tick() {
     const t = now();
-    const minT = t - CFG.horizonS;
+    let minT = t - CFG.horizonS;
+    if (holdT != null) minT = Math.min(minT, Math.max(holdT, t - CFG.holdMaxS));
     for (const [addr, rec] of regs) {
       // Rattrapage borné : si l'onglet a été suspendu, on saute en avant.
       if (t - rec.nextT > 2) rec.nextT = t;
@@ -2648,6 +2663,12 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
   DW.sources = DW.sources || {};
   DW.sources.sim = {
     name: 'Simulation locale',
+    /**
+     * Retient l'historique jusqu'à cet instant, au-delà de l'horizon ordinaire.
+     * Appelé par l'application quand une tuile est figée : ce qu'on regarde ne
+     * doit pas être jeté sous nos yeux. `null` rend la purge à l'horizon.
+     */
+    setHold(t) { holdT = (typeof t === 'number' && isFinite(t)) ? t : null; },
     defaultPeriodMs: CFG.defaultPeriodMs,
     now,
     subscribe,
@@ -2755,11 +2776,16 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     }
 
     function trim(ch) {
-      const minT = now() - horizonS;
+      let minT = now() - horizonS;
+      if (holdT != null) minT = Math.min(minT, Math.max(holdT, now() - CFG.holdMaxS));
       let cut = 0;
       while (cut < ch.ts.length && ch.ts[cut] < minT) cut++;
       if (cut > 400) { ch.ts.splice(0, cut); ch.vs.splice(0, cut); }
     }
+
+    // Instant retenu par une vue figée : l'historique qu'elle montre survit à
+    // l'horizon ordinaire (voir sim.js, même contrat).
+    let holdT = null;
 
     let onHello = null;   // renseigné par connect() : la session n'est prête
                           // qu'une fois « hello » reçu (nom, horizon, horloge)
@@ -2908,6 +2934,9 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       },
 
       count: () => chans.size,
+
+      /** Voir sim.js : retient l'historique d'une vue figée au-delà de l'horizon. */
+      setHold(t) { holdT = (typeof t === 'number' && isFinite(t)) ? t : null; },
 
       latest(addr) {
         const ch = chans.get(addr);
@@ -3650,11 +3679,12 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
             // relâchement. Les boutons n'apparaissent donc qu'à l'arrêt.
             '<button class="iconbtn mes-val hide" type="button" ' +
               'title="Mesurer un écart de VALEUR : glisser verticalement sur le tracé. ' +
-              'L’écart est donné pour TOUTES les courbes affichées, chacune dans son ' +
-              'unité ; les courbes masquées n’y figurent pas.">↕</button>' +
+              'L’écart porte sur la courbe désignée au point d’appui (à défaut, la ' +
+              'première affichée), et sur elle seule.">↕</button>' +
             '<button class="iconbtn mes-t hide" type="button" ' +
               'title="Mesurer un écart de TEMPS : glisser horizontalement sur le tracé, ' +
-              'dans un sens ou dans l’autre.">↔</button>' +
+              'dans un sens ou dans l’autre. Le relevé donne la durée ET la variation ' +
+              'signée de chaque courbe affichée sur l’intervalle.">↔</button>' +
             '<button class="iconbtn card-fs" type="button" ' +
               'title="Afficher cette tuile seule sur toute la page, ou revenir à la ' +
               'mosaïque (sortie aussi par Échap)">⛶</button>' +
@@ -3844,7 +3874,15 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       if (!el) return;
       if (this.viewEnd === null) { el.classList.add('hide'); return; }
       el.classList.remove('hide');
-      el.textContent = '⏱ −' + DW.fmtDuree(Math.max(0, DW.source.now() - this.viewEnd));
+      const retard = Math.max(0, DW.source.now() - this.viewEnd);
+      el.textContent = '⏱ −' + DW.fmtDuree(retard) +
+        (this.horizonAtteint ? ' · historique épuisé' : '');
+      el.classList.toggle('lag-fin', !!this.horizonAtteint);
+      el.title = this.horizonAtteint
+        ? 'Historique épuisé : les données de cet instant ne sont plus conservées, ' +
+          'la vue suit donc le plus ancien échantillon disponible.'
+        : 'Retard sur le temps réel : la vue et les valeurs affichées sont celles ' +
+          'de cet instant passé';
     }
 
     syncWinSel() {
@@ -4337,11 +4375,21 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       };
     }
 
+    /**
+     * Ramène la vue dans ce que l'historique peut encore montrer. Une vue
+     * figée retient normalement son historique (voir DW.source.setHold) ; ce
+     * garde-fou ne joue donc qu'au-delà du plafond de rétention — et quand il
+     * joue, la vue se remet à avancer. Il faut alors le DIRE : sans message,
+     * cela se lit comme une pause qui lâche toute seule.
+     */
     clampView() {
       if (this.viewEnd === null) return;
       const now = DW.source.now();
-      const minEnd = now - CFG.horizonS + this.windowS;
-      this.viewEnd = Math.min(now, Math.max(this.viewEnd, Math.min(minEnd, now)));
+      const dispo = Math.max(CFG.horizonS, CFG.holdMaxS || 0);
+      const minEnd = now - dispo + this.windowS;
+      const voulu = this.viewEnd;
+      this.viewEnd = Math.min(now, Math.max(voulu, Math.min(minEnd, now)));
+      this.horizonAtteint = this.viewEnd > voulu + 0.05;
     }
 
     timeAt(xPx) {
@@ -5084,32 +5132,45 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       if (vert) { pointe(x0 + 0.5, y0, 1); pointe(x0 + 0.5, y1, -1); }
       else { pointe(x0, y0 + 0.5, 1); pointe(x1, y0 + 0.5, -1); }
 
-      // Étiquette. En mesure de VALEUR, l'écart est donné pour TOUTES les
-      // courbes affichées, chacune dans son unité : le même écart d'écran ne
-      // vaut pas la même chose d'une échelle à l'autre, et c'est justement la
-      // comparaison qui intéresse. Les courbes masquées n'y figurent pas —
-      // elles ne sont pas sur le tracé qu'on mesure.
+      // Étiquette. Les deux mesures ne répondent pas à la même question :
+      //   ↕ « de combien cette grandeur a-t-elle varié ? » → UNE courbe, celle
+      //     qu'on a désignée en appuyant dessus (à défaut, la première
+      //     affichée) ; en mêler d'autres brouillerait la réponse ;
+      //   ↔ « que s'est-il passé pendant cet intervalle ? » → le temps écoulé
+      //     ET la variation de CHAQUE courbe affichée, avec son SIGNE : c'est
+      //     la comparaison des évolutions qui fait l'intérêt de la mesure.
+      // Les courbes masquées ne figurent dans aucun des deux : elles ne sont
+      // pas sur le tracé qu'on mesure.
       ctx.font = '600 11px system-ui, sans-serif';
       const lignes = [];
       if (vert) {
-        const dyPx = Math.abs(y1 - y0);
+        const ref = s || this.series.find((c) => c.visible) || null;
+        const dv = ref === s ? (m.v1 - m.v0)
+                             : (y0 - y1) * (this._axisScale[ref && ref.addr] || 0);
+        lignes.push({
+          couleur: ref ? colorOf(ref) : null,
+          txt: 'Δ ' + DW.fmtVal(Math.abs(dv), ref ? ref.meta : { unit: m.unite }) +
+               (ref && ref.meta.unit ? ' ' + ref.meta.unit : ''),
+          nom: ref ? (ref.name || ref.meta.label || ref.addr) : '',
+        });
+      } else {
+        lignes.push({ couleur: null, txt: 'Δt ' + DW.fmtDuree(Math.abs(m.t1 - m.t0)), nom: '' });
+        // Variation de chaque courbe affichée sur l'intervalle, signée : du
+        // plus ancien vers le plus récent, quel que soit le sens du geste.
+        const ta = Math.min(m.t0, m.t1), tb = Math.max(m.t0, m.t1);
         for (const c of this.series) {
           if (!c.visible) continue;
-          const ech = this._axisScale[c.addr];
-          if (!ech) continue;
+          const va = DW.valeurA(c.addr, ta), vb = DW.valeurA(c.addr, tb);
+          if (va == null || vb == null) continue;
+          const d = vb - va;
+          const signe = d > 0 ? '+' : d < 0 ? '−' : '';
           lignes.push({
             couleur: colorOf(c),
-            txt: 'Δ ' + DW.fmtVal(dyPx * ech, c.meta) + (c.meta.unit ? ' ' + c.meta.unit : ''),
+            txt: 'Δ ' + signe + DW.fmtVal(Math.abs(d), c.meta) +
+                 (c.meta.unit ? ' ' + c.meta.unit : ''),
             nom: c.name || c.meta.label || c.addr,
           });
         }
-      }
-      if (!lignes.length) {
-        lignes.push({ couleur: null,
-          txt: vert ? 'Δ ' + DW.fmtVal(Math.abs(m.v1 - m.v0), s ? s.meta : { unit: m.unite }) +
-                      (m.unite ? ' ' + m.unite : '')
-                    : 'Δt ' + DW.fmtDuree(Math.abs(m.t1 - m.t0)),
-          nom: vert ? m.nom : '' });
       }
 
       const H = 15, PAD = 6, PUCE = 9;
@@ -5145,8 +5206,8 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
           ctx.beginPath();
           ctx.arc(tx + 3, y, 3, 0, Math.PI * 2);
           ctx.fill();
-          tx += PUCE;
         }
+        if (lignes.some((x) => x.couleur)) tx += PUCE;
         ctx.fillStyle = IK.ink;
         ctx.fillText(l.txt, tx, y);
         if (l.nom) {
@@ -9764,6 +9825,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     }
     if (t - lastLiveT >= CFG.liveRefreshMs) {
       lastLiveT = t;
+      majRetenue();
       if (tab) for (const c of tab.charts) c.updateLive();
       updateTableValues();
       const n = DW.source.count();
@@ -9771,6 +9833,29 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
         ' · ' + state.tabs.length + ' onglet' + (state.tabs.length > 1 ? 's' : '');
     }
     requestAnimationFrame(loop);
+  }
+
+  /**
+   * Instant le plus ancien qu'une tuile figée a besoin de montrer, tous
+   * onglets confondus. La source retient son historique jusque-là : sans cela
+   * le tampon défilerait sous une vue arrêtée, qui se remettrait à avancer
+   * toute seule au bout de quelques minutes — ce qui se lit comme une pause
+   * qui lâche.
+   */
+  function majRetenue() {
+    let plusAncien = null;
+    for (const tab of state.tabs) {
+      for (const c of tab.charts) {
+        if (c.viewEnd === null) continue;
+        const t = c.viewEnd - c.windowS;
+        if (plusAncien === null || t < plusAncien) plusAncien = t;
+      }
+      for (const t of tab.tables) {
+        if (t.frozen == null) continue;
+        if (plusAncien === null || t.frozen < plusAncien) plusAncien = t.frozen;
+      }
+    }
+    if (DW.source && DW.source.setHold) DW.source.setHold(plusAncien);
   }
 
   /** « Figer » agit sur TOUTES les tuiles de l'onglet, tableaux compris. */
@@ -9955,8 +10040,8 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
             ['Badge Én', 'Numéro de l’échelle utilisée ; 🔒 signale un réglage manuel.'],
             ['Échelles — regrouper, séparer, nommer', 'Par défaut les courbes de même unité partagent une échelle. Le menu d’une pastille permet de choisir : <b>Échelle automatique</b> (par unité), <b>Échelle dédiée</b> (cette courbe seule), ou <b>Mettre sur l’échelle « … »</b> pour rejoindre celle d’une autre courbe — même si les unités diffèrent. <b>Renommer l’échelle</b> lui donne un nom qui remplace l’unité en tête de sa règle.'],
             ['Plein écran', '<b>⛶</b> dans l’en-tête d’une tuile l’affiche seule sur toute la page, et l’y ramène. La tuile sort de la mosaïque le temps du plein écran : sa place et sa taille sont intactes au retour. Sortie aussi par <b>Échap</b>.'],
-            ['Mesurer sur le tracé', 'Une fois le graphique <b>figé</b>, deux boutons apparaissent dans son en-tête. <b>↕</b> : glisser verticalement mesure un <b>écart de valeur</b>. Il est donné pour <b>toutes les courbes affichées</b>, chacune dans son unité — le même écart d’écran ne vaut pas la même chose d’une échelle à l’autre, et c’est cette comparaison qui intéresse. Les courbes masquées n’y figurent pas. <b>↔</b> : glisser horizontalement mesure un <b>écart de temps</b>, dans un sens ou dans l’autre. La cote reste affichée après le relâchement, et elle est ancrée sur les données : régler une échelle ne la fausse pas. Un second appui sur le bouton l’efface.'],
-            ['Figer', '<b>⏸</b> sur une tuile, ou <b>⏸ Figer</b> en haut pour tout l’onglet : le tracé <b>et les valeurs numériques</b> s’arrêtent sur l’instant courant, et la grille cesse de défiler. Un badge <b>⏱ −durée</b> dans l’en-tête dit de quand datent les valeurs qu’on lit.'],
+            ['Mesurer sur le tracé', 'Une fois le graphique <b>figé</b>, deux boutons apparaissent dans son en-tête. <b>↕</b> : glisser verticalement mesure un <b>écart de valeur</b>, sur la <b>seule</b> courbe désignée au point d’appui (à défaut, la première affichée) — la question posée est « de combien cette grandeur a-t-elle varié ? », en mêler d’autres brouillerait la réponse. <b>↔</b> : glisser horizontalement mesure un <b>écart de temps</b>, dans un sens ou dans l’autre. Le relevé donne la durée <b>et la variation signée de chaque courbe affichée</b> sur l’intervalle — la question posée est « que s’est-il passé pendant ce laps de temps ? ». Les courbes masquées n’y figurent pas. La cote reste affichée après le relâchement, et elle est ancrée sur les données : régler une échelle ne la fausse pas. Un second appui sur le bouton l’efface.'],
+            ['Figer', '<b>⏸</b> sur une tuile, ou <b>⏸ Figer</b> en haut pour tout l’onglet : le tracé <b>et les valeurs numériques</b> s’arrêtent sur l’instant courant, et la grille cesse de défiler. Un badge <b>⏱ −durée</b> dans l’en-tête dit de quand datent les valeurs qu’on lit. Une vue figée <b>retient son historique</b> : elle ne se remet pas à avancer toute seule quand le tampon défile. Passé le plafond de rétention (30 min), le badge passe au rouge et dit « historique épuisé » — c’est le seul cas où la vue suit à nouveau.'],
             ['Adresse ou description', 'Menu ⋮ d’un tableau : <b>Mettre la description en tête</b> intervertit l’adresse et la description. Menu ⋮ d’un graphique : <b>Légende : description plutôt qu’adresse</b>. L’automaticien cherche une adresse, l’exploitant un nom — chaque tuile choisit.'],
             ['Échelles verticales', 'Toutes les règles sont <b>à gauche</b>, empilées dans l’ordre des badges Én : on lit une valeur sans chercher de quel bord vient son échelle. Clic sur une <b>règle d’axe</b> (les graduations, curseur ↕) : saisir le minimum et le maximum exacts, pour cette échelle seule ou pour <b>toutes</b> celles du graphique. Glisser ou molette sur la règle : réglage à la volée ; double-clic : retour à l’automatique. Même réglage depuis le menu d’une pastille (« Bornes de l’échelle… »).'],
           ]) +
