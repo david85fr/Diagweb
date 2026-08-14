@@ -277,6 +277,22 @@ moins de 55 % de l'échelle pendant plus de 2 s ; transitions lissées.
 « Échelles automatiques » du menu ⋮ ré-arme tous les axes du graphique.
 Historique conservé : 330 s glissantes.
 
+## 4 bis. Figer (tuile ou onglet)
+
+**⏸** sur une tuile fige cette tuile ; **⏸ Figer** dans la barre du haut fige
+tout l'onglet — graphiques **et** tableaux. Figer arrête ce qu'on lit, pas
+seulement ce qu'on trace :
+
+- les **valeurs numériques** (tableau et légendes) sont lues à l'instant du
+  gel, par recherche dichotomique dans l'historique à un **temps absolu** — et
+  non par un recul relatif au dernier échantillon, dont le repère bouge avec
+  les échantillons qui continuent d'arriver ;
+- la **grille temporelle** est ancrée sur le bord droit de la vue, plus sur
+  l'heure courante : elle ne glisse donc plus sous un graphique figé ;
+- un badge **⏱ −durée** dans l'en-tête de chaque tuile figée dit de quand
+  datent les valeurs affichées. Sans lui, des valeurs figées se lisent comme
+  des valeurs actuelles.
+
 ## 5. Multi-échelles (règles)
 
 1. Les courbes d'un graphique sont **regroupées automatiquement par unité**

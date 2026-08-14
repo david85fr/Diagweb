@@ -279,6 +279,10 @@
           'title="Nom du tableau — cliquez pour le modifier ; il sert aussi de ' +
           'destination d’ajout dans la barre du haut">' +
         '<span class="tcount" title="Nombre de variables dans ce tableau"></span>' +
+        '<span class="lag hide" title="Retard sur le temps réel : les valeurs affichées ' +
+          'sont celles de cet instant passé"></span>' +
+        '<button class="iconbtn table-pause" type="button" ' +
+          'title="Figer les valeurs de ce tableau sur l’instant courant, ou revenir au temps réel">⏸</button>' +
         '<button class="iconbtn card-add" type="button" ' +
           'title="Ajouter des variables à ce tableau : ouvre le catalogue complet, ' +
           'avec filtres et sélection multiple">+</button>' +
@@ -299,6 +303,8 @@
       name: opts.name || (tab.tables.length ? 'Tableau ' + (tab.tables.length + 1)
                                             : 'Valeurs numériques'),
       entries: [],
+      frozen: null,       // null = temps réel ; sinon instant figé (s)
+      labelFirst: !!opts.labelFirst,   // description en tête plutôt que l'adresse
       // Tuile de la mosaïque (cf. mosaic.js) : colonne, rangée, largeur, hauteur.
       x: opts.x, y: opts.y,
       w: opts.w || DW.mosaic.defaut('table').w,
@@ -326,6 +332,9 @@
     card.querySelector('.card-add').addEventListener('click', () => {
       openVarPicker({ kind: 'table', table: tbl });
     });
+    card.querySelector('.table-pause').addEventListener('click', () => {
+      setTableFrozen(tbl, tbl.frozen == null);
+    });
     card.querySelector('.table-more').addEventListener('click', (e) =>
       openTableMenu(tbl, e.currentTarget));
     tab.chartsGridEl.appendChild(card);
@@ -339,6 +348,29 @@
     return tbl;
   }
 
+  /**
+   * Fige (ou libère) les valeurs d'un tableau. Le retard sur le temps réel
+   * s'affiche dans l'en-tête, sinon on ne saurait pas de quand datent les
+   * valeurs qu'on lit.
+   */
+  function setTableFrozen(tbl, gel) {
+    tbl.frozen = gel ? DW.source.now() : null;
+    const b = tbl.cardEl.querySelector('.table-pause');
+    b.textContent = gel ? '▶' : '⏸';
+    b.classList.toggle('on', !!gel);
+    majRetard(tbl);
+    updatePauseAllUi();
+  }
+
+  /** Badge « retard » d'un tableau figé (rafraîchi par la boucle de rendu). */
+  function majRetard(tbl) {
+    const el = tbl.cardEl.querySelector('.lag');
+    if (!el) return;
+    if (tbl.frozen == null) { el.classList.add('hide'); return; }
+    el.classList.remove('hide');
+    el.textContent = '⏱ −' + DW.fmtDuree(Math.max(0, DW.source.now() - tbl.frozen));
+  }
+
   /** Menu ⋮ d'un tableau (le pendant de celui d'un graphique). */
   function openTableMenu(tbl, anchor) {
     DW.popup(anchor, (mk) => {
@@ -347,6 +379,12 @@
       mk('Vider le tableau', () => {
         for (const e of [...tbl.entries]) removeFromTable(tbl, e.addr);
       }, null, 'Retirer toutes les variables sans supprimer le tableau');
+      mk((tbl.labelFirst ? '✓ ' : '') + 'Mettre la description en tête', () => {
+        tbl.labelFirst = !tbl.labelFirst;
+        renderTable(tbl);
+        onChange();
+      }, null, 'Intervertir l’adresse et la description : la description en gros et ' +
+        'l’adresse en dessous, ou l’inverse');
       mk('Taille de départ', () => {
         const d = DW.mosaic.defaut('table');
         tbl.w = d.w; tbl.h = d.h;
@@ -405,7 +443,8 @@
   function duplicateTable(tbl) {
     const copie = serializeTable(tbl);
     const neuf = createTable(tbl.tab, { name: tbl.name + ' (copie)', w: tbl.w, h: tbl.h,
-                                        x: tbl.x, y: tbl.y + tbl.h });
+                                        x: tbl.x, y: tbl.y + tbl.h,
+                                        labelFirst: tbl.labelFirst });
     for (const e of copie) {
       const p = DW.parseAddr(e.addr);
       if (p.ok) addToTable(neuf, p.addr, e.periodMs, e.name);
@@ -610,11 +649,25 @@
           '<b class="val">—</b><span class="v-unit"></span><span class="v-trend"></span></div>' +
         '<button class="v-edit" type="button" title="Renommer l’affichage de cette variable">✎</button>' +
         '<button class="v-del" type="button" title="Retirer du tableau">✕</button>';
-      row.querySelector('.v-addr').textContent = e.addr;
-      const labelEl = row.querySelector('.v-label');
-      labelEl.textContent = displayLabel(e) +
-        (e.periodMs && e.periodMs !== CFG.defaultPeriodMs ? ' · rafr. ' + e.periodMs + ' ms' : '');
-      labelEl.classList.toggle('renamed', !!e.name);
+      // Mise en avant : l'adresse en tête (repère de l'automaticien) ou la
+      // description (repère de l'exploitant). Les deux publics lisent le même
+      // tableau, d'où la bascule par tableau.
+      const enTete = row.querySelector('.v-addr');
+      const dessous = row.querySelector('.v-label');
+      const suffixe = (e.periodMs && e.periodMs !== CFG.defaultPeriodMs)
+        ? ' · rafr. ' + e.periodMs + ' ms' : '';
+      if (tbl.labelFirst) {
+        enTete.textContent = displayLabel(e);
+        dessous.textContent = e.addr + suffixe;
+      } else {
+        enTete.textContent = e.addr;
+        dessous.textContent = displayLabel(e) + suffixe;
+      }
+      row.classList.toggle('label-first', !!tbl.labelFirst);
+      dessous.classList.toggle('renamed', !!e.name && !tbl.labelFirst);
+      // Le renommage porte sur la DESCRIPTION : il vise donc l'élément qui la
+      // montre, quel que soit le sens de la bascule.
+      const labelEl = tbl.labelFirst ? enTete : dessous;
       row.querySelector('.v-unit').textContent = e.meta.unit || '';
       row.title = e.addr + ' — ' + displayLabel(e) +
         (e.name ? ' (' + e.meta.label + ')' : '') +
@@ -661,12 +714,19 @@
     if (!tab) return;
     const nowT = DW.source.now();
     const canForce = typeof DW.source.forced === 'function';
-    for (const tbl of tab.tables) majValeurs(tbl, nowT, canForce);
+    for (const tbl of tab.tables) {
+      majValeurs(tbl, nowT, canForce);
+      majRetard(tbl);
+    }
   }
 
   /** Valeurs vivantes d'un tableau (~5 Hz). */
   function majValeurs(tbl, nowT, canForce) {
     const rows = tbl.rowsEl.children;
+    // Tableau figé : les valeurs sont lues à l'instant du gel, pas au dernier
+    // échantillon. Une valeur qui continuerait de courir sous un bouton
+    // « Figer » enlevé toute confiance à ce qu'on lit.
+    const recul = tbl.frozen == null ? 0 : Math.max(0, nowT - tbl.frozen);
     for (let i = 0; i < tbl.entries.length && i < rows.length; i++) {
       const e = tbl.entries[i];
       // Marquage « forcé » : valeur imposée côté serveur (diagnostic)
@@ -675,11 +735,17 @@
         rows[i].classList.toggle('forced', f != null);
         rows[i].querySelector('.v-forced').classList.toggle('hide', f == null);
       }
-      const last = DW.source.latest(e.addr);
+      let last = DW.source.latest(e.addr);
+      if (last && recul > 0) {
+        const v = DW.valeurA(e.addr, tbl.frozen);
+        last = v == null ? null : { t: tbl.frozen, v };
+      }
       const valEl = rows[i].querySelector('.val');
       if (!last) { valEl.textContent = '—'; continue; }
       // Flash : la variable était immobile depuis ≥ 2 s et vient de changer
-      if (e._lastV === undefined) {
+      if (recul > 0) {
+        e._lastV = last.v;
+      } else if (e._lastV === undefined) {
         e._lastV = last.v; e._lastChangeT = nowT;
       } else if (last.v !== e._lastV) {
         if (nowT - e._lastChangeT >= 2) {
@@ -700,9 +766,10 @@
       } else {
         valEl.textContent = DW.fmtVal(last.v, e.meta);
       }
-      // Tendance sur ~2,5 s
+      // Tendance sur ~2,5 s — reculée d'autant quand le tableau est figé.
       const trendEl = rows[i].querySelector('.v-trend');
-      const past = DW.source.past(e.addr, 2.5);
+      const past = recul > 0 ? DW.valeurA(e.addr, tbl.frozen - 2.5)
+                             : DW.source.past(e.addr, 2.5);
       if (past == null || e.meta.kind === 'bit') { trendEl.textContent = ''; trendEl.className = 'v-trend'; continue; }
       const eps = Math.max(Math.abs(last.v) * 0.004, 1e-6);
       const d = last.v - past;
@@ -726,6 +793,7 @@
       windowS: opts.windowS,
       heightMode: opts.heightMode,          // dispositions v2 : converti en rangées
       x: opts.x, y: opts.y, w: opts.w, h: opts.h,
+      axisNames: opts.axisNames, chipLabel: opts.chipLabel,
     });
     tab.charts.push(chart);
     tab.chartsGridEl.appendChild(chart.root);
@@ -1038,7 +1106,9 @@
     return {
       version: 3,
       tables: tab.tables.map((t) => Object.assign({ name: t.name },
-        tuile(t), { entries: serializeTable(t) })),
+        tuile(t),
+        t.labelFirst ? { labelFirst: true } : null,
+        { entries: serializeTable(t) })),
       charts: tab.charts.map((c) => c.serialize()),
     };
   }
@@ -1060,7 +1130,7 @@
     const cell = place && place.cell;
     const chart = createChart({
       title: cfg.title, windowS: cfg.windowS, heightMode: cfg.heightMode,
-      w: cfg.w, h: cfg.h,
+      w: cfg.w, h: cfg.h, axisNames: cfg.axisNames, chipLabel: cfg.chipLabel,
       // Sans point de chute désigné, la tuile va à la première place libre :
       // c'est placerNouvelle qui décide (x/y laissés vides).
       x: cell ? cell.x : undefined, y: cell ? cell.y : undefined,
@@ -1216,7 +1286,8 @@
     for (const t of tables) {
       if (!t) continue;
       const g = ancien ? migrerTuile(t, 'table') : t;
-      const tbl = createTable(tab, { name: t.name, x: g.x, y: g.y, w: g.w, h: g.h });
+      const tbl = createTable(tab, { name: t.name, x: g.x, y: g.y, w: g.w, h: g.h,
+                                     labelFirst: t.labelFirst });
       for (const entry of t.entries || []) {
         // Rétro-compatibilité : entrée sous forme de chaîne (format initial)
         const addr = typeof entry === 'string' ? entry : entry.addr;
@@ -1232,7 +1303,7 @@
       const g = ancien ? migrerTuile(c, 'chart') : c;
       const chart = createChart({
         title: c.title, windowS: c.windowS, heightMode: c.heightMode,
-        x: g.x, y: g.y, w: g.w, h: g.h,
+        x: g.x, y: g.y, w: g.w, h: g.h, axisNames: c.axisNames, chipLabel: c.chipLabel,
       });
       if (!chart) break;
       for (const s of c.series || []) {
@@ -2129,11 +2200,15 @@
     requestAnimationFrame(loop);
   }
 
+  /** « Figer » agit sur TOUTES les tuiles de l'onglet, tableaux compris. */
   function updatePauseBtn() {
     const tab = state.active;
-    const allPaused = tab && tab.charts.length && tab.charts.every((c) => c.paused);
-    $('pauseAllBtn').textContent = allPaused ? '▶ Reprendre' : '⏸ Figer';
+    const tuiles = tab ? tilesOf(tab) : [];
+    const fige = (t) => (t.entries ? t.frozen != null : t.paused);
+    const toutFige = tuiles.length && tuiles.every(fige);
+    $('pauseAllBtn').textContent = toutFige ? '▶ Reprendre' : '⏸ Figer';
   }
+  const updatePauseAllUi = updatePauseBtn;
 
   // ---------- Événements globaux --------------------------------------
   function bindUi() {
@@ -2183,8 +2258,13 @@
     $('pauseAllBtn').addEventListener('click', () => {
       const tab = state.active;
       if (!tab) return;
-      const anyRunning = tab.charts.some((c) => !c.paused);
-      for (const c of tab.charts) c.setPaused(anyRunning);
+      // Figer un onglet fige ce qu'on y lit : les courbes ET les valeurs
+      // numériques. Un tableau qui continuerait de défiler à côté d'un
+      // graphique figé donnerait deux instants pour un même écran.
+      const enMarche = tab.charts.some((c) => !c.paused) ||
+                       tab.tables.some((t) => t.frozen == null);
+      for (const c of tab.charts) c.setPaused(enMarche);
+      for (const t of tab.tables) setTableFrozen(t, enMarche);
       updatePauseBtn();
     });
 
@@ -2275,6 +2355,9 @@
           L([
             ['Pastille de légende', 'Couleur (palette ou teinte libre), masquer, échelle dédiée, décalage vertical, retrait.'],
             ['Badge Én', 'Numéro de l’échelle utilisée ; 🔒 signale un réglage manuel.'],
+            ['Échelles — regrouper, séparer, nommer', 'Par défaut les courbes de même unité partagent une échelle. Le menu d’une pastille permet de choisir : <b>Échelle automatique</b> (par unité), <b>Échelle dédiée</b> (cette courbe seule), ou <b>Mettre sur l’échelle « … »</b> pour rejoindre celle d’une autre courbe — même si les unités diffèrent. <b>Renommer l’échelle</b> lui donne un nom qui remplace l’unité en tête de sa règle.'],
+            ['Figer', '<b>⏸</b> sur une tuile, ou <b>⏸ Figer</b> en haut pour tout l’onglet : le tracé <b>et les valeurs numériques</b> s’arrêtent sur l’instant courant, et la grille cesse de défiler. Un badge <b>⏱ −durée</b> dans l’en-tête dit de quand datent les valeurs qu’on lit.'],
+            ['Adresse ou description', 'Menu ⋮ d’un tableau : <b>Mettre la description en tête</b> intervertit l’adresse et la description. Menu ⋮ d’un graphique : <b>Légende : description plutôt qu’adresse</b>. L’automaticien cherche une adresse, l’exploitant un nom — chaque tuile choisit.'],
             ['Échelles verticales', 'Toutes les règles sont <b>à gauche</b>, empilées dans l’ordre des badges Én : on lit une valeur sans chercher de quel bord vient son échelle. Clic sur une <b>règle d’axe</b> (les graduations, curseur ↕) : saisir le minimum et le maximum exacts, pour cette échelle seule ou pour <b>toutes</b> celles du graphique. Glisser ou molette sur la règle : réglage à la volée ; double-clic : retour à l’automatique. Même réglage depuis le menu d’une pastille (« Bornes de l’échelle… »).'],
           ]) +
         '</div>';

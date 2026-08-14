@@ -546,6 +546,84 @@ check('carte sélectionnée : l’ajout depuis la barre du haut y va',
   /^chart:/.test(cibleClic) && surbrillance === 1 && courbesAp === courbesAv + 1,
   'cible « ' + cibleClic + ' » · ' + courbesAv + ' → ' + courbesAp + ' courbes');
 
+// Figer : les valeurs numériques doivent s'arrêter, pas seulement le tracé —
+// des chiffres qui continuent de courir sous une pause enlèvent toute
+// confiance à ce qu'on lit. Le retard sur le temps réel s'affiche alors dans
+// l'en-tête de chaque tuile figée.
+const valeurTable = () => p2.locator(PANE + '.table-card .vrow .val').first().textContent();
+const valeurLegende = () => p2.locator(PANE + '.chart-card .chip-val').first().textContent();
+await p2.click('#pauseAllBtn');
+await p2.waitForTimeout(400);
+const vT0 = await valeurTable(), vL0 = await valeurLegende();
+const retards0 = await p2.locator(PANE + '.lag:not(.hide)').count();
+const tuiles = await p2.locator(PANE + '.charts-grid > .card').count();
+await p2.waitForTimeout(2200);
+const vT1 = await valeurTable(), vL1 = await valeurLegende();
+const retard = (await p2.locator(PANE + '.lag:not(.hide)').first().textContent()).trim();
+await p2.click('#pauseAllBtn');
+await p2.waitForTimeout(600);
+const repris = await p2.locator(PANE + '.lag:not(.hide)').count();
+check('« Figer » arrête aussi les valeurs numériques, et dit le retard',
+  vT0 === vT1 && vL0 === vL1 && retards0 === tuiles && /⏱ −/.test(retard) && repris === 0,
+  'tableau ' + vT0.trim() + '→' + vT1.trim() + ', légende ' + vL0.trim() + '→' + vL1.trim() +
+  ' · ' + retard + ' · ' + retards0 + '/' + tuiles + ' tuile(s) · reste ' + repris);
+
+// Échelles verticales : au-delà du regroupement automatique par unité, on doit
+// pouvoir associer une courbe à l'échelle d'une autre, et nommer cette échelle.
+const pastille = p2.locator(PANE + '.chart-card').first().locator('.chip').first();
+await pastille.click();
+await p2.waitForTimeout(220);
+const entrees = await p2.$$eval('.popmenu button', (b) => b.map((x) => x.textContent.trim()));
+await p2.locator('.popmenu button', { hasText: 'Mettre sur l’échelle' }).first().click();
+await p2.waitForTimeout(400);
+await pastille.click();
+await p2.waitForTimeout(220);
+await p2.locator('.popmenu button', { hasText: 'Renommer l’échelle' }).click();
+await p2.waitForTimeout(300);
+await p2.fill('.ax-nom', 'Groupe moteur');
+await p2.click('.ax-ok');
+await p2.waitForTimeout(800);
+await p2.reload();
+await p2.waitForSelector(PANE + '.chart-card', { timeout: 20000 });
+await p2.waitForTimeout(1200);
+await p2.locator(PANE + '.chart-card').first().locator('.chip').first().click();
+await p2.waitForTimeout(250);
+const apresEchelle = await p2.$$eval('.popmenu button', (b) => b.map((x) => x.textContent.trim()));
+await p2.mouse.click(5, 5);
+await p2.waitForTimeout(150);
+check('échelles : association explicite et nom, conservés au rechargement',
+  entrees.some((t) => /Échelle automatique/.test(t)) &&
+  entrees.some((t) => /Échelle dédiée/.test(t)) &&
+  entrees.some((t) => /Mettre sur l’échelle/.test(t)) &&
+  // Ni « automatique » ni « dédiée » cochées : la courbe est sur l'échelle choisie
+  !apresEchelle.some((t) => /^✓ Échelle (automatique|dédiée)/.test(t)),
+  entrees.filter((t) => /échelle/i.test(t)).join(' · '));
+
+// Adresse ou description : les deux publics — automaticien et exploitant — ne
+// lisent pas le même repère. Chaque tuile porte donc sa bascule.
+const ligne1 = () => p2.locator(PANE + '.vrow').first().evaluate((e) => ({
+  tete: e.querySelector('.v-addr').textContent, sous: e.querySelector('.v-label').textContent }));
+const past1 = () => p2.locator(PANE + '.chart-card .chip-addr').first().textContent();
+const l0 = await ligne1(), c0 = await past1();
+await p2.locator(PANE + '.table-more').first().click();
+await p2.waitForTimeout(200);
+await p2.locator('.popmenu button', { hasText: 'description en tête' }).click();
+await p2.waitForTimeout(350);
+await p2.locator(PANE + '.chart-more').first().click();
+await p2.waitForTimeout(200);
+await p2.locator('.popmenu button', { hasText: 'description plutôt qu’adresse' }).click();
+await p2.waitForTimeout(350);
+const l1 = await ligne1(), c1 = await past1();
+await p2.waitForTimeout(800);
+await p2.reload();
+await p2.waitForSelector(PANE + '.chart-card', { timeout: 20000 });
+await p2.waitForTimeout(1200);
+const l2 = await ligne1(), c2 = await past1();
+check('bascule adresse ↔ description (tableau et légende), conservée',
+  l1.tete === l0.sous && l1.sous === l0.tete && c1 !== c0 &&
+  l2.tete === l1.tete && c2 === c1,
+  '« ' + l0.tete + ' » ⇄ « ' + l1.tete + ' » · pastille « ' + c0 + ' » → « ' + c1 + ' »');
+
 // Apparence : logo de l'exploitant et couleurs. Page ouverte hors serveur ici,
 // donc réglages du navigateur — le tour serveur est couvert par tests/server.mjs.
 await p2.click('#menuBtn');

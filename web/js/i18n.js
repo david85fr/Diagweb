@@ -60,12 +60,17 @@
 
   const ATTRS = ['title', 'placeholder', 'aria-label', 'alt'];
   const IGNORE = { SCRIPT: 1, STYLE: 1, CANVAS: 1, CODE: 1 };
-  const VIVANT = 'button, input, select, textarea, a, canvas, [id]';
+  // Mise en forme en ligne : les seules balises admises à l'intérieur d'un
+  // bloc traduit d'une pièce. Tout le reste (span porteur de données, cellule
+  // de tableau, carte…) est traité nœud par nœud — sans quoi on remplacerait
+  // du texte mêlé à des valeurs mesurées.
+  const ENLIGNE = { B: 1, I: 1, EM: 1, STRONG: 1, BR: 1, CODE: 1, SMALL: 1, U: 1 };
 
   /** L'élément est-il un bloc de texte enrichi, traduisible d'une pièce ? */
   function bloc(el) {
     if (!el.children.length) return false;
-    return !el.querySelector(VIVANT);
+    for (const c of el.children) if (!ENLIGNE[c.tagName]) return false;
+    return true;
   }
 
   function traduireBloc(el) {

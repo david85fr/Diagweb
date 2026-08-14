@@ -125,6 +125,36 @@
 
   const MAX_AXES = 4;
 
+  /**
+   * Valeur d'une variable à un INSTANT ABSOLU (tuile figée). `past()` recule
+   * d'un délai depuis le dernier échantillon reçu : le repère bouge donc avec
+   * les échantillons qui continuent d'arriver, et la valeur affichée sautait
+   * d'un cran de temps en temps sous une pause. Ici le repère est le temps.
+   */
+  DW.valeurA = function (addr, t) {
+    const d = DW.source.data(addr);
+    if (!d || !d.ts || !d.ts.length) return null;
+    let lo = 0, hi = d.ts.length - 1;
+    if (d.ts[0] > t) return null;
+    while (lo < hi) {
+      const m = (lo + hi + 1) >> 1;
+      if (d.ts[m] <= t) lo = m; else hi = m - 1;
+    }
+    return d.vs[lo];
+  };
+
+  /** Durée courte et lisible : « 12,4 s », « 3 min 20 s », « 1 h 05 ». */
+  DW.fmtDuree = function (s) {
+    if (!isFinite(s) || s < 0) s = 0;
+    if (s < 60) return (s < 10 ? s.toFixed(1) : Math.round(s)) + ' s';
+    if (s < 3600) {
+      const m = Math.floor(s / 60);
+      return m + ' min ' + String(Math.round(s - m * 60)).padStart(2, '0') + ' s';
+    }
+    const h = Math.floor(s / 3600);
+    return h + ' h ' + String(Math.round((s - h * 3600) / 60)).padStart(2, '0');
+  };
+
   // ---------- Popover partagé (légende & menu ⋮) ----------------------
   let popEl = null, popOwner = null, popAnchor = null;
   // Bascule : un appui sur l'ancre du menu ouvert le ferme sans le rouvrir.
@@ -227,6 +257,11 @@
       this.fullscreen = false;
       this.moveSeries = null;      // adresse en cours de décalage (mode explicite)
       this.axisState = new Map();  // clé de groupe -> état d'échelle
+      this.axisNames = Object.assign({}, opts.axisNames);  // clé -> nom donné
+      // Ce qu'on lit sur les pastilles : l'adresse (repère de l'automaticien)
+      // ou le libellé (repère de l'exploitant). Les deux publics existent,
+      // d'où la bascule plutôt qu'un choix imposé.
+      this.chipLabel = opts.chipLabel === 'label';
       this._cw = 0; this._ch = 0; this._dpr = 0;
       this._ptrs = new Map();
       this._gesture = null;
@@ -248,6 +283,8 @@
             'fenêtre du navigateur">⠿</span>' +
           '<input class="chart-title" maxlength="48" aria-label="Titre du graphique" ' +
             'title="Nom du graphique — cliquez pour le modifier ; il sert aussi de destination d’ajout">' +
+          '<span class="lag hide" title="Retard sur le temps réel : la vue et les ' +
+            'valeurs affichées sont celles de cet instant passé"></span>' +
           '<div class="chart-tools">' +
             '<button class="iconbtn card-add" type="button" ' +
               'title="Ajouter des courbes à ce graphique : ouvre le catalogue complet, ' +
@@ -362,6 +399,16 @@
       this.pauseBtn.textContent = frozen ? '▶' : '⏸';
       this.pauseBtn.classList.toggle('on', frozen);
       this.liveBtn.classList.toggle('hide', !frozen);
+      this.majRetard();
+    }
+
+    /** Retard sur le temps réel, affiché dans l'en-tête quand la vue est figée. */
+    majRetard() {
+      const el = this.root.querySelector('.lag');
+      if (!el) return;
+      if (this.viewEnd === null) { el.classList.add('hide'); return; }
+      el.classList.remove('hide');
+      el.textContent = '⏱ −' + DW.fmtDuree(Math.max(0, DW.source.now() - this.viewEnd));
     }
 
     syncWinSel() {
@@ -403,6 +450,12 @@
           'Créer une copie avec les mêmes courbes, couleurs, échelles et fenêtre de temps, juste après celui-ci');
         mk('Échelles automatiques', () => this.resetAxes(), null,
           'Remettre toutes les échelles de ce graphique en cadrage automatique (annule les réglages manuels 🔒)');
+        mk((this.chipLabel ? '✓ ' : '') + 'Légende : description plutôt qu’adresse', () => {
+          this.chipLabel = !this.chipLabel;
+          this.rebuildLegend();
+          this.app.onChange();
+        }, null, 'Afficher sur les pastilles la description de la variable (repère de ' +
+          'l’exploitant) au lieu de son adresse (repère de l’automaticien)');
         mk('Taille de départ', () => this.resetSize(), null,
           'Annuler le dimensionnement fait à la poignée ◢ et revenir à la taille de départ ' +
           'd’un graphique (une demi-largeur)');
@@ -455,11 +508,31 @@
 
     /** Libellé d'une échelle : son unité, ou les courbes qui la partagent. */
     axisTitle(key) {
+      // Un nom donné par l'utilisateur l'emporte : « Températures four »
+      // dit ce que l'axe regroupe, là où « Échelle « °C » » ne dit que l'unité.
+      if (this.axisNames && this.axisNames[key]) return this.axisNames[key];
       const series = this.series.filter((s) => this.axisKey(s) === key);
       if (!series.length) return 'Échelle';
       const unit = series[0].meta.unit;
-      if (key.startsWith('solo:')) return (series[0].name || series[0].addr) + (unit ? ' (' + unit + ')' : '');
+      if (key.startsWith('solo:') && series.length === 1) {
+        return (series[0].name || series[0].addr) + (unit ? ' (' + unit + ')' : '');
+      }
       return unit ? 'Échelle « ' + unit + ' »' : 'Échelle sans unité';
+    }
+
+    /**
+     * Nom court d'une échelle, pour les entrées de menu : sans l'habillage
+     * « Échelle « … » », qui donnerait des guillemets imbriqués.
+     */
+    axisShort(key) {
+      if (this.axisNames && this.axisNames[key]) return this.axisNames[key];
+      const series = this.series.filter((s) => this.axisKey(s) === key);
+      if (!series.length) return 'échelle';
+      const unit = series[0].meta.unit;
+      if (key.startsWith('solo:') && series.length === 1) {
+        return (series[0].name || series[0].addr);
+      }
+      return unit || (series[0].name || series[0].addr);
     }
 
     /** Applique des bornes à une échelle, ou à toutes (réglage groupé). */
@@ -521,6 +594,9 @@
           closePopover();
         };
         form.querySelector('.ax-ok').addEventListener('click', appliquer);
+        mk('Renommer cette échelle…', () => this.renommerAxe(key), null,
+          'Nommer l’axe — « Températures four » dit ce qu’il regroupe, là où ' +
+          'l’unité seule ne le dit pas');
         form.addEventListener('keydown', (e) => { if (e.key === 'Enter') appliquer(); });
         // Un appui dans le formulaire ne doit pas être pris pour un geste
         // sur le canvas, ni refermer le menu.
@@ -799,7 +875,11 @@
         addr, meta, colorIdx,
         color: typeof opts.color === 'string' ? opts.color : undefined,
         name: typeof opts.name === 'string' && opts.name ? opts.name : undefined,
-        axisMode: opts.axisMode === 'solo' ? 'solo' : 'auto',
+        // 'auto' | 'solo' | 'k:<clé>' — le dernier cas est une échelle
+        // explicitement choisie, elle doit survivre à l'enregistrement.
+        axisMode: (opts.axisMode === 'solo' ||
+                   (typeof opts.axisMode === 'string' && opts.axisMode.startsWith('k:')))
+          ? opts.axisMode : 'auto',
         visible: opts.visible !== false,
         periodMs: opts.periodMs || undefined,
         offsetY: isFinite(opts.offsetY) ? opts.offsetY : 0,
@@ -819,6 +899,60 @@
     }
 
     /** Renommage en place du nom d'affichage d'une courbe (dans sa pastille). */
+    /**
+     * Nomme une échelle. Le nom vit avec le graphique, pas avec la courbe :
+     * il décrit ce que l'axe regroupe (« Températures four ») et survit au
+     * retrait d'une des courbes qui s'y trouvent.
+     */
+    renommerAxe(key) {
+      closePopover();
+      const actuel = (this.axisNames && this.axisNames[key]) || '';
+      const back = document.createElement('div');
+      back.className = 'modal-back';
+      back.innerHTML =
+        '<div class="modal" role="dialog" aria-label="Nommer l’échelle">' +
+          '<header class="m-head"><h3>Nommer l’échelle</h3>' +
+            '<button class="iconbtn m-close" type="button" title="Fermer cette fenêtre">✕</button>' +
+          '</header>' +
+          '<p class="m-note">Ce nom remplace l’unité en tête de la règle et dans les ' +
+            'menus. Laissé vide, l’intitulé automatique revient.</p>' +
+          '<div class="m-row"><input class="ax-nom" maxlength="40" ' +
+            'aria-label="Nom de l’échelle" ' +
+            'title="Nom affiché en tête de cette règle d’axe"></div>' +
+          '<div class="m-actions">' +
+            '<button class="btn primary ax-ok" type="button" ' +
+              'title="Appliquer ce nom à l’échelle">Enregistrer</button>' +
+            '<button class="btn ax-non" type="button" ' +
+              'title="Fermer sans changer le nom">Annuler</button>' +
+          '</div>' +
+        '</div>';
+      const root = document.getElementById('modalRoot');
+      root.innerHTML = '';
+      root.appendChild(back);
+      const champ = back.querySelector('.ax-nom');
+      champ.value = actuel;
+      champ.placeholder = this.axisTitle(key);
+      champ.focus();
+      champ.select();
+      const fermer = () => { root.innerHTML = ''; };
+      const valider = () => {
+        const v = champ.value.trim();
+        if (v) this.axisNames[key] = v;
+        else delete this.axisNames[key];
+        this.app.onChange();
+        this.app.toast(v ? 'Échelle nommée « ' + v + ' ».' : 'Nom de l’échelle retiré.');
+        fermer();
+      };
+      back.querySelector('.ax-ok').addEventListener('click', valider);
+      back.querySelector('.ax-non').addEventListener('click', fermer);
+      back.querySelector('.m-close').addEventListener('click', fermer);
+      back.addEventListener('pointerdown', (e) => { if (e.target === back) fermer(); });
+      champ.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') valider();
+        if (e.key === 'Escape') fermer();
+      });
+    }
+
     renameSeries(s) {
       closePopover();
       let chip = null;
@@ -870,7 +1004,9 @@
           '<span class="chip-val">—</span>' +
           '<span class="chip-off hide" title="Courbe décalée verticalement">Δ</span>' +
           '<span class="chip-axis"></span>';
-        chip.querySelector('.chip-addr').textContent = s.name || s.addr;
+        chip.querySelector('.chip-addr').textContent = this.chipLabel
+          ? (s.name || s.meta.label || s.addr)
+          : (s.name || s.addr);
         chip.querySelector('.sw').style.background = colorOf(s);
         chip.title = s.addr + ' — ' + (s.name ? s.name + ' (' + s.meta.label + ')' : s.meta.label) +
           (s.meta.unit ? ' (' + s.meta.unit + ')' : '') +
@@ -898,11 +1034,36 @@
           this.openAxisMenu(key, chip);
         }, null, 'Saisir le minimum et le maximum de l’axe de cette courbe, ' +
           'ou les donner à toutes les échelles du graphique');
-        mk((s.axisMode === 'solo' ? '✓ ' : '') + 'Échelle dédiée', () => {
-          s.axisMode = s.axisMode === 'solo' ? 'auto' : 'solo';
+        // Choix explicite de l'échelle : automatique, dédiée, ou celle d'une
+        // autre courbe. C'est ce qui permet d'associer deux grandeurs d'unités
+        // différentes sur un même axe, ou de scinder deux grandeurs de même
+        // unité que le regroupement automatique avait réunies.
+        const mienne = this.axisKey(s);
+        mk((s.axisMode === 'auto' ? '✓ ' : '') + 'Échelle automatique (par unité)', () => {
+          s.axisMode = 'auto';
           this.app.onChange();
-          this.app.toast(s.addr + ' : ' + (s.axisMode === 'solo' ? 'échelle dédiée' : 'échelle partagée par unité') + '.');
-        }, null, 'Donner à cette courbe son propre axe, au lieu de partager celui de son unité');
+          this.app.toast(s.addr + ' : échelle partagée par unité.');
+        }, null, 'Laisser cette courbe rejoindre les autres courbes de même unité');
+        mk((s.axisMode === 'solo' ? '✓ ' : '') + 'Échelle dédiée', () => {
+          s.axisMode = 'solo';
+          this.app.onChange();
+          this.app.toast(s.addr + ' : échelle dédiée.');
+        }, null, 'Donner à cette courbe son propre axe, séparé de toutes les autres');
+        for (const autre of this.series) {
+          if (autre === s || !autre.visible) continue;
+          const cle = this.axisKey(autre);
+          if (cle === mienne) continue;
+          if (this.series.some((x) => x !== s && x !== autre && this.axisKey(x) === cle &&
+                                      this.series.indexOf(x) < this.series.indexOf(autre))) continue;
+          mk('Mettre sur l’échelle « ' + this.axisShort(cle) + ' »', () => {
+            s.axisMode = 'k:' + cle;
+            this.app.onChange();
+            this.app.toast(s.addr + ' → échelle « ' + this.axisShort(cle) + ' ».');
+          }, null, 'Faire partager à cette courbe l’axe de « ' +
+            ((autre.name || autre.addr)) + ' », même si les unités diffèrent');
+        }
+        mk('Renommer l’échelle de cette courbe…', () => this.renommerAxe(mienne), null,
+          'Donner un nom à l’axe (il apparaît en tête de sa règle et dans les menus)');
         mk('Décaler verticalement (glisser)', () => this.startMoveMode(s), null,
           'Séparer visuellement cette courbe des autres ; les valeurs affichées restent les valeurs vraies');
         if (s.offsetY) {
@@ -962,12 +1123,20 @@
       return wrap;
     }
 
-    /** Mise à jour des valeurs vivantes de la légende (~5 Hz). */
+    /** Mise à jour des valeurs de la légende (~5 Hz). */
     updateLive() {
       const chips = this.legendEl.children;
+      // Graphique figé : on lit la valeur à l'instant du gel. Une légende qui
+      // continuerait de défiler sous une pause contredirait le tracé.
+      const recul = this.viewEnd === null ? 0 : Math.max(0, DW.source.now() - this.viewEnd);
+      this.majRetard();
       for (let i = 0; i < this.series.length && i < chips.length; i++) {
         const s = this.series[i];
-        const last = DW.source.latest(s.addr);
+        let last = DW.source.latest(s.addr);
+        if (last && recul > 0) {
+          const v = DW.valeurA(s.addr, this.viewEnd);
+          last = v == null ? null : { t: this.viewEnd, v };
+        }
         const valEl = chips[i].querySelector('.chip-val');
         valEl.textContent = last ? DW.fmtVal(last.v, s.meta) + (s.meta.unit ? ' ' + s.meta.unit : '') : '—';
         chips[i].querySelector('.chip-off').classList.toggle('hide', !s.offsetY);
@@ -984,8 +1153,19 @@
     }
 
     // ---------- Échelles ----------------------------------------------
+    /**
+     * Échelle d'une courbe. Trois cas :
+     *   'auto'      regroupement automatique par unité (le défaut) ;
+     *   'solo'      échelle dédiée à cette seule courbe ;
+     *   'k:<clé>'   échelle explicitement choisie — celle d'une autre courbe.
+     * Le troisième cas est ce qui permet d'associer deux grandeurs d'unités
+     * différentes sur un même axe, ou de scinder deux grandeurs de même unité.
+     */
     axisKey(s) {
       if (s.axisMode === 'solo') return 'solo:' + s.addr;
+      if (typeof s.axisMode === 'string' && s.axisMode.startsWith('k:')) {
+        return s.axisMode.slice(2);
+      }
       if (s.meta.kind === 'bit') return 'bool';
       if (s.meta.unit) return 'u:' + s.meta.unit;
       return s.meta.kind === 'word' ? 'mot' : 'sans-unité';
@@ -1203,17 +1383,18 @@
 
       ctx.font = fontPx + 'px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 
-      // Grille temporelle (graduations relatives au bord direct)
-      const nowT = DW.source.now();
+      // Grille temporelle, ancrée sur le BORD DROIT DE LA VUE. Ancrée sur
+      // l'heure courante, elle continuait de glisser sous un graphique figé —
+      // ce qui donnait l'impression que la pause ne prenait pas. Le retard sur
+      // le temps réel se lit dans l'en-tête, en clair.
       const tickS = niceTimeStep(this.windowS / (compact ? 4 : 5));
       ctx.strokeStyle = IK.line;
       ctx.fillStyle = IK.faint;
       ctx.lineWidth = 1;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      const firstK = Math.ceil((nowT - tEnd) / tickS - 1e-9);
-      for (let k = firstK; ; k++) {
-        const t = nowT - k * tickS;
+      for (let k = 0; ; k++) {
+        const t = tEnd - k * tickS;
         if (t < tStart - 1e-9) break;
         const x = Math.round(X(t)) + 0.5;
         ctx.beginPath(); ctx.moveTo(x, mT); ctx.lineTo(x, mT + ph); ctx.stroke();
@@ -1249,7 +1430,8 @@
           ctx.fillText(fmtAxisTick(v, g.tickStep || 1), tx, y);
         }
         ctx.textBaseline = 'bottom';
-        const lbl = (g.manual ? '🔒' : '') + (g.label || '');
+        const nom = this.axisNames && this.axisNames[g.key];
+        const lbl = (g.manual ? '🔒' : '') + (nom || g.label || '');
         if (lbl) ctx.fillText(lbl, tx, mT - 4);
       });
 
@@ -1285,7 +1467,7 @@
         if (xp >= mL - 2 && xp <= mL + pw + 2) cursorX = xp;
       }
       if (cursorX !== null && groups.length) {
-        this.drawCursor(ctx, groups, tStart, X, mL, mT, pw, ph, cursorX, nowT);
+        this.drawCursor(ctx, groups, tStart, X, mL, mT, pw, ph, cursorX, DW.source.now());
       } else {
         this.tipEl.classList.add('hide');
       }
@@ -1330,6 +1512,8 @@
         title: this.title,
         windowS: Math.round(this.windowS * 10) / 10,
         x: this.x, y: this.y, w: this.w, h: this.h,
+        axisNames: Object.keys(this.axisNames).length ? Object.assign({}, this.axisNames) : undefined,
+        chipLabel: this.chipLabel ? 'label' : undefined,
         series: this.series.map((s) => ({
           addr: s.addr,
           name: s.name || undefined,
