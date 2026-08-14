@@ -50,7 +50,9 @@ syntaxe_js() {
 syntaxe_outillage() {
   local f
   python3 -m py_compile tools/*.py || return 1
-  for f in tools/*.sh; do bash -n "$f" || return 1; done
+  # .devcontainer aussi : une faute de frappe y casse tous les Codespaces neufs,
+  # et le défaut ne se voit qu'à la création suivante.
+  for f in tools/*.sh .devcontainer/*.sh; do bash -n "$f" || return 1; done
 }
 
 entetes_generes() {

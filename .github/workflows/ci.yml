@@ -110,7 +110,7 @@ jobs:
       - name: Syntaxe de l'outillage (Python et shell)
         run: |
           python3 -m py_compile tools/*.py
-          for f in tools/*.sh; do bash -n "$f" || exit 1; done
+          for f in tools/*.sh .devcontainer/*.sh; do bash -n "$f" || exit 1; done
 
       - name: En-têtes générés à jour (catalogue et protocoles)
         run: |

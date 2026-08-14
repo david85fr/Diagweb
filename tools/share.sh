@@ -102,10 +102,17 @@ if [ "$MODE" = "serveur" ]; then
   # 1. Compilation du serveur de diagnostic si nécessaire
   if [ ! -x build/diagweb-server ]; then
     echo "→ Compilation du serveur de diagnostic"
-    if ! command -v meson > /dev/null || ! command -v g++ > /dev/null; then
-      echo "   meson ou g++ absent. Installez-les :"
+    # Nommer l'outil qui manque, pas la paire : « meson ou g++ absent » laissait
+    # chercher lequel des deux, alors que la réponse est immédiate.
+    MANQUE=""
+    for outil in g++ meson ninja; do
+      command -v "$outil" > /dev/null || MANQUE="$MANQUE $outil"
+    done
+    if [ -n "$MANQUE" ]; then
+      echo "   Outil(s) absent(s) :$MANQUE"
       echo "     sudo apt-get update && sudo apt-get install -y build-essential meson ninja-build"
-      echo "   (ou reconstruisez le Codespace : image C++ configurée dans .devcontainer/)"
+      echo "   Dans un Codespace, cela veut souvent dire que .devcontainer/ n'a pas"
+      echo "   été appliqué : Palette de commandes → « Codespaces: Rebuild Container »."
       exit 1
     fi
     meson setup build > /dev/null || exit 1
