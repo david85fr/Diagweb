@@ -2281,7 +2281,16 @@
     const tuiles = tab ? tilesOf(tab) : [];
     const fige = (t) => (t.entries ? t.frozen != null : t.paused);
     const toutFige = tuiles.length && tuiles.every(fige);
-    $('pauseAllBtn').textContent = toutFige ? '▶ Reprendre' : '⏸ Figer';
+    // Pictogramme seul : un libellé qui change de largeur bousculait ses
+    // voisins. L'infobulle dit ce que fait le bouton DANS SON ÉTAT COURANT —
+    // sans elle, ⏸ et ▶ seuls ne diraient pas ce qu'ils vont déclencher.
+    const b = $('pauseAllBtn');
+    b.textContent = toutFige ? '▶' : '⏸';
+    b.classList.toggle('on', !!toutFige);
+    b.title = toutFige
+      ? 'Reprendre le temps réel sur tout l’onglet actif (courbes et valeurs numériques)'
+      : 'Figer d’un coup tout l’onglet actif : les courbes ET les valeurs numériques ' +
+        's’arrêtent sur l’instant courant, et chaque tuile affiche son retard';
   }
   const updatePauseAllUi = updatePauseBtn;
 

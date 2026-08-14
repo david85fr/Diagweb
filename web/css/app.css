@@ -1112,14 +1112,12 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
   .lldp-grid { grid-template-columns: auto 1fr auto 1fr; }
 }
 
-/* Figer/Reprendre monte dans la barre supérieure : c'est une commande qu'on
-   cherche vite, et elle doit rester visible quand la zone de configuration est
-   repliée. */
-.pausebtn { font-size: 12.5px; padding: 6px 10px; white-space: nowrap; }
-@media (max-width: 520px) {
-  .pausebtn { font-size: 0; padding: 6px 8px; }        /* pictogramme seul */
-  .pausebtn::first-letter { font-size: 14px; }
-}
+/* Figer/Reprendre est dans la barre supérieure : c'est une commande qu'on
+   cherche vite. Pictogramme SEUL — le libellé « Figer » / « Reprendre »
+   changeait de largeur d'un état à l'autre et venait bousculer le tag de
+   version et le menu ☰ à côté. L'infobulle porte l'explication, et elle suit
+   l'état du bouton. */
+.pausebtn { padding: 6px 9px; }
 /* Carte choisie comme destination d'ajout : ce que la barre du haut vise. */
 .chart-card.cible, .table-card.cible {
   border-color: color-mix(in srgb, var(--accent) 60%, var(--line));

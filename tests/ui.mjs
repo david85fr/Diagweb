@@ -569,8 +569,25 @@ check('carte sélectionnée : l’ajout depuis la barre du haut y va',
 // l'en-tête de chaque tuile figée.
 const valeurTable = () => p2.locator(PANE + '.table-card .vrow .val').first().textContent();
 const valeurLegende = () => p2.locator(PANE + '.chart-card .chip-val').first().textContent();
+// Pictogramme seul : un libellé « Figer » / « Reprendre » changeait de largeur
+// d'un état à l'autre et bousculait le tag de version et le menu ☰ à côté.
+// L'infobulle porte l'explication, et elle suit l'état du bouton.
+const boutonFiger = () => p2.evaluate(() => {
+  const b = document.getElementById('pauseAllBtn');
+  const r = b.getBoundingClientRect();
+  const menu = document.getElementById('menuBtn').getBoundingClientRect();
+  return { texte: b.textContent.trim(), largeur: Math.round(r.width),
+           titre: b.title, chevauche: r.right > menu.left + 1 };
+});
+const pb0 = await boutonFiger();
 await p2.click('#pauseAllBtn');
 await p2.waitForTimeout(400);
+const pb1 = await boutonFiger();
+check('« Figer » : pictogramme seul, infobulle qui suit l’état',
+  pb0.texte === '⏸' && pb1.texte === '▶' &&
+  pb0.largeur === pb1.largeur && !pb0.chevauche && !pb1.chevauche &&
+  /Figer/.test(pb0.titre) && /Reprendre/.test(pb1.titre),
+  pb0.texte + ' → ' + pb1.texte + ' · ' + pb0.largeur + ' px, largeur stable, sans chevauchement');
 const vT0 = await valeurTable(), vL0 = await valeurLegende();
 const retards0 = await p2.locator(PANE + '.lag:not(.hide)').count();
 const tuiles = await p2.locator(PANE + '.charts-grid > .card').count();

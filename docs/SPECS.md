@@ -619,8 +619,11 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
   réseau** (§8 ter) ; les notes de version restent affichées « à venir ».
   Fermé par sélection ou appui à l'extérieur.
 - **Figer/Reprendre** est dans la **barre du haut**, à côté du tag de version :
-  arrêter tous les graphiques est le geste qu'on fait dans l'urgence, il ne
-  doit pas dépendre du repli de la zone de configuration.
+  arrêter tout l'onglet est le geste qu'on fait dans l'urgence. **Pictogramme
+  seul** (⏸ / ▶) : un libellé « Figer » / « Reprendre » change de largeur d'un
+  état à l'autre et venait bousculer le tag de version et le menu ☰. C'est
+  l'**infobulle** qui porte l'explication, et elle suit l'état du bouton —
+  sans elle, ⏸ et ▶ ne diraient pas ce qu'ils vont déclencher.
 - Le bouton **＋** (nouvel onglet) se tient **juste après le dernier onglet**,
   pas au bord droit : la liste ne prend que la largeur de ses onglets. Quand
   ils débordent, elle se rétracte et défile — le ＋ reste à portée immédiate au
