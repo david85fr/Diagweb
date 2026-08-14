@@ -77,6 +77,7 @@
       dragId, origin: winId,
       kind: payload.kind,
       chartId: payload.chartId,
+      series: payload.series,
       tabId: payload.tabId,
       tableId: payload.tableId,
       chart: payload.chart,
@@ -195,10 +196,13 @@
     return false;
   }
 
+  /** Ctrl (ou ⌘) enfoncé : la source garde son widget, la cible en reçoit une copie. */
+  const copie = (e) => !!(e && (e.ctrlKey || e.metaKey));
+
   function onDragOver(e) {
     if (!api || !hasWidget(e.dataTransfer)) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
+    e.dataTransfer.dropEffect = copie(e) ? 'copy' : 'move';
     clearHighlight();
     const tabEl = e.target.closest && e.target.closest('.tab');
     if (tabEl) { tabEl.classList.add('dnd-over'); return; }
@@ -249,9 +253,17 @@
     if (!ok) return;
 
     if (o.origin === winId) {
-      // Même fenêtre : le déplacement est immédiat
       dragging = null;
-      completeMove(o.dragId);
+      // Ctrl / ⌘ : on garde l'original. Sans modificateur, c'est un
+      // déplacement — la source retire son widget maintenant que la cible a
+      // accusé réception.
+      if (copie(e)) {
+        const p = pending.get(o.dragId);
+        if (p) { clearTimeout(p.timer); pending.delete(o.dragId); }
+        api.toast('Copié (Ctrl enfoncé) — l’original reste en place.');
+      } else {
+        completeMove(o.dragId);
+      }
     } else if (bc) {
       bc.postMessage({ type: 'widget-accepted', dragId: o.dragId });
     } else {
