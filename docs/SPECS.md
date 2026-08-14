@@ -501,8 +501,8 @@ Spécification détaillée : `docs/PROTOCOLES.md`. En résumé :
   décisions consignées dans `docs/PROTOCOLES.md` § « Bibliothèques externes et
   licences ». **Deux dépendances à ce jour**, toutes deux facultatives :
   **open62541** (MPL-2.0) pour OPC UA, débranchable par
-  `-DDIAGWEB_WITH_OPCUA=OFF`, et **Net-SNMP** (BSD) pour SNMP v3,
-  débranchable par `-DDIAGWEB_WITH_NETSNMP=OFF`. **IEC 61850 n'a aucune pile C
+  `-Dopcua=disabled`, et **Net-SNMP** (BSD) pour SNMP v3,
+  débranchable par `-Dnetsnmp=disabled`. **IEC 61850 n'a aucune pile C
   permissive** — les stacks matures sont GPLv3 ou payantes.
 - **Sécurité OPC UA** : le chiffrement demande OpenSSL (option de compilation
   `DIAGWEB_OPCUA_ENCRYPTION`). Sans elle, un lien réglé en signature ou

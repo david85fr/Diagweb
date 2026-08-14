@@ -144,7 +144,7 @@ inline const std::vector<ProtocolDesc>& protocols_desc() {
     { "offset", "Décalage", "float", "0", false, "Constante ajoutée après le gain (unité physique).", "" },
     { "timestamp", "Horodatage", "enum", "source", false, "Équipement : la date que l’équipement attache lui-même à la donnée — la seule fidèle quand l’événement précède sa transmission. Fournie par IEC 60870-5-104 (types horodatés), IEC 61850 (GOOSE, Sampled Values, rapports) et OPC UA en abonnement ; SNMP la tient d’un OID d’horodatage de la MIB, s’il en existe un (champ « OID d’horodatage » du point) ; ailleurs, l’horloge du serveur est utilisée de toute façon. Serveur : ignorer délibérément l’horodatage du protocole — à choisir quand l’horloge de l’équipement n’est pas de confiance.", "source|server" },
     } },
-  { "j1939", "J1939 (CAN, PGN mono-trame)", "SocketCAN (Linux)",
+  { "j1939", "J1939 (CAN, SPN)", "SocketCAN (Linux)",
     "live", "Décodage J1939 au-dessus de CAN : l’identifiant 29 bits est découpé en priorité, PGN et adresse source ; un point est un SPN extrait d’un PGN. Les PGN de plus de 8 octets (DM1, par exemple) sont réassemblés par le protocole de transport BAM, en écoute passive. Un PGN que le calculateur n’émet pas de lui-même se réclame point par point, avec sa période.",
     {
     { "iface", "Interface", "text", "can0", true, "Nom de l’interface CAN du système.", "" },

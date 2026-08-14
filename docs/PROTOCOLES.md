@@ -233,11 +233,13 @@ débit du bus relève de l'administration du contrôleur, pas de Diagweb.
 - **J1939** : l'identifiant 29 bits est décomposé en priorité, PGN et adresse
   source — en PDU1 (PF < 240) l'octet PS est une destination et ne fait pas
   partie du PGN. Un point est un SPN : PGN attendu, adresse source (ou
-  « toutes »), puis le champ de bits. **Mono-trame uniquement** : le transport
-  multi-trames (BAM, RTS/CTS) n'est pas implémenté, donc un PGN long (DM1,
-  configuration moteur) ne remontera **jamais** de valeur — c'est dit dans
-  l'interface, à côté du champ PGN. Le filtrage noyau porte sur le PGN et
-  jamais sur l'adresse source, qui change à chaque re-revendication.
+  « toutes »), puis le champ de bits. Les PGN de plus de 8 octets (DM1,
+  configuration moteur) sont **réassemblés** par le protocole de transport de
+  J1939-21 : BAM en écoute strictement passive, RTS/CTS seulement pour un lien
+  qui réclame déjà des PGN — y répondre impose d'émettre un CTS, donc de
+  parler sur le bus (voir « Messages multi-trames » plus bas). Le filtrage
+  noyau porte sur le PGN et jamais sur l'adresse source, qui change à chaque
+  re-revendication.
 - **CANopen** : deux modes. **Écoute d'un TPDO** (rien n'est émis, c'est le
   mode par défaut) ou **lecture SDO** (upload expédié, `0x600+node-id` →
   `0x580+node-id`). Le mode SDO est le seul cas où le serveur émet sur le bus ;
@@ -567,19 +569,27 @@ magasin de secrets sans jamais l'écrire sur disque.
 
 #### Compilation
 
-L'option `opcua` vaut « auto » : Meson utilise une copie
-d'open62541 déjà installée si `find_package` en trouve une — le cas d'un SDK
-de contrôleur — et la récupère sinon par `FetchContent` sur la version épinglée
-`DIAGWEB_OPCUA_TAG`. **La compilation croisée d'un produit ne devrait pas
-dépendre d'un accès réseau** : fournir la bibliothèque dans le SDK est la voie
-recommandée.
+L'option `opcua` vaut « auto » : Meson cherche open62541 **sur le système**,
+par `pkg-config`, et rien d'autre — la bibliothèque n'est jamais téléchargée
+pendant la construction. **La compilation croisée d'un produit ne devrait pas
+dépendre d'un accès réseau** : fournir la bibliothèque dans le SDK du
+contrôleur est la voie recommandée. Absente, le pilote redevient « déclaré »
+et ne publie rien, sans que la construction échoue.
 
 ```bash
 meson setup build -Dopcua=disabled            # sans OPC UA, hors ligne
-meson setup build -Dopcua_encryption=true     # avec chiffrement (OpenSSL)
+meson setup build -Dopcua=enabled             # échec net si open62541 manque
+meson setup build -Dopcua_encryption=true     # exige un open62541 avec OpenSSL
 ```
 
-À `OFF`, le serveur se construit sans aucune dépendance et le pilote redevient
+Pour une copie installée hors des chemins standard, indiquer son
+`pkgconfig` :
+
+```bash
+PKG_CONFIG_PATH=$HOME/.local/open62541/lib/pkgconfig meson setup build
+```
+
+À `disabled`, le serveur se construit sans aucune dépendance et le pilote redevient
 « déclaré » : la configuration reste saisissable, rien n'est publié, et l'état
 du lien le dit.
 
@@ -794,7 +804,7 @@ qui autorise explicitement la combinaison avec du logiciel propriétaire —
 seules les modifications apportées à ses propres fichiers devraient être
 publiées, ce qui ne concerne pas le code de Diagweb. Version épinglée v1.5.6,
 licence vérifiée dans son fichier `LICENSE`. Elle se débranche par
-`-DDIAGWEB_WITH_OPCUA=OFF`.
+`-Dopcua=disabled`.
 
 **SNMP v3 — intégrée.** Même raisonnement, pour une raison plus étroite : USM
 est du **code cryptographique**, et l'écrire soi-même sans pouvoir l'éprouver
@@ -899,3 +909,45 @@ L'absence de l'un ou l'autre n'est pas passée sous silence : les vérifications
 concernées échouent en disant ce qui manque. Les pilotes CAN, eux, ne sont pas
 couverts de bout en bout faute d'interface CAN dans l'environnement de test :
 seuls leur décodage, leurs filtres et leur appariement le sont.
+
+### Éprouver les liens en conteneur
+
+Codespaces, Docker, intégration continue : le même classement s'applique
+partout, et il tient à ce que le noyau accorde au conteneur.
+
+| Ce qui est éprouvé | Ce qu'il faut |
+|---|---|
+| Décodage des 13 protocoles (`diagweb-decode-test`) | rien |
+| Modbus TCP, IEC 60870-5-104, SNMP v1/v2c, IEC 61850 MMS et rapports | rien — équipements simulés sur `127.0.0.1` |
+| SNMP v3 (USM) | `libsnmp-dev` et `snmpd` |
+| OPC UA | `open62541` (voir « Compilation » plus haut) |
+| Modbus RTU | `socat` (paire de pty), parité `none` |
+| GOOSE, Sampled Values, LLDP, capture | `CAP_NET_RAW` |
+| CAN, J1939, CANopen | interface `vcan` — donc `CAP_NET_ADMIN` |
+
+Les protocoles IP n'exigent **aucun privilège** : rien n'écoute sous le port
+1024, et chaque équipement simulé prend un port libre attribué par le système.
+
+Le jeu de capacités par défaut d'un conteneur comprend `CAP_NET_RAW` mais pas
+`CAP_NET_ADMIN` ; un devcontainer les demande par `runArgs` (voir
+`.devcontainer/devcontainer.json`). Pour une capture, la subtilité tient à
+`tcpdump` lui-même : ses capacités fichier incluent `cap_net_admin`, et un
+`execve` les refusant échoue **avant** d'ouvrir la moindre socket, y compris
+sous `sudo`. `sudo setcap -r /usr/bin/tcpdump` lève le blocage.
+
+La capacité ne suffit pas pour `vcan` : le module doit exister dans le noyau
+de l'**hôte**, ce qu'aucun privilège ne remplace. La sonde tient en une ligne,
+et ses trois réponses se distinguent :
+
+```bash
+ip link add dev vcan0 type vcan
+#   « Operation not permitted »  → il manque CAP_NET_ADMIN
+#   « Unknown device type »      → noyau hôte sans vcan : rien à tenter
+#   (silence)                    → ip link set up vcan0, puis can-utils
+```
+
+Sans bus, les trois pilotes CAN échouent en le disant — « socket CAN
+impossible », « interface introuvable » — et ne publient jamais de valeur
+inventée. Le lien GOOSE des tests vise volontairement une interface
+inexistante : la suite passe donc en entier **sans** `CAP_NET_RAW`, et la
+capacité ne sert qu'à décoder de vraies trames.

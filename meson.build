@@ -35,11 +35,24 @@ defs = []
 # produit embarqué ne doit pas dépendre d'un accès réseau au moment du build.
 # Absent, le pilote OPC UA redevient « déclaré » et ne publie rien.
 opcua = dependency('open62541', required: get_option('opcua'), include_type: 'system')
+opcua_chiffre = false
 if opcua.found()
   deps += opcua
   defs += '-DDIAGWEB_HAS_OPCUA=1'
-  if get_option('opcua_encryption')
-    defs += '-DDIAGWEB_OPCUA_ENCRYPTION=1'
+
+  # Le chiffrement n'est pas une capacité de Diagweb : il vient d'open62541,
+  # qui définit UA_ENABLE_ENCRYPTION quand il a été compilé avec une pile TLS.
+  # C'est ce symbole que lit le pilote (drivers/opcua/opcua.hpp), et lui seul.
+  # L'option ne sert donc qu'à EXIGER la capacité et à échouer à la
+  # configuration si elle manque — plutôt que de laisser découvrir à
+  # l'exécution qu'un lien chiffré refuse de s'ouvrir.
+  opcua_chiffre = cxx.has_header_symbol('open62541/config.h',
+                                        'UA_ENABLE_ENCRYPTION',
+                                        dependencies: opcua)
+  if get_option('opcua_encryption') and not opcua_chiffre
+    error('-Dopcua_encryption=true, mais open62541 est compilé sans pile TLS ' +
+          '(UA_ENABLE_ENCRYPTION absent). Reconstruire open62541 avec ' +
+          '-DUA_ENABLE_ENCRYPTION_OPENSSL=ON, ou retirer cette option.')
   endif
 endif
 
@@ -110,6 +123,6 @@ run_target('generer',
 summary({
   'OPC UA (open62541)': opcua.found(),
   'SNMP v3 (Net-SNMP)': netsnmp.found(),
-  'chiffrement OPC UA': opcua.found() and get_option('opcua_encryption'),
+  'chiffrement OPC UA': opcua_chiffre,
   'tests Node': node.found(),
 }, section: 'Diagweb', bool_yn: true)

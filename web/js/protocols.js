@@ -325,7 +325,7 @@
     },
     {
       id: 'j1939',
-      label: 'J1939 (CAN, PGN mono-trame)',
+      label: 'J1939 (CAN, SPN)',
       transport: 'SocketCAN (Linux)',
       state: 'live',
       badge: 'ext.J1939',

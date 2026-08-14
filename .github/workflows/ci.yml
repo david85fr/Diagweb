@@ -62,10 +62,13 @@ jobs:
 
       # Net-SNMP : la bibliothèque pour compiler le pilote v3 (USM), et l'agent
       # snmpd pour l'éprouver de bout en bout — le modèle de sécurité de SNMPv3
-      # ne se simule pas honnêtement. Le profil AppArmor d'Ubuntu enferme snmpd
-      # dans /etc/snmp et /var/lib/snmp, alors que le test le lance avec sa
-      # propre configuration dans un dossier temporaire : on le désactive sur
-      # cette machine de CI, qui ne sert qu'à cela.
+      # ne se simule pas honnêtement.
+      #
+      # Le test lance snmpd avec sa propre configuration dans un dossier
+      # temporaire, ce qu'un profil AppArmor confinant le démon à /etc/snmp
+      # empêcherait. Ubuntu 24.04 n'en fournit aucun pour snmpd : aa-disable
+      # est donc sans effet ici, et reste par précaution pour une image qui en
+      # embarquerait un. Son échec est ignoré, jamais bloquant.
       - name: Installer Net-SNMP (bibliothèque et agent de test)
         run: |
           sudo apt-get update

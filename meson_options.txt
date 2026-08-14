@@ -8,6 +8,6 @@
 option('opcua', type: 'feature', value: 'auto',
        description: 'Pilote OPC UA (open62541, MPL-2.0)')
 option('opcua_encryption', type: 'boolean', value: false,
-       description: 'Chiffrement OPC UA (open62541 compilé avec OpenSSL)')
+       description: 'Exiger un open62541 compilé avec une pile TLS (échec net sinon)')
 option('netsnmp', type: 'feature', value: 'auto',
        description: 'SNMP v3 (USM) via Net-SNMP (BSD)')

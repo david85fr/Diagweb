@@ -29,12 +29,14 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "json.hpp"
@@ -192,6 +194,31 @@ class CaptureManager {
     r.pid = pid;
     r.state = "en cours";
     r.detail = "capture en cours sur « " + iface + " »";
+
+    // posix_spawn ne rend compte que du fork. Un exec refusé — capacités
+    // fichier de tcpdump hors du jeu limite d'un conteneur — ou un filtre
+    // rejeté ne se voient qu'à la mort du fils. Sans cette attente, la capture
+    // était annoncée « en cours » alors que rien n'était capturé, et le refus
+    // n'apparaissait qu'au passage suivant de service() : l'appel répondait
+    // « démarrée », puis tout échouait ensuite sans que l'utilisateur sache
+    // pourquoi.
+    //
+    // Le verrou est tenu pendant cette attente. C'est assumé : démarrer une
+    // capture est une action rare et explicite, et seules les autres opérations
+    // de capture patientent. Un refus se voit en moins de 20 ms ; seul un
+    // démarrage réussi paie la fenêtre entière.
+    for (int i = 0; i < 15; i++) {                    // 150 ms, par pas de 10
+      int etat = 0;
+      if (::waitpid(pid, &etat, WNOHANG) == pid) {
+        const std::string motif = motif_journal(r);
+        std::error_code ec;
+        fs::remove(dir_ / (r.id + ".pcap"), ec);
+        fs::remove(dir_ / (r.id + ".log"), ec);
+        return motif;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
     runs_.push_back(std::move(r));
     return {};
   }

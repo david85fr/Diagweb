@@ -34,17 +34,41 @@ jobs:
         with:
           node-version: '22'
 
+      # Même cache et même recette que ci.yml : un seul endroit à faire
+      # évoluer le jour où open62541 change de version.
       - name: Cache d'open62541
+        id: cache-o62
         uses: actions/cache@v4
         with:
-          path: server/build/_deps
-          key: open62541-v1.5.6-${{ runner.os }}
+          path: ~/.local/open62541
+          key: open62541-v1.5.6-meson-${{ runner.os }}
 
-      - name: Compiler le serveur de diagnostic
+      - name: Construire open62541 (si absent du cache)
+        if: steps.cache-o62.outputs.cache-hit != 'true'
         run: |
-          cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror"
-          cmake --build server/build -j --target diagweb-server
+          git clone --depth 1 --branch v1.5.6 \
+            https://github.com/open62541/open62541.git "$RUNNER_TEMP/o62"
+          cmake -S "$RUNNER_TEMP/o62" -B "$RUNNER_TEMP/o62/build" \
+                -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$HOME/.local/open62541" \
+                -DUA_NAMESPACE_ZERO=REDUCED -DUA_ENABLE_AMALGAMATION=OFF \
+                -DUA_BUILD_EXAMPLES=OFF -DUA_FORCE_WERROR=OFF -DBUILD_SHARED_LIBS=OFF \
+                -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+          cmake --build "$RUNNER_TEMP/o62/build" -j
+          cmake --install "$RUNNER_TEMP/o62/build"
+
+      - name: Outillage de construction (Meson + Ninja)
+        run: |
+          sudo apt-get install -y --no-install-recommends meson ninja-build
+          echo "PKG_CONFIG_PATH=$HOME/.local/open62541/lib/pkgconfig:$HOME/.local/open62541/lib64/pkgconfig:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
+
+      # -Dopcua=enabled plutôt que « auto » : tout ce workflow ne sert qu'à
+      # éprouver le pilote OPC UA. Si open62541 manquait, « auto » le
+      # désactiverait en silence et le test passerait au vert sans rien avoir
+      # vérifié — ici, la configuration doit échouer.
+      - name: Configurer et compiler (C++23, avertissements = erreurs)
+        run: |
+          meson setup build -Dopcua=enabled
+          meson compile -C build
 
       - name: Interroger le serveur public
         # Le point de terminaison passe par l'environnement, jamais par
@@ -53,7 +77,7 @@ jobs:
         env:
           ENDPOINT: ${{ inputs.endpoint }}
         run: |
-          ./server/build/diagweb-server --port 8080 --root . \
+          ./build/diagweb-server --port 8080 --root . \
             --data-dir "$RUNNER_TEMP/diag-data" > "$RUNNER_TEMP/serveur.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/serveur.pid"
           for _ in $(seq 1 60); do

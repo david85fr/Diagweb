@@ -132,6 +132,7 @@ int main() {
     struct Brut : CanRawDriver {
       using CanRawDriver::CanRawDriver;
       using CanRawDriver::filters;
+      using CanRawDriver::on_frame;
     };
     struct J1939 : J1939Driver {
       using J1939Driver::J1939Driver;
@@ -142,6 +143,7 @@ int main() {
     struct Open : CanOpenDriver {
       using CanOpenDriver::CanOpenDriver;
       using CanOpenDriver::filters;
+      using CanOpenDriver::on_frame;
     };
 
     {
@@ -153,6 +155,58 @@ int main() {
             f.size() == 2 && f[0].id == 0x181 && f[0].mask == 0x7FF && !f[0].ext);
       check("CAN brut : filtre 29 bits",
             f.size() == 2 && f[1].id == 0x18FEF100 && f[1].mask == 0x1FFFFFFF && f[1].ext);
+
+      // Appariement trame par trame. Le filtre du noyau laisse passer plus que
+      // demandé (il travaille par masque) : c'est on_frame qui tranche, et une
+      // erreur ici publierait la valeur d'un autre message.
+      const uint8_t t[8] = {0xE8, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+      d.on_frame(0x181u, false, t, 8);
+      check("CAN brut : trame 11 bits appariée au bon point",
+            sink.vus.size() == 1 && sink.vus[0].first == 0,
+            std::to_string(sink.vus.size()) + " publication(s)");
+      near("CAN brut : champ Intel 16 bits décodé",
+           sink.vus.empty() ? 0 : sink.vus[0].second, 1000.0);
+      sink.vus.clear();
+
+      // Même identifiant, mais annoncé en 29 bits : ce n'est pas le même
+      // message, et le point 11 bits ne doit pas s'y reconnaître.
+      d.on_frame(0x181u, true, t, 8);
+      check("CAN brut : identifiant 29 bits non confondu avec le 11 bits",
+            sink.vus.empty(), std::to_string(sink.vus.size()) + " publication(s)");
+      sink.vus.clear();
+
+      d.on_frame(0x18FEF100u, true, t, 8);
+      check("CAN brut : trame 29 bits appariée au point étendu",
+            sink.vus.size() == 1 && sink.vus[0].first == 1,
+            std::to_string(sink.vus.size()) + " publication(s)");
+      sink.vus.clear();
+
+      d.on_frame(0x182u, false, t, 8);
+      check("CAN brut : identifiant voisin écarté", sink.vus.empty());
+      sink.vus.clear();
+    }
+
+    {
+      // Ordre des octets. En Motorola (gros-boutiste), `startBit` désigne le
+      // bit de POIDS FORT : 7 est le bit 7 de l'octet 0, et le parcours
+      // descend en dents de scie. Prendre 0 par analogie avec Intel lirait un
+      // tout autre champ — silencieusement.
+      Brut d(lien("can-raw", {}, {pt("moto", {{"canId", JValue::string("0x200")},
+                                              {"startBit", JValue::number(7)},
+                                              {"bitLen", JValue::number(16)},
+                                              {"order", JValue::string("motorola")}}),
+                                  pt("moto0", {{"canId", JValue::string("0x200")},
+                                               {"startBit", JValue::number(0)},
+                                               {"bitLen", JValue::number(16)},
+                                               {"order", JValue::string("motorola")}})}), sink);
+      const uint8_t t[8] = {0x03, 0xE8, 0, 0, 0, 0, 0, 0};
+      d.on_frame(0x200u, false, t, 8);
+      near("CAN brut : champ Motorola 16 bits décodé",
+           sink.vus.empty() ? 0 : sink.vus[0].second, 1000.0);
+      check("CAN brut : bit de départ Motorola mal placé ne donne pas Intel",
+            sink.vus.size() == 2 && sink.vus[1].second != 1000.0,
+            sink.vus.size() == 2 ? std::to_string(sink.vus[1].second) : "?");
+      sink.vus.clear();
     }
 
     {
@@ -313,6 +367,27 @@ int main() {
             f.size() == 2 && f[0].id == 0x183 && f[0].mask == 0x7FF && !f[0].ext);
       check("CANopen : filtre de la réponse SDO (0x580 + node-id)",
             f.size() == 2 && f[1].id == 0x583, f.size() == 2 ? std::to_string(f[1].id) : "?");
+
+      // Écoute d'un TPDO : seul le point en mode « tpdo » est concerné, le
+      // point SDO attend sa réponse et ne doit rien publier sur une diffusion.
+      const uint8_t t[8] = {0x37, 0x13, 0, 0, 0, 0, 0, 0};
+      d.on_frame(0x183u, false, t, 8);
+      check("CANopen : TPDO écouté publié sur le seul point concerné",
+            sink.vus.size() == 1 && sink.vus[0].first == 0,
+            std::to_string(sink.vus.size()) + " publication(s)");
+      near("CANopen : champ Intel 16 bits du TPDO",
+           sink.vus.empty() ? 0 : sink.vus[0].second, 4919.0);   // 0x1337
+      sink.vus.clear();
+
+      // CANopen est un protocole 11 bits : une trame étendue de même valeur
+      // d'identifiant n'est pas un TPDO et doit être écartée d'emblée.
+      d.on_frame(0x183u, true, t, 8);
+      check("CANopen : trame 29 bits ignorée", sink.vus.empty());
+      sink.vus.clear();
+
+      d.on_frame(0x184u, false, t, 8);
+      check("CANopen : COB-ID voisin écarté", sink.vus.empty());
+      sink.vus.clear();
     }
   }
 

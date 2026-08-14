@@ -22,7 +22,7 @@ PY
 
 if [ "$MODE" = "serveur" ]; then
   # 1. Compilation du serveur de diagnostic si nécessaire
-  if [ ! -x server/build/diagweb-server ]; then
+  if [ ! -x build/diagweb-server ]; then
     echo "→ Compilation du serveur de diagnostic"
     if ! command -v meson > /dev/null || ! command -v g++ > /dev/null; then
       echo "   meson ou g++ absent. Installez-les :"
@@ -33,12 +33,14 @@ if [ "$MODE" = "serveur" ]; then
     meson setup build > /dev/null || exit 1
     meson compile -C build > /dev/null || exit 1
   fi
-  # 2. Un aperçu Python occupe peut-être déjà le port
-  pkill -f "tools/serve.py --port $PORT" 2>/dev/null
-  pkill -f "diagweb-server --port $PORT" 2>/dev/null
+  # 2. Un aperçu Python occupe peut-être déjà le port. Le motif ne porte PAS
+  #    sur « --port » : postAttachCommand lance serve.py sans cet argument,
+  #    et un motif trop précis laissait le port occupé.
+  pkill -f "tools/serve.py" 2>/dev/null
+  pkill -x diagweb-server 2>/dev/null
   sleep 0.5
   echo "→ Démarrage du serveur de diagnostic (port $PORT)"
-  nohup ./server/build/diagweb-server --port "$PORT" --root . --data-dir .diag-data \
+  nohup ./build/diagweb-server --port "$PORT" --root . --data-dir .diag-data \
     > /tmp/diagweb-server.log 2>&1 &
   sleep 1.2
   if ! listening; then

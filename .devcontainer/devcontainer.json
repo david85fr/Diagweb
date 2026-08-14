@@ -1,17 +1,39 @@
+// Diagweb — environnement GitHub Codespaces.
+// Format jsonc : les commentaires font partie de la spécification devcontainer.
 {
-  "name": "Diagweb — prototype front-end",
+  "name": "Diagweb — interface et serveur de diagnostic",
   "image": "mcr.microsoft.com/devcontainers/cpp:1-ubuntu-24.04",
   "features": {
     "ghcr.io/devcontainers/features/python:1": { "version": "3.12" },
-    "ghcr.io/devcontainers/features/node:1": { "version": "lts" }
+    "ghcr.io/devcontainers/features/node:1": { "version": "lts" },
+    // tools/share.sh passe le port en public avec « gh codespace ports ».
+    "ghcr.io/devcontainers/features/github-cli:1": {}
   },
-  "forwardPorts": [8080],
+
+  // 8080 : aperçu et serveur de diagnostic. 8099 : port des tests de liens
+  // réseau (meson test), distinct pour que les deux tournent ensemble.
+  "forwardPorts": [8080, 8099],
   "portsAttributes": {
     "8080": {
       "label": "Diagweb (aperçu)",
       "onAutoForward": "notify"
+    },
+    "8099": {
+      "label": "Diagweb (tests)",
+      "onAutoForward": "ignore"
     }
   },
+
+  // CAP_NET_RAW : sockets AF_PACKET, indispensables à GOOSE, Sampled Values,
+  // LLDP et à la capture. CAP_NET_ADMIN : création d'une interface « vcan »
+  // pour éprouver CAN, J1939 et CANopen sans matériel.
+  //
+  // La capacité est nécessaire mais pas forcément suffisante pour vcan : le
+  // module doit exister dans le noyau de l'hôte, ce qu'aucune capacité ne peut
+  // compenser. Sonde : « ip link add dev vcan0 type vcan » — « Unknown device
+  // type » signifie noyau sans vcan, et il n'y a alors rien à tenter de plus.
+  "runArgs": ["--cap-add=NET_RAW", "--cap-add=NET_ADMIN"],
+
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "postAttachCommand": {
     "apercu": "nohup python3 tools/serve.py > /tmp/diagweb-serve.log 2>&1 &"
@@ -27,6 +49,10 @@
     }
   },
   "remoteEnv": {
-    "PLAYWRIGHT_BROWSERS_PATH": "${containerWorkspaceFolder}/.pw-browsers"
+    "PLAYWRIGHT_BROWSERS_PATH": "${containerWorkspaceFolder}/.pw-browsers",
+    // open62541 est installé dans $HOME par post-create.sh ; sans ce chemin,
+    // meson ne le trouve pas et le pilote OPC UA redevient « déclaré ».
+    // ${containerEnv:HOME} évite de coder en dur l'utilisateur du conteneur.
+    "PKG_CONFIG_PATH": "${containerEnv:HOME}/.local/open62541/lib/pkgconfig:${containerEnv:HOME}/.local/open62541/lib64/pkgconfig"
   }
 }
