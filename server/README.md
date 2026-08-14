@@ -1,0 +1,190 @@
+# Serveur de diagnostic — prototype
+
+Processus qui **sert les pages web**, **relaie le flux temps réel** des
+variables du `controller` et **lit lui-même des équipements réseau**,
+conformément à l'architecture cible décrite dans `docs/PROJET.md` :
+
+```
+controller (C++, modèles, bus) ─ IPC ─┐
+                                      ├─ serveur de diagnostic ─ WebSocket ─ navigateur
+équipements tiers (Modbus, 104, CAN) ─┘
+```
+
+Le `controller` n'existe pas encore côté prototype : il est remplacé par
+`SimSource`, qui génère les mêmes signaux que la simulation du navigateur
+(catalogue dérivé automatiquement de `web/js/config.js`). Les **liens
+réseau**, eux, sont réels : voir `docs/PROTOCOLES.md`.
+
+**Le cœur n'a aucune dépendance externe** : bibliothèque standard C++20 +
+POSIX uniquement — la poignée de main WebSocket (SHA-1, base64), le découpage
+en trames et le JSON sont implémentés localement, pour rester déployable sur
+le contrôleur embarqué. Seuls deux pilotes s'appuient sur une bibliothèque, et
+se débranchent à la compilation (voir § Dépendances).
+
+## Compiler et lancer
+
+```bash
+meson setup build
+meson compile -C build
+./build/diagweb-server --port 8080 --root .. --data-dir ../.diag-data
+```
+
+Options : `--sim-protocols` remplace les pilotes réseau par un générateur
+(démonstration sans matériel ; les liens s'affichent « simulé »).
+
+Tests :
+
+```bash
+meson test -C build --suite serveur      # décodage + liens réseau + forçage
+node ../tests/protocols.mjs        # serveur en fonctionnement
+```
+
+Puis ouvrir `http://localhost:8080/web/index.html` (sources) ou
+`/dist/index.html` (livrable). Le navigateur détecte le serveur et bascule
+automatiquement sur son flux ; `?src=sim` force la simulation locale,
+`?src=ws` force le flux serveur.
+
+Compilation croisée pour le contrôleur :
+
+```bash
+meson setup build-arm --cross-file <sdk>/croix-controleur.ini
+```
+
+## Points d'entrée
+
+| Méthode | Chemin | Rôle |
+|---|---|---|
+| GET | `/ws` | flux temps réel (WebSocket) |
+| GET | `/api/health` | état, nom de la source, horloge, horizon |
+| GET/PUT | `/api/protocols` | configuration des liens réseau (+ état, protocoles) |
+| GET | `/api/protocols/status` | état courant des liens réseau |
+| POST | `/api/protocols/test` | test de connexion d'un lien |
+| GET/PUT | `/api/appearance` | logo et couleurs de l'installation, partagés par tous les postes (512 ko au plus ; un logo doit être une image incorporée `data:image/…`) |
+| GET | `/api/interfaces` | inventaire des interfaces (Ethernet, CAN, boucle) |
+| GET | `/api/audit` | audit des communications : sockets ouvertes, liens déclarés, interfaces |
+| GET/PUT | `/api/lldp` | voisinage LLDP et délai d'oubli (600 s par défaut) |
+| GET | `/api/capture` | état des captures, quota, déclencheur |
+| POST | `/api/capture/start\|stop\|delete` | pilotage d'une capture |
+| PUT | `/api/capture/config` | quota de disque et déclenchement par variable |
+| GET | `/api/capture/file?name=` | télécharge un fichier pcap |
+| GET | `/api/layouts` | configurations enregistrées |
+| GET/PUT | `/api/layouts/<nom>` | lecture / enregistrement d'une configuration |
+| GET | `/api/datalog` | état des campagnes de journalisation |
+| POST | `/api/datalog/start` | démarre une journalisation autonome (navigateur fermé) |
+| POST | `/api/datalog/stop` | arrête une campagne |
+| GET | `/api/datalog/file?name=` | télécharge le CSV d'une campagne |
+| GET | `/…` | fichiers statiques sous `--root` |
+
+Le flux WebSocket accepte aussi `{"c":"set","addr":…,"value":…}` (forçage
+d'une variable ; `{…,"release":1}` relâche) — refusé pour les points réseau,
+qui restent en lecture seule.
+
+## Protocole du flux (trames texte JSON)
+
+Client → serveur :
+
+```json
+{"c":"sub","addr":"MB414","periodMs":10}
+{"c":"unsub","addr":"MB414"}
+```
+
+Serveur → client :
+
+```json
+{"e":"hello","now":12.34,"horizonS":330,"defaultPeriodMs":10,"source":"…"}
+{"e":"meta","addr":"MB414","label":"…","unit":"","kind":"word","family":"MB","known":true}
+{"e":"err","addr":"XX","msg":"adresse invalide"}
+{"e":"d","now":12.40,"s":{"MB414":[[12.35,21048],[12.36,21050]]}}
+```
+
+- `t` est en **secondes depuis le démarrage du serveur** ; le navigateur
+  recale son horloge sur `now` (lissage, la gigue réseau est absorbée).
+- À l'abonnement, le serveur envoie l'historique récent (60 s par défaut,
+  décimé à 1 500 points par variable) : les courbes sont pleines
+  immédiatement.
+- Les lots sont émis toutes les 60 ms ; chaque variable est échantillonnée
+  à **sa** période (10 ms par défaut).
+
+## Structure
+
+| Fichier | Rôle |
+|---|---|
+| `src/main.cpp` | serveur HTTP + WebSocket, REST, boucle d'émission |
+| `src/source.hpp` | **contrat** `IVariableSource` + grammaire des adresses |
+| `src/sim_source.hpp` | source simulée (à remplacer par le binding du `controller`) + forçage |
+| `src/recorder.hpp` | journalisation autonome sur disque (indépendante des clients) |
+| `src/protocol.hpp` | modèle des liens/points + contrat `IProtocolDriver` |
+| `src/protocol_source.hpp` | liens réseau (`@lien.point`) + aiguillage composite |
+| `src/drivers/<protocole>/` | **un dossier par protocole** (voir ci-dessous) |
+| `src/drivers/common/` | briques partagées : TCP/série, socle SocketCAN, pilote déclaré |
+| `src/catalog.generated.hpp` | catalogue généré (`node tools/gen-catalog.mjs`) |
+| `src/protocols.generated.hpp` | protocoles générés (`node tools/gen-protocols.mjs`) |
+| `src/ws.hpp`, `src/sha1.hpp`, `src/json.hpp`, `src/jvalue.hpp` | briques sans dépendance |
+
+## Brancher le vrai contrôleur
+
+Implémenter `IVariableSource` (`src/source.hpp`) au-dessus du `controller` —
+résolution d'adresse (mapping PLC, registres, chemins C API des modèles),
+abonnement avec période, lecture des échantillons — puis la passer à la place
+de `SimSource` dans `main.cpp`. Le reste du serveur et la totalité du
+front-end restent inchangés.
+
+## Dépendances
+
+Deux, toutes deux facultatives et cantonnées à un pilote :
+
+| Bibliothèque | Licence | Sert à | Sans elle |
+|---|---|---|---|
+| **open62541** | MPL-2.0 | OPC UA | le pilote OPC UA redevient « déclaré » |
+| **Net-SNMP** | BSD | SNMP **v3** (USM) | v1 et v2c restent servies par l'implémentation interne ; v3 s'annonce « non branché » |
+
+Tout le reste n'utilise que la bibliothèque standard et POSIX.
+
+```bash
+meson setup build -Dopcua=disabled              # sans OPC UA
+meson setup build -Dnetsnmp=disabled            # sans SNMPv3
+meson setup build -Dopcua_encryption=true       # chiffrement OPC UA (OpenSSL)
+```
+
+Les deux à OFF : aucune dépendance, compilation hors ligne.
+
+Les deux sont cherchées **sur le système** (pkg-config) : la compilation
+croisée d'un produit embarqué ne doit pas dépendre d'un accès réseau au moment
+du build. Absente, la dépendance est simplement signalée et son pilote redevient
+« déclaré ». Les licences vérifiées et les décisions par protocole
+sont dans `docs/PROTOCOLES.md` § « Bibliothèques externes et licences ».
+
+## Organisation des pilotes
+
+Chaque protocole a son dossier ; rien ne traîne à la racine de `src/drivers/`.
+
+| Dossier | Protocole | État |
+|---|---|---|
+| `modbus/` | Modbus TCP et RTU | implémenté |
+| `iec104/` | IEC 60870-5-104 (client) | implémenté |
+| `can/` | CAN, trames brutes | implémenté |
+| `j1939/` | J1939 : SPN, demande de PGN, réassemblage BAM | implémenté |
+| `canopen/` | CANopen (TPDO, SDO expédié) | implémenté |
+| `snmp/` | SNMP v1 et v2c (implémentation interne), v3 via Net-SNMP, décodage des dates de MIB | implémenté |
+| `iec61850/` | IEC 61850 : GOOSE, Sampled Values, MMS, rapports (+ pile ISO) | implémenté |
+| `opcua/` | OPC UA (IEC 62541), via open62541 | implémenté |
+| `common/` | `net.hpp` (TCP/UDP/série), `can_socket.hpp`, `l2_socket.hpp` (Ethernet brut), `ber.hpp` (ASN.1), `declared.hpp` | — |
+
+Modbus TCP et RTU partagent un dossier : même PDU, même décodage, seul le
+transport diffère. Les trois protocoles CAN ont chacun le leur, car c'est
+l'inverse — seul le transport leur est commun, et il vit dans
+`common/can_socket.hpp`.
+
+`node tools/check-drivers.mjs` (rejoué par la CI) vérifie cette organisation :
+tout protocole déclaré a son dossier, tout dossier sert un protocole, et
+`make_driver()` les connaît tous.
+
+## Ajouter un protocole réseau
+
+Décrire les champs dans `web/js/protocols.js`, régénérer
+(`node tools/gen-protocols.mjs`), écrire un `IProtocolDriver` dans son propre
+dossier `src/drivers/<protocole>/`, l'enregistrer dans `make_driver()` de
+`src/protocol_source.hpp`, et ajouter l'entrée correspondante à la table
+`DOSSIERS` de `tools/check-drivers.mjs`. L'interface web construit ses
+formulaires à partir de la description : elle n'a pas à être modifiée. Détails
+et périmètre dans `docs/PROTOCOLES.md`.

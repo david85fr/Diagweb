@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Diagweb — diagnostic en ligne des variables et signaux internes d'un contrôleur embarqué : mapping PLC, mots de bus, signaux de modèles Matlab (C API).">
+<title>Diagweb — Diagnostic contrôleur</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="topbar">
+    <div class="tabbar">
+      <span class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#04201d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12h4l2-6 4 12 2-6h6"/>
+        </svg>
+      </span>
+      <div id="tabs" class="tabs" role="tablist"></div>
+      <button id="tabAdd" class="iconbtn" type="button" title="Nouvel onglet : un espace de travail vide, avec sa propre configuration">＋</button>
+    </div>
+
+    <div class="topIcons">
+      <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" title="Figer ou reprendre d’un coup tous les graphiques de l’onglet actif">⏸ Figer</button>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">dev</span>
+      <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
+      <div id="menuPanel" class="menu-panel hide" role="menu">
+        <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
+        <button id="langBtn" type="button" title="Basculer l’interface entre le français et l’anglais — le choix est mémorisé et vaut pour toutes les fenêtres de ce poste">🌐 English</button>
+        <button id="skinBtn" type="button" title="Apparence : logo de l’installation et couleurs de l’interface — réglages partagés par tous les postes quand la page est servie par le contrôleur">Apparence — logo et couleurs…</button>
+        <button id="layoutsBtn" type="button" title="Configurations : enregistrer, télécharger (JSON/CSV), charger, copier la disposition de cet onglet">Configurations…</button>
+        <button id="logBtn" type="button" title="Journal de données : enregistrer tous les échantillons des variables de l’onglet actif (dans le navigateur ou sur le contrôleur), puis les télécharger en CSV/JSON">Journal de données…<i id="logInd" class="recdot hide"></i></button>
+        <button id="helpBtn" type="button" title="Récapitulatif des commandes et des gestes (utile sur écran tactile, où les infobulles n’apparaissent pas)">Aide — commandes et gestes…</button>
+        <button id="netBtn" type="button" title="Liens réseau : déclarer des équipements Modbus, IEC 61850, IEC 60870-5-104, CAN, J1939, CANopen, SNMP ou OPC UA et choisir les variables à lire">Liens réseau…</button>
+        <button id="aboutBtn" type="button" title="Version affichée, mode de fonctionnement et source de données">À propos de Diagweb…</button>
+        <button id="auditBtn" type="button" title="Audit des communications : tout ce que le processus échange avec l’extérieur — sockets réellement ouvertes, liens déclarés, interfaces — pour un audit de sécurité ou un architecte réseau">Audit des communications…</button>
+        <button id="captureBtn" type="button" title="Capture des trames sur les interfaces du contrôleur (Ethernet et CAN) au format pcap, avec quota de disque, durée et déclenchement par une variable">Capture d’interfaces réseau…</button>
+        <button id="lldpBtn" type="button" title="Voisinage LLDP : ce que les équipements voisins annoncent sur chaque interface — produit, port, adresse d’administration, VLAN">Voisinage réseau (LLDP)…</button>
+        <button type="button" disabled title="Fonction globale prévue : historique des versions de l’application">Notes de version (à venir)</button>
+      </div>
+    </div>
+
+    <div class="searchrow" id="cfgZone">
+      <div class="searchbox">
+        <input id="searchInput" type="text" inputmode="text" autocomplete="off" autocapitalize="off"
+               autocorrect="off" spellcheck="false"
+               placeholder="Variable : I1.2.3.4, MB414, Regulation.mesure.vitesse, @lien.point… (Q0.3 = 1 pour forcer)"
+               aria-label="Adresse de la variable à ajouter"
+               title="Adresse à diagnostiquer — bits I/Q/M/S (I1.2.3.4), mot de bus (MB414), signal de modèle (Regulation.mesure.vitesse) ou point d’un lien réseau (@lien.point). Les suggestions se filtrent à la frappe. Suffixe « = valeur » (ex. Q0.3 = 1) pour forcer la variable côté serveur.">
+      </div>
+      <select id="targetSel" aria-label="Destination de la variable"
+              title="Où ajouter la variable : tableau numérique, graphique existant, ou nouveau graphique"></select>
+      <select id="periodSel" aria-label="Période de rafraîchissement" title="Période de rafraîchissement"></select>
+      <button id="addBtn" class="btn primary" type="button"
+              title="Ajouter la variable saisie à la destination choisie (Entrée)">Ajouter</button>
+      <div id="suggestBox" class="suggest hide"></div>
+    </div>
+  </header>
+
+  <section id="emptyState" class="empty hide">
+    <h2>Aucune variable dans cet onglet</h2>
+    <p>Saisissez une adresse dans la barre de recherche pour l'ajouter au tableau numérique ou à un graphique — par exemple I1.2.3.4, Q14.15, M1.14, S0.4, MB414, ou un signal de modèle comme Regulation.mesure.vitesse.</p>
+    <div class="cta">
+      <button id="demoBtn" class="btn primary" type="button"
+              title="Remplir cet onglet avec un exemple : 6 variables au tableau et 2 graphiques">Charger la disposition de démonstration</button>
+    </div>
+  </section>
+
+  <div id="panes"></div>
+</div>
+
+<footer class="statusbar">
+  <span id="srcInfo" title="Source des données et période de rafraîchissement par défaut"></span>
+  <span id="statInfo" title="Nombre de variables actuellement abonnées et nombre d’onglets ouverts"></span>
+</footer>
+
+<div id="toasts" aria-live="polite"></div>
+<div id="modalRoot"></div>
+
+<script src="js/i18n-en.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/config.js"></script>
+<script src="js/parser.js"></script>
+<script src="js/protocols.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/source-ws.js"></script>
+<script src="js/source.js"></script>
+<script src="js/mosaic.js"></script>
+<script src="js/chart.js"></script>
+<script src="js/store.js"></script>
+<script src="js/dnd.js"></script>
+<script src="js/appearance.js"></script>
+<script src="js/netsim.js"></script>
+<script src="js/network.js"></script>
+<script src="js/protocols-ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

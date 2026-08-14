@@ -1,0 +1,78 @@
+# Diagweb — interopérabilité contre un serveur OPC UA PUBLIC.
+#
+# Volontairement séparé de ci.yml, et volontairement MANUEL : ce contrôle
+# dépend d'un serveur tiers, gratuit et sans engagement de disponibilité. Le
+# mettre sur chaque poussée reviendrait à accepter des rouges causés par la
+# maintenance de quelqu'un d'autre — et le jour où le rouge serait le nôtre,
+# plus personne ne le regarderait. La CI de chaque poussée garde donc ses
+# équipements simulés, qui ne dépendent de rien.
+#
+# Ce qu'il apporte en plus : nos bouchons prouvent que le pilote décode ce que
+# NOUS encodons ; une pile écrite par d'autres est le seul juge honnête de
+# l'interopérabilité.
+name: Interopérabilité (manuelle)
+
+on:
+  workflow_dispatch:
+    inputs:
+      endpoint:
+        description: Point de terminaison OPC UA public
+        required: true
+        default: opc.tcp://uademo.prosysopc.com:53530/OPCUA/SimulationServer
+
+permissions:
+  contents: read
+
+jobs:
+  opcua:
+    name: Client OPC UA contre un serveur public
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Cache d'open62541
+        uses: actions/cache@v4
+        with:
+          path: server/build/_deps
+          key: open62541-v1.5.6-${{ runner.os }}
+
+      - name: Compiler le serveur de diagnostic
+        run: |
+          cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror"
+          cmake --build server/build -j --target diagweb-server
+
+      - name: Interroger le serveur public
+        # Le point de terminaison passe par l'environnement, jamais par
+        # interpolation dans la ligne de commande : une entrée de workflow est
+        # une chaîne libre, et elle n'a rien à faire dans un shell.
+        env:
+          ENDPOINT: ${{ inputs.endpoint }}
+        run: |
+          ./server/build/diagweb-server --port 8080 --root . \
+            --data-dir "$RUNNER_TEMP/diag-data" > "$RUNNER_TEMP/serveur.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/serveur.pid"
+          for _ in $(seq 1 60); do
+            curl -sf http://localhost:8080/api/health > /dev/null && break
+            sleep 0.25
+          done
+          set +e
+          node tests/interop.mjs http://localhost:8080 "$ENDPOINT"
+          code=$?
+          set -e
+          kill "$(cat "$RUNNER_TEMP/serveur.pid")" 2> /dev/null || true
+          # 3 = serveur public injoignable : ce n'est pas un défaut de notre
+          # code, et un rouge le laisserait croire. Avertissement, pas échec.
+          if [ "$code" -eq 3 ]; then
+            echo "::warning::Serveur public injoignable ($ENDPOINT) — rien à conclure sur le client Diagweb."
+            exit 0
+          fi
+          exit "$code"
+
+      - name: Journal du serveur
+        if: always()
+        run: cat "$RUNNER_TEMP/serveur.log" || true

@@ -1,74 +1,98 @@
 # Diagweb
 
-Diagnostic web des variables et signaux internes d'un **contrôleur industriel
-embarqué** (Linux embarqué). Il permet à un technicien ou un développeur
-d'observer en temps réel des entrées/sorties TOR, des bits mémoire, des
-variables système, des registres de bus et des signaux issus de modèles
-Simulink — sous forme de **valeurs numériques en direct** et de **courbes
-multi-échelles**, aussi bien depuis un smartphone que sur un écran 24–32″.
+[![Intégration continue](https://github.com/david85fr/Diagweb/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/david85fr/Diagweb/actions/workflows/ci.yml)
 
-> **Statut : prototype front-end.** Les données proviennent d'une simulation
-> (dans le navigateur ou via le serveur de diagnostic) ; aucun contrôleur
-> réel n'est encore branché. Le contenu complet du projet vit sur la branche
-> `claude/create-published-webpage-u9dpbb` (cette branche `main` n'en contient
-> que la description).
+Diagnostic web des variables et signaux internes d'un contrôleur industriel
+embarqué (Linux embarqué) : valeurs numériques en direct et courbes
+multi-échelles, depuis un smartphone comme sur un écran 24–32″.
 
-## Aperçu
+**Statut : prototype front-end** — les données proviennent d'une simulation
+locale (période 10 ms par défaut, soit jusqu'à 100 Hz par variable) ; le
+serveur de diagnostic (C++) assure déjà l'acquisition réseau et la
+journalisation, le lien avec le `controller` viendra en phase 2.
+
+## Essayer
 
 - **En ligne (GitHub Pages)** : https://david85fr.github.io/Diagweb/
-- **Hors-ligne** : ouvrir `dist/index.html`, un fichier autonome, sans serveur
-  ni dépendance externe.
+  (branche `gh-pages`, copie de `dist/index.html` — dépôt public, donc page
+  publique).
+- Ou ouvrir `dist/index.html` dans un navigateur (fichier autonome, aucun
+  serveur ni dépendance requis).
+- Saisir une adresse dans la barre de recherche : `I1.2.3.4`, `Q14.15`,
+  `M1.14`, `S0.4`, `MB414` ou un signal modèle `Regulation.mesure.vitesse`,
+  puis choisir la cible (tableau ou graphique).
+- **Multi-écran** : glisser un graphique, le tableau ou une variable par sa
+  poignée « ⠿ » vers un autre onglet ou une autre fenêtre du navigateur ;
+  chaque fenêtre a son propre espace de travail.
 
-Saisir une adresse dans la barre de recherche — `I1.2.3.4`, `Q14.15`, `M1.14`,
-`S0.4`, `MB414`, ou un signal modèle `Regulation.mesure.vitesse` — puis
-l'envoyer vers un tableau ou un graphique. Les widgets se **glissent** d'un
-onglet ou d'une fenêtre à l'autre pour un usage multi-écran.
-
-## Architecture cible
-
-Deux processus cohabitent sur le contrôleur ; le navigateur ne parle qu'au
-serveur de diagnostic, jamais au cœur temps réel.
-
-- **`controller`** (C++, hors périmètre de ce dépôt) — boucle temps réel,
-  modèles Simulink générés en C (C API), bus de terrain et mapping PLC
-  (`I`/`Q`/`M`/`S`, registres `MB`).
-- **Serveur de diagnostic** (`server/`, C++20, sans dépendance) — sert les
-  pages, relaie le flux temps réel par **WebSocket**, expose une API HTTP
-  (`/api/health`, `/api/layouts`, `/api/datalog`, `/api/protocols`) et
-  possède ses propres **liens réseau** vers des équipements tiers.
-- **Navigateur** (`web/`) — HTML/CSS/JS vanilla, deux sources de données
-  interchangeables : simulation locale (`sim.js`) ou flux serveur
-  (`source-ws.js`), bascule automatique quand le serveur répond.
-
-## Liens réseau (équipements tiers)
-
-Le serveur de diagnostic lit des variables directement sur des équipements
-tiers, configurables depuis l'interface (☰ → Liens réseau) : **Modbus
-TCP/RTU**, **IEC 60870-5-104**, **CAN / J1939 / CANopen**, **IEC 61850
-(GOOSE / SV / MMS)**, **SNMP v1/v2c/v3** et **OPC UA**.
-
-## Structure du dépôt
+## Développement
 
 ```
-web/       application (HTML/CSS/JS vanilla, sans dépendance)
-server/    serveur de diagnostic C++20 (HTTP + WebSocket + pilotes réseau)
-dist/      livrables autonomes (index.html, artifact.html)
-tools/     build, aperçu local, génération de code, scripts de tests
-tests/     tests d'interface, de décodage et d'interopérabilité
-docs/      PROJET.md · SPECS.md · PROTOCOLES.md
+web/                sources de l'application (ouvrir web/index.html)
+server/             serveur de diagnostic C++23 (HTTP + WebSocket)
+tools/build.py      assemble dist/index.html (autonome) + dist/artifact.html
+tools/serve.py      serveur d'aperçu local (port 8080, sans cache)
+tools/gen-catalog.mjs régénère le catalogue C++ depuis web/js/config.js
+tools/setup-tests.sh installe Playwright + Chromium (facultatif)
+tests/ui.mjs        tests d'interface (mobile + desktop)
+docs/               PROJET.md (description) · SPECS.md (spécifications)
+.devcontainer/      configuration GitHub Codespaces
+CLAUDE.md           instructions pour l'IA (conventions, contraintes)
 ```
 
-## Feuille de route
+### Serveur de diagnostic (prototype du back-end embarqué)
 
-1. Prototype front-end (en cours) — itérations UX.
-2. Serveur de diagnostic — squelette opérationnel ; source de variables encore
-   simulée, contrat `IVariableSource` à implémenter pour brancher le
-   `controller`.
-3. Branchement du contrôleur réel.
-4. Liens réseau — opérationnels (reste la pile ISO/MMS pour IEC 61850).
-5. Ensuite : enregistrement/relecture, export CSV, alarmes/seuils.
+```bash
+meson setup build
+meson compile -C build
+./build/diagweb-server --port 8080 --root .
+```
 
-## Licence
+La page servie par ce serveur bascule automatiquement sur son **flux
+WebSocket** (au lieu de la simulation navigateur) ; `?src=sim` force la
+simulation. Détails, protocole et point d'accroche pour brancher le vrai
+contrôleur : `server/README.md`.
 
-Aucune licence définie pour l'instant ; tous droits réservés par le
-propriétaire du dépôt.
+Build : `python3 tools/build.py` — vérification : `node --check web/js/*.js`.
+Vanilla HTML/CSS/JS, sans dépendance externe (contrainte de déploiement
+embarqué et de publication sous CSP stricte) ; Playwright n'est utilisé que
+par les tests, jamais par l'application.
+
+### Dans GitHub Codespaces
+
+Sur GitHub : bouton **Code → Codespaces → Create codespace on
+`<branche>`**. Le conteneur installe l'outillage (Python, Node, Meson,
+Ninja, Net-SNMP, open62541), vérifie la syntaxe des sources, compile le
+serveur de diagnostic et démarre l'aperçu sur le **port 8080**.
+
+- **Une seule commande** : `bash tools/share.sh` — démarre l'aperçu s'il
+  ne tourne pas, rend le port public et affiche l'adresse à ouvrir.
+  Variante `bash tools/share.sh --server` : compile et lance le **serveur
+  de diagnostic C++** à la place (flux WebSocket réel au lieu de la
+  simulation navigateur).
+- Sinon, adresse seule : `python3 tools/serve.py --url` (elle est aussi
+  affichée à la création du Codespace). `/web/index.html` = page de
+  développement, `/dist/index.html` = livrable autonome.
+- Elle figure également dans l'onglet **PORTS** du panneau du bas. Sur
+  téléphone ce panneau est replié : menu **☰ → Terminal → New Terminal**
+  l'ouvre (les onglets qui débordent sont derrière le **⋯**).
+- **Tester depuis un autre appareil** : l'adresse ci-dessus fonctionne
+  telle quelle si vous êtes connecté au même compte GitHub ; sinon rendez
+  le port public —
+  `gh codespace ports visibility 8080:public -c $CODESPACE_NAME`.
+  Le serveur envoie des en-têtes anti-cache : chaque rechargement affiche
+  la dernière version.
+- **Tout vérifier d'un coup** : `bash tools/check.sh` — les mêmes contrôles
+  que l'intégration continue (compilation du serveur avec les avertissements
+  en erreurs, tests de décodage, liens réseau de bout en bout, syntaxe JS,
+  en-têtes générés, livrables à jour et autonomes, interface, déplacement de
+  widgets). `bash tools/check.sh serveur` ou `interface` pour n'en faire
+  qu'une partie.
+- Tests : `bash tools/setup-tests.sh` (une fois) puis `node tests/ui.mjs`,
+  ou `node tests/ui.mjs http://localhost:8080/web/index.html` pour tester
+  les sources sans build.
+- **Liens réseau et privilèges** : les protocoles IP (Modbus, IEC 60870-5-104,
+  SNMP, IEC 61850 MMS, OPC UA) s'éprouvent sans privilège particulier.
+  GOOSE, Sampled Values, LLDP et la capture demandent `CAP_NET_RAW` ; les
+  trois protocoles CAN demandent une interface `vcan`, donc `CAP_NET_ADMIN`.
+  Voir `docs/PROTOCOLES.md` § « Éprouver les liens en conteneur ».

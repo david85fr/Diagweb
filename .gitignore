@@ -1,0 +1,11 @@
+# Outillage de développement (l'application n'a aucune dépendance)
+node_modules/
+package-lock.json
+.pw-browsers/
+.test-shots/
+build/
+server/build*/
+.diag-data/
+__pycache__/
+*.pyc
+.DS_Store
