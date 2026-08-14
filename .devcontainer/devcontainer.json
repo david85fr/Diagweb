@@ -4,7 +4,12 @@
   "name": "Diagweb — interface et serveur de diagnostic",
   "image": "mcr.microsoft.com/devcontainers/cpp:1-ubuntu-24.04",
   "features": {
-    "ghcr.io/devcontainers/features/python:1": { "version": "3.12" },
+    // « os-provided » et non « 3.12 » : demander un numéro de version fait
+    // COMPILER CPython depuis les sources (./configure, make -j8) par la
+    // feature, alors qu'Ubuntu 24.04 fournit déjà 3.12.3 en paquet installé.
+    // Plusieurs minutes de compilation C à chaque construction du conteneur,
+    // pour obtenir la version qu'on avait déjà.
+    "ghcr.io/devcontainers/features/python:1": { "version": "os-provided" },
     "ghcr.io/devcontainers/features/node:1": { "version": "lts" },
     // tools/share.sh passe le port en public avec « gh codespace ports ».
     "ghcr.io/devcontainers/features/github-cli:1": {}
