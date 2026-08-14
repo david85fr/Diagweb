@@ -1140,7 +1140,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
 
     <div class="topIcons">
       <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" aria-label="Figer ou reprendre tout l’onglet" title="Figer d’un coup tout l’onglet actif : les courbes ET les valeurs numériques s’arrêtent sur l’instant courant">⏸</button>
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">c869721 · #119</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">7ccfbb9 · #123</span>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
@@ -3602,6 +3602,8 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       this.h = opts.h || (opts.heightMode ? HAUTEURS_V2[opts.heightMode] : 0) || d.h;
       this.fullscreen = false;
       this.moveSeries = null;      // adresse en cours de décalage (mode explicite)
+      this.measureMode = null;     // null | 'val' | 'temps' (vue arrêtée seulement)
+      this.measure = null;         // mesure en cours ou posée
       this.axisState = new Map();  // clé de groupe -> état d'échelle
       this.axisNames = Object.assign({}, opts.axisNames);  // clé -> nom donné
       // Ce qu'on lit sur les pastilles : l'adresse (repère de l'automaticien)
@@ -3621,6 +3623,10 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       // Nom commun aux deux natures de tuile (tableau et graphique) : la
       // mosaïque n'a pas à savoir laquelle elle manipule.
       this.cardEl = this.root;
+      // Lien inverse carte → graphique : l'état interne (mesure en cours,
+      // échelles) devient inspectable depuis le DOM, ce dont les tests et le
+      // débogage ont besoin sans exposer de registre global.
+      this.root.__dwChart = this;
       this.root.innerHTML =
         '<header class="chart-head">' +
           '<span class="drag-handle" draggable="true" ' +
@@ -3639,6 +3645,15 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
               'title="Durée affichée — modifiable aussi par pincement ou molette sur le tracé"></select>' +
             '<button class="iconbtn chart-pause" type="button" ' +
               'title="Figer ce graphique sur l’instant courant, ou revenir au temps réel">⏸</button>' +
+            // Mesures : elles n'ont de sens que sur une vue arrêtée — sur un
+            // tracé qui défile, le point d'appui aurait déjà bougé au
+            // relâchement. Les boutons n'apparaissent donc qu'à l'arrêt.
+            '<button class="iconbtn mes-val hide" type="button" ' +
+              'title="Mesurer un écart de VALEUR : glisser verticalement sur le tracé. ' +
+              'La courbe la plus proche du point d’appui donne l’unité.">↕</button>' +
+            '<button class="iconbtn mes-t hide" type="button" ' +
+              'title="Mesurer un écart de TEMPS : glisser horizontalement sur le tracé, ' +
+              'dans un sens ou dans l’autre.">↔</button>' +
             '<button class="iconbtn card-fs" type="button" ' +
               'title="Afficher cette tuile seule sur toute la page, ou revenir à la ' +
               'mosaïque (sortie aussi par Échap)">⛶</button>' +
@@ -3699,6 +3714,10 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
         if (isFinite(v)) { this.windowS = v; this.syncWinSel(); app.onChange(); }
       });
       this.pauseBtn.addEventListener('click', () => this.setPaused(this.viewEnd === null));
+      this.root.querySelector('.mes-val').addEventListener('click', () =>
+        this.setMeasureMode(this.measureMode === 'val' ? null : 'val'));
+      this.root.querySelector('.mes-t').addEventListener('click', () =>
+        this.setMeasureMode(this.measureMode === 'temps' ? null : 'temps'));
       this.liveBtn.addEventListener('click', () => this.goLive());
       this.root.querySelector('.card-add').addEventListener('click', () => {
         if (DW.openVarPicker) DW.openVarPicker({ kind: 'chart', chart: this });
@@ -3750,7 +3769,72 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       this.pauseBtn.textContent = frozen ? '▶' : '⏸';
       this.pauseBtn.classList.toggle('on', frozen);
       this.liveBtn.classList.toggle('hide', !frozen);
+      for (const sel of ['.mes-val', '.mes-t']) {
+        const b = this.root.querySelector(sel);
+        if (b) b.classList.toggle('hide', !frozen);
+      }
+      // Retour au direct : la mesure posée ne veut plus rien dire, le tracé
+      // qu'elle annotait ayant repris sa course.
+      if (!frozen && (this.measureMode || this.measure)) this.setMeasureMode(null);
       this.majRetard();
+    }
+
+    /**
+     * Arme (ou désarme) un mode de mesure. Les deux modes s'excluent, et
+     * quitter un mode efface la mesure posée : une cote laissée seule sur un
+     * tracé qu'on recommence à manipuler serait fausse au premier geste.
+     */
+    setMeasureMode(mode) {
+      this.measureMode = mode || null;
+      this.measure = null;
+      const bv = this.root.querySelector('.mes-val');
+      const bt = this.root.querySelector('.mes-t');
+      if (bv) bv.classList.toggle('on', this.measureMode === 'val');
+      if (bt) bt.classList.toggle('on', this.measureMode === 'temps');
+      this.canvas.style.cursor = this.measureMode === 'val' ? 'ns-resize'
+        : this.measureMode === 'temps' ? 'ew-resize' : '';
+    }
+
+    /**
+     * Courbe la plus proche d'un point du tracé — c'est elle que la mesure de
+     * valeur prend pour référence, et son unité qui s'affiche. Choisir par
+     * proximité évite d'inventer une notion de « courbe sélectionnée » : on
+     * désigne la courbe en appuyant dessus.
+     */
+    /** Valeur correspondant à une ordonnée écran, sur l'échelle d'une courbe. */
+    valeurAuPixel(s, yPx) {
+      const pl = this._plot;
+      if (!s || !pl) return null;
+      const st = this.axisState.get(this.axisKey(s));
+      if (!st || !st.cur) return null;
+      const { min, max } = st.cur;
+      return min + ((pl.mT + pl.ph - yPx) / Math.max(1, pl.ph)) * (max - min);
+    }
+
+    /** Ordonnée écran d'une valeur, sur l'échelle d'une courbe. */
+    pixelDeValeur(s, v) {
+      const pl = this._plot;
+      if (!s || !pl || v == null) return null;
+      const st = this.axisState.get(this.axisKey(s));
+      if (!st || !st.cur) return null;
+      const { min, max } = st.cur;
+      if (!(max > min)) return null;
+      return pl.mT + pl.ph * (1 - (v - min) / (max - min));
+    }
+
+    seriesAt(xPx, yPx) {
+      const t = this.timeAt(xPx);
+      let best = null, bestD = Infinity;
+      for (const s of this.series) {
+        if (!s.visible) continue;
+        const fn = this._yFns[s.addr];
+        if (!fn) continue;
+        const v = DW.valeurA(s.addr, t);
+        if (v == null) continue;
+        const d = Math.abs(fn(v) - yPx);
+        if (d < bestD) { bestD = d; best = s; }
+      }
+      return best;
     }
 
     /** Retard sur le temps réel, affiché dans l'en-tête quand la vue est figée. */
@@ -4027,7 +4111,29 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
         } else if (this._ptrs.size === 1) {
           this._hadMulti = false;
           const band = this.bandAt(e.offsetX);
-          if (this.moveSeries) {
+          // Un mode de mesure armé prend la main sur le déplacement et le
+          // zoom : sans cela, le geste de mesure ferait défiler la vue sous
+          // la cote qu'on est en train de poser.
+          if (this.measureMode && !band && this._plot &&
+              e.offsetX >= this._plot.mL && e.offsetX <= this._plot.mL + this._plot.pw) {
+            const s = this.measureMode === 'val' ? this.seriesAt(e.offsetX, e.offsetY) : null;
+            // La cote est ancrée sur les DONNÉES — un temps absolu, une valeur
+            // dans l'unité de la courbe — et non sur des pixels. Changer
+            // l'échelle ou la fenêtre de temps la laisserait sinon en place en
+            // affichant un écart devenu faux.
+            this.measure = {
+              mode: this.measureMode,
+              t0: this.timeAt(e.offsetX), t1: this.timeAt(e.offsetX),
+              v0: this.valeurAuPixel(s, e.offsetY), v1: this.valeurAuPixel(s, e.offsetY),
+              yPx: e.offsetY,                 // repère de la cote horizontale
+              addr: s ? s.addr : null,
+              unite: s ? (s.meta.unit || '') : '',
+              nom: s ? (s.name || s.meta.label || s.addr) : '',
+              couleur: s ? colorOf(s) : null,
+              fini: false,
+            };
+            this._gesture = { mode: 'mesure' };
+          } else if (this.moveSeries) {
             const s = this.series.find((x) => x.addr === this.moveSeries);
             this._gesture = s ? {
               mode: 'offset', series: s,
@@ -4074,6 +4180,16 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
           return;
         }
         if (g && g.mode === 'dead') return;
+        if (g && g.mode === 'mesure') {
+          const m = this.measure;
+          if (!m) return;
+          if (m.mode === 'val') {
+            m.v1 = this.valeurAuPixel(this.series.find((x) => x.addr === m.addr), p.y);
+          } else {
+            m.t1 = this.timeAt(p.x);
+          }
+          return;
+        }
 
         if (!g) {
           const dx = p.x - p.x0, dy = p.y - p.y0;
@@ -4121,6 +4237,19 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
         if (this._ptrs.size) { this._gesture = { mode: 'dead' }; return; }
         this._gesture = null;
         if (g && g.mode === 'offset') { this.rebuildLegend(); this.app.onChange(); return; }
+        // La cote reste à l'écran après le relâchement : c'est une mesure
+        // qu'on lit, éventuellement qu'on recopie, pas un survol.
+        if (g && g.mode === 'mesure') {
+          if (this.measure) {
+            const m = this.measure;
+            const bouge = m.mode === 'val'
+              ? Math.abs((m.v1 - m.v0) / Math.max(1e-9, this._axisScale[m.addr] || 1))
+              : Math.abs(m.t1 - m.t0) / Math.max(1e-9, this.windowS) * (this._plot ? this._plot.pw : 1);
+            if (!(bouge >= 4)) this.measure = null;   // simple appui : rien à mesurer
+            else m.fini = true;
+          }
+          return;
+        }
         // Appui bref sans mouvement — jamais après un geste multi-touch,
         // un pointercancel ou le tap qui a fermé un menu
         if (p && !p.suppressed && !this._hadMulti && e.type !== 'pointercancel' &&
@@ -4883,6 +5012,106 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       } else {
         this.tipEl.classList.add('hide');
       }
+
+      if (this.measure) this.drawMeasure(ctx, IK, mL, mT, pw, ph, X);
+    }
+
+    /**
+     * Cote de mesure : deux traits, une flèche, et l'écart en clair.
+     *
+     * Verticale (mode 'val') : l'écart est converti en unités de la courbe
+     * désignée au point d'appui — c'est son échelle qui donne les unités par
+     * pixel, sur un graphique multi-échelles il n'y en a pas d'universelle.
+     * Horizontale (mode 'temps') : l'écart est une durée, indépendante des
+     * échelles verticales.
+     */
+    drawMeasure(ctx, IK, mL, mT, pw, ph, X) {
+      const m = this.measure;
+      const vert = m.mode === 'val';
+      const teinte = (vert && m.couleur) ? m.couleur : IK.accent;
+      // Retour des données vers l'écran : la cote suit son ancrage, même si
+      // l'échelle a bougé entre-temps.
+      const s = m.addr ? this.series.find((x) => x.addr === m.addr) : null;
+      let x0, x1, y0, y1;
+      if (vert) {
+        const py0 = this.pixelDeValeur(s, m.v0), py1 = this.pixelDeValeur(s, m.v1);
+        if (py0 == null || py1 == null) { this.measure = null; return; }
+        x0 = x1 = clamp(X(m.t0), mL, mL + pw);
+        y0 = clamp(py0, mT, mT + ph); y1 = clamp(py1, mT, mT + ph);
+      } else {
+        x0 = clamp(X(m.t0), mL, mL + pw); x1 = clamp(X(m.t1), mL, mL + pw);
+        y0 = y1 = clamp(m.yPx, mT, mT + ph);
+      }
+
+      ctx.save();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = teinte;
+
+      // Traits de rappel : ils prolongent la cote jusqu'aux bords du tracé,
+      // pour qu'on voie à quoi elle se rapporte.
+      ctx.globalAlpha = 0.35;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      if (vert) {
+        ctx.moveTo(mL, y0 + 0.5); ctx.lineTo(mL + pw, y0 + 0.5);
+        ctx.moveTo(mL, y1 + 0.5); ctx.lineTo(mL + pw, y1 + 0.5);
+      } else {
+        ctx.moveTo(x0 + 0.5, mT); ctx.lineTo(x0 + 0.5, mT + ph);
+        ctx.moveTo(x1 + 0.5, mT); ctx.lineTo(x1 + 0.5, mT + ph);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+
+      // La cote elle-même, avec ses deux pointes
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      if (vert) { ctx.moveTo(x0 + 0.5, y0); ctx.lineTo(x0 + 0.5, y1); }
+      else { ctx.moveTo(x0, y0 + 0.5); ctx.lineTo(x1, y0 + 0.5); }
+      ctx.stroke();
+      const pointe = (px, py, sens) => {
+        ctx.beginPath();
+        if (vert) {
+          ctx.moveTo(px - 5, py + 6 * sens); ctx.lineTo(px, py);
+          ctx.lineTo(px + 5, py + 6 * sens);
+        } else {
+          ctx.moveTo(px + 6 * sens, py - 5); ctx.lineTo(px, py);
+          ctx.lineTo(px + 6 * sens, py + 5);
+        }
+        ctx.stroke();
+      };
+      if (vert) { pointe(x0 + 0.5, y0, 1); pointe(x0 + 0.5, y1, -1); }
+      else { pointe(x0, y0 + 0.5, 1); pointe(x1, y0 + 0.5, -1); }
+
+      // Étiquette : l'écart, et de quoi il est l'écart
+      let txt;
+      if (vert) {
+        txt = 'Δ ' + DW.fmtVal(Math.abs(m.v1 - m.v0), s ? s.meta : { unit: m.unite }) +
+              (m.unite ? ' ' + m.unite : '') + (m.nom ? '  ·  ' + m.nom : '');
+      } else {
+        txt = 'Δt ' + DW.fmtDuree(Math.abs(m.t1 - m.t0));
+      }
+      ctx.font = '600 11px ' + 'system-ui, sans-serif';
+      const larg = ctx.measureText(txt).width + 12;
+      let lx = vert ? x0 + 10 : (x0 + x1) / 2 - larg / 2;
+      let ly = vert ? (y0 + y1) / 2 - 9 : y0 - 24;
+      lx = clamp(lx, mL + 2, mL + pw - larg - 2);
+      ly = clamp(ly, mT + 2, mT + ph - 20);
+      ctx.fillStyle = IK.panel;
+      ctx.globalAlpha = 0.92;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(lx, ly, larg, 18, 6);
+      else ctx.rect(lx, ly, larg, 18);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = teinte;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = IK.ink;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(txt, lx + 6, ly + 9);
+      ctx.restore();
     }
 
     drawCursor(ctx, groups, tStart, X, mL, mT, pw, ph, x, nowT) {
@@ -9683,6 +9912,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
             ['Badge Én', 'Numéro de l’échelle utilisée ; 🔒 signale un réglage manuel.'],
             ['Échelles — regrouper, séparer, nommer', 'Par défaut les courbes de même unité partagent une échelle. Le menu d’une pastille permet de choisir : <b>Échelle automatique</b> (par unité), <b>Échelle dédiée</b> (cette courbe seule), ou <b>Mettre sur l’échelle « … »</b> pour rejoindre celle d’une autre courbe — même si les unités diffèrent. <b>Renommer l’échelle</b> lui donne un nom qui remplace l’unité en tête de sa règle.'],
             ['Plein écran', '<b>⛶</b> dans l’en-tête d’une tuile l’affiche seule sur toute la page, et l’y ramène. La tuile sort de la mosaïque le temps du plein écran : sa place et sa taille sont intactes au retour. Sortie aussi par <b>Échap</b>.'],
+            ['Mesurer sur le tracé', 'Une fois le graphique <b>figé</b>, deux boutons apparaissent dans son en-tête. <b>↕</b> : glisser verticalement mesure un <b>écart de valeur</b> — la courbe la plus proche du point d’appui donne l’unité, et son nom s’affiche avec la cote. <b>↔</b> : glisser horizontalement mesure un <b>écart de temps</b>, dans un sens ou dans l’autre. La cote reste affichée après le relâchement, et elle est ancrée sur les données : régler une échelle ne la fausse pas. Un second appui sur le bouton l’efface.'],
             ['Figer', '<b>⏸</b> sur une tuile, ou <b>⏸ Figer</b> en haut pour tout l’onglet : le tracé <b>et les valeurs numériques</b> s’arrêtent sur l’instant courant, et la grille cesse de défiler. Un badge <b>⏱ −durée</b> dans l’en-tête dit de quand datent les valeurs qu’on lit.'],
             ['Adresse ou description', 'Menu ⋮ d’un tableau : <b>Mettre la description en tête</b> intervertit l’adresse et la description. Menu ⋮ d’un graphique : <b>Légende : description plutôt qu’adresse</b>. L’automaticien cherche une adresse, l’exploitant un nom — chaque tuile choisit.'],
             ['Échelles verticales', 'Toutes les règles sont <b>à gauche</b>, empilées dans l’ordre des badges Én : on lit une valeur sans chercher de quel bord vient son échelle. Clic sur une <b>règle d’axe</b> (les graduations, curseur ↕) : saisir le minimum et le maximum exacts, pour cette échelle seule ou pour <b>toutes</b> celles du graphique. Glisser ou molette sur la règle : réglage à la volée ; double-clic : retour à l’automatique. Même réglage depuis le menu d’une pastille (« Bornes de l’échelle… »).'],
