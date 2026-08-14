@@ -1877,8 +1877,19 @@
             '<b>' + DW.fmtVal(v, s.meta) + (s.meta.unit ? ' ' + escapeHtml(s.meta.unit) : '') + '</b></div>';
         }
       }
+      // Temps DEPUIS LE DÉBUT DE LA CAPTURE : c'est le repère d'un relevé —
+      // « à 47 s » se note et se compare, là où « il y a 12 s » change de sens
+      // à chaque seconde qui passe. L'âge relatif reste en second, il dit à
+      // quel point on regarde du passé.
+      const t0 = DW.source.captureStart ? DW.source.captureStart() : null;
+      const depuis = t0 == null ? null : Math.max(0, tCur - t0);
       const dt = nowT - tCur;
-      this.tipEl.innerHTML = '<div class="tip-time">t − ' + dt.toFixed(1) + ' s</div>' + rows;
+      this.tipEl.innerHTML =
+        '<div class="tip-time">' +
+          (depuis == null ? 't − ' + dt.toFixed(1) + ' s'
+                          : 't = ' + DW.fmtDuree(depuis) +
+                            (dt > 0.15 ? '  <i>(− ' + dt.toFixed(1) + ' s)</i>' : '')) +
+        '</div>' + rows;
       this.tipEl.classList.remove('hide');
       const bw = this.canvas.clientWidth;
       const tw = this.tipEl.offsetWidth;

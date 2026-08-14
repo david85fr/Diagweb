@@ -112,7 +112,25 @@
   // sert cette valeur au lieu du générateur (voir DW.source.write).
   const forced = new Map();
   const t0 = performance.now() / 1000;
-  const now = () => performance.now() / 1000 - t0;
+  const brut = () => performance.now() / 1000 - t0;
+
+  /**
+   * Acquisition : marche ou arrêt, et origine de la capture courante.
+   *
+   * À l'arrêt, l'HORLOGE de la source se fige elle aussi. Sans cela le temps
+   * continuerait d'avancer sans qu'aucun échantillon n'arrive : les vues en
+   * direct défileraient dans le vide, et les retards afficheraient un
+   * vieillissement que rien ne justifie.
+   */
+  let enMarche = true;
+  let arreteA = 0;          // instant du dernier arrêt (horloge figée)
+  // La simulation pré-remplit l'historique sur un horizon complet à
+  // l'abonnement : l'origine de la première capture est donc le début de ces
+  // données, pas l'instant du chargement de la page — sinon le curseur
+  // afficherait des temps négatifs, ramenés à zéro, sur les trois quarts du
+  // tracé.
+  let captureT0 = -CFG.horizonS;
+  const now = () => (enMarche ? brut() : arreteA);
 
   function clampPeriodMs(p) {
     p = parseInt(p, 10);
@@ -158,6 +176,7 @@
   let holdT = null;
 
   function tick() {
+    if (!enMarche) return;
     const t = now();
     let minT = t - CFG.horizonS;
     if (holdT != null) minT = Math.min(minT, Math.max(holdT, t - CFG.holdMaxS));
@@ -187,6 +206,32 @@
      * doit pas être jeté sous nos yeux. `null` rend la purge à l'horizon.
      */
     setHold(t) { holdT = (typeof t === 'number' && isFinite(t)) ? t : null; },
+
+    // ---- Capture (marche / arrêt de l'acquisition) -------------------
+    running: () => enMarche,
+    captureStart: () => captureT0,
+
+    /** Arrête l'acquisition : l'historique et la vue restent en l'état. */
+    stop() {
+      if (!enMarche) return;
+      arreteA = brut();
+      enMarche = false;
+    },
+
+    /**
+     * Démarre une NOUVELLE capture : l'origine des temps repart de zéro et
+     * l'historique précédent est effacé. Sans cet effacement, « temps depuis
+     * le début de la capture » n'aurait pas de sens pour les échantillons
+     * d'avant.
+     */
+    start() {
+      enMarche = true;
+      captureT0 = brut();
+      for (const rec of regs.values()) {
+        rec.ts.length = 0; rec.vs.length = 0;
+        rec.nextT = captureT0;
+      }
+    },
     defaultPeriodMs: CFG.defaultPeriodMs,
     now,
     subscribe,

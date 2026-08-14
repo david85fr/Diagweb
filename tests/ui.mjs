@@ -718,6 +718,17 @@ check('mesures à l’arrêt : écart de valeur et écart de temps',
   ' · ' + (mTemps ? 'Δt ' + mTemps.dt.toFixed(1) + ' s' : 'temps ✗') +
   ' · effacées au retour au direct');
 
+// L'infobulle du curseur repère le temps DEPUIS LE DÉBUT DE LA CAPTURE : un
+// relevé se note et se compare, « il y a 12 s » change de sens à chaque
+// seconde qui passe.
+const cvT = await carteMes.locator('canvas').boundingBox();
+await p2.mouse.move(cvT.x + cvT.width * 0.6, cvT.y + cvT.height * 0.5);
+await p2.waitForTimeout(400);
+const bulle = await carteMes.locator('.chart-tip').textContent();
+check('infobulle du curseur : temps depuis le début de la capture',
+  /^t = /.test(bulle.trim()),
+  bulle.trim().slice(0, 34));
+
 // Une vue figée RETIENT son historique : sans cela le tampon défilerait sous
 // elle et le graphique se remettrait à avancer tout seul au bout de quelques
 // minutes de pause — ce qui se lit comme une pause qui lâche.
@@ -975,6 +986,35 @@ check('capture simulée : quota et déclencheur conservés au rechargement',
   quotaGarde + ' Mo · déclencheur ' + adrGarde);
 await p2.click('.m-close');
 await p2.waitForTimeout(200);
+
+// ⏹ arrête l'ACQUISITION — à distinguer de « Figer », qui n'arrête que
+// l'affichage. Plus rien n'est enregistré, l'horloge de la source se fige, et
+// relancer ouvre une capture neuve dont l'origine des temps repart de zéro.
+const acq = () => p2.evaluate(() => ({
+  bouton: document.getElementById('stopBtn').textContent,
+  marche: DW.source.running(),
+  horloge: DW.source.now(),
+  points: DW.source.data(document.querySelector('.tabpane.on .chart-card').__dwChart.series[0].addr).ts.length,
+  capture: DW.source.now() - DW.source.captureStart(),
+  statut: document.getElementById('statInfo').textContent,
+}));
+const a0 = await acq();
+await p2.click('#stopBtn');
+await p2.waitForTimeout(300);
+const a1 = await acq();
+await p2.waitForTimeout(1300);
+const a2 = await acq();
+await p2.click('#stopBtn');
+await p2.waitForTimeout(900);
+const a3 = await acq();
+check('⏹ arrête l’acquisition ; ⏺ ouvre une capture neuve',
+  a0.marche && a0.bouton === '⏹' &&
+  !a1.marche && a1.bouton === '⏺' && /arrêtée/.test(a1.statut) &&
+  Math.abs(a2.horloge - a1.horloge) < 0.05 && a2.points === a1.points &&
+  a3.marche && a3.capture < 3 && a3.points < a1.points,
+  'horloge figée à ' + a1.horloge.toFixed(1) + ' s, ' + a1.points +
+  ' points conservés · relance : capture ' + a3.capture.toFixed(1) + ' s, ' +
+  a3.points + ' points');
 
 // Couverture des infobulles : chaque objet interactif doit être documenté
 const AUDIT = () => {

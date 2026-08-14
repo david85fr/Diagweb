@@ -2270,8 +2270,12 @@
       if (tab) for (const c of tab.charts) c.updateLive();
       updateTableValues();
       const n = DW.source.count();
+      const cap = DW.source.captureStart ? DW.source.captureStart() : null;
+      const arret = DW.source.running && !DW.source.running();
       $('statInfo').textContent = n + ' variable' + (n > 1 ? 's' : '') + ' active' + (n > 1 ? 's' : '') +
-        ' · ' + state.tabs.length + ' onglet' + (state.tabs.length > 1 ? 's' : '');
+        ' · ' + state.tabs.length + ' onglet' + (state.tabs.length > 1 ? 's' : '') +
+        (cap == null ? '' : ' · capture ' + DW.fmtDuree(Math.max(0, DW.source.now() - cap))) +
+        (arret ? ' (arrêtée)' : '');
     }
     requestAnimationFrame(loop);
   }
@@ -2297,6 +2301,26 @@
       }
     }
     if (DW.source && DW.source.setHold) DW.source.setHold(plusAncien);
+  }
+
+  /**
+   * Bouton d'acquisition. Le pictogramme dit l'action à venir, pas l'état :
+   * ⏹ pour arrêter tant que ça tourne, ⏺ pour ouvrir une capture neuve une
+   * fois arrêté. L'infobulle porte la conséquence, qui n'est pas anodine —
+   * relancer efface l'historique.
+   */
+  function majStopUi() {
+    const b = $('stopBtn');
+    if (!b) return;
+    const src = DW.source;
+    const marche = !src || !src.running || src.running();
+    b.textContent = marche ? '⏹' : '⏺';
+    b.classList.toggle('on', !marche);
+    b.title = marche
+      ? 'Arrêter l’acquisition : plus aucun échantillon n’est enregistré et ' +
+        'l’horloge se fige. L’historique déjà acquis reste consultable et mesurable.'
+      : 'Démarrer une nouvelle capture : l’origine des temps repart de zéro et ' +
+        'l’historique précédent est effacé.';
   }
 
   /** « Figer » agit sur TOUTES les tuiles de l'onglet, tableaux compris. */
@@ -2377,6 +2401,24 @@
       }
     });
 
+    // Arrêt / relance de l'ACQUISITION — à distinguer de « Figer », qui
+    // n'arrête que l'affichage. Ici plus rien n'est enregistré, l'horloge de
+    // la source se fige, et relancer ouvre une capture neuve dont l'origine
+    // des temps repart de zéro.
+    majStopUi();
+    $('stopBtn').addEventListener('click', () => {
+      const src = DW.source;
+      if (!src || !src.stop) { toast('Cette source ne sait pas s’arrêter.', 'err'); return; }
+      if (src.running()) {
+        src.stop();
+        toast('Acquisition arrêtée — l’historique reste consultable et mesurable.');
+      } else {
+        src.start();
+        toast('Nouvelle capture : l’origine des temps repart de zéro.');
+      }
+      majStopUi();
+    });
+
     $('pauseAllBtn').addEventListener('click', () => {
       const tab = state.active;
       if (!tab) return;
@@ -2451,6 +2493,8 @@
             ['Menu ⋮ d’un graphique', 'Dupliquer, échelles automatiques, taille de départ, plein écran, déplacer vers un onglet, ouvrir dans une nouvelle fenêtre.'],
             ['Menu ⋮ d’un tableau', 'Les mêmes gestes : ajouter des variables, vider, taille de départ, <b>dupliquer ce tableau</b>, <b>déplacer vers un onglet</b>, <b>ouvrir dans une nouvelle fenêtre</b>, fermer.'],
             ['Onglets', '＋ crée un espace de travail ; un appui sur l’onglet actif le renomme. Chaque fenêtre du navigateur a ses propres onglets.'],
+            ['Arrêter l’acquisition', '<b>⏹</b> dans la barre du haut arrête l’<b>acquisition</b> — à ne pas confondre avec <b>⏸ Figer</b>, qui n’arrête que l’affichage. Plus aucun échantillon n’est enregistré et l’horloge de la source se fige ; l’historique déjà acquis reste consultable et mesurable. Le bouton devient <b>⏺</b> : il ouvre alors une <b>capture neuve</b>, dont l’origine des temps repart de zéro — l’historique précédent est effacé. La barre d’état affiche la durée de la capture en cours.'],
+            ['Curseur de mesure', 'L’encart près du curseur donne le temps <b>depuis le début de la capture</b> (« t = 5 min 08 s ») : un relevé se note et se compare, là où « il y a 12 s » change de sens à chaque seconde. L’âge par rapport au temps réel suit entre parenthèses quand la vue est figée.'],
             ['Barre du haut', 'Elle ne porte que ce qui sert à chaque instant : les onglets, la saisie d’une variable avec sa destination, et <b>⏸ Figer</b>, qui arrête d’un coup tous les graphiques de l’onglet actif. Elle <b>s’escamote quand on descend</b> dans la page et revient dès qu’on remonte : la place gagnée va aux courbes. <b>Journal de données</b> et <b>Configurations</b> sont dans le menu ☰, avec les autres fonctions qui ne dépendent pas de ce qui est affiché.'],
           ]) +
           S('Pages réseau (☰)') +

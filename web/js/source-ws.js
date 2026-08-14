@@ -27,7 +27,16 @@
     let retry = 0, retryTimer = null, closed = false;
 
     const localSec = () => performance.now() / 1000;
-    const now = () => localSec() + skew;
+    const brut = () => localSec() + skew;
+
+    // Capture : même contrat que la source simulée (voir sim.js). À l'arrêt,
+    // les échantillons reçus sont ignorés et l'horloge se fige — le serveur,
+    // lui, continue d'émettre : c'est bien une commande de l'AFFICHAGE, pas un
+    // ordre donné au contrôleur.
+    let enMarche = true;
+    let arreteA = 0;
+    let captureT0 = 0;
+    const now = () => (enMarche ? brut() : arreteA);
 
     function setStatus(msg, isErr) {
       if (typeof api.onStatus === 'function') api.onStatus(msg, isErr);
@@ -61,6 +70,9 @@
       try { m = JSON.parse(ev.data); } catch (e) { return; }
 
       if (m.e === 'hello') {
+        // Le flux commence ici : c'est l'origine de la capture. Le tampon est
+        // vide, contrairement à la simulation qui pré-remplit.
+        captureT0 = brut();
         horizonS = m.horizonS || horizonS;
         srcName = m.source || srcName;
         api.name = srcName;
@@ -112,6 +124,10 @@
         const target = m.now - localSec();
         skew = haveSkew ? skew + (target - skew) * 0.1 : target;
         haveSkew = true;
+        // Acquisition arrêtée : le serveur continue d'émettre, l'affichage
+        // n'enregistre plus. Le recalage d'horloge, lui, reste fait — sinon
+        // la reprise repartirait sur une horloge dérivée.
+        if (!enMarche) return;
         for (const addr in m.s) {
           const ch = chans.get(addr);
           if (!ch) continue;
@@ -200,6 +216,19 @@
       },
 
       count: () => chans.size,
+
+      running: () => enMarche,
+      captureStart: () => captureT0,
+      stop() {
+        if (!enMarche) return;
+        arreteA = brut();
+        enMarche = false;
+      },
+      start() {
+        enMarche = true;
+        captureT0 = brut();
+        for (const ch of chans.values()) { ch.ts.length = 0; ch.vs.length = 0; }
+      },
 
       /** Voir sim.js : retient l'historique d'une vue figée au-delà de l'horizon. */
       setHold(t) { holdT = (typeof t === 'number' && isFinite(t)) ? t : null; },

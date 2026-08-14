@@ -333,6 +333,35 @@ seulement ce qu'on trace :
   retenir coûte de la mémoire ; **passé ce plafond, le badge passe au rouge et
   affiche « historique épuisé »**, seul cas où la vue suit à nouveau.
 
+## 4 quater. Acquisition : arrêt et capture
+
+**⏹** dans la barre du haut arrête l'**acquisition** — à distinguer de **⏸
+Figer**, qui n'arrête que l'affichage :
+
+- plus aucun échantillon n'est enregistré, et l'**horloge de la source se
+  fige** avec. Sans ce gel de l'horloge, le temps continuerait d'avancer sans
+  qu'aucune donnée n'arrive : les vues en direct défileraient dans le vide et
+  les retards afficheraient un vieillissement que rien ne justifie ;
+- l'historique déjà acquis **reste consultable et mesurable** ;
+- côté serveur, rien n'est demandé au contrôleur : le flux continue d'arriver,
+  c'est l'affichage qui cesse de l'enregistrer. C'est une commande locale.
+
+Le bouton devient **⏺** : il ouvre une **capture neuve**, dont l'origine des
+temps repart de zéro et dont l'historique précédent est effacé — sans cet
+effacement, « temps depuis le début de la capture » n'aurait pas de sens pour
+les échantillons d'avant. La barre d'état affiche la durée de la capture
+courante, et « (arrêtée) » le cas échéant.
+
+L'origine de la première capture est le **début des données disponibles**, pas
+l'instant du chargement : la simulation pré-remplit un horizon complet à
+l'abonnement, et le curseur afficherait sinon des temps négatifs sur les trois
+quarts du tracé.
+
+**Curseur de mesure** : l'encart donne le temps **depuis le début de la
+capture** (`t = 5 min 08 s`) — un relevé se note et se compare, là où « il y a
+12 s » change de sens à chaque seconde qui passe. L'âge par rapport au temps
+réel suit entre parenthèses quand la vue est figée.
+
 ## 4 ter. Mesures sur le tracé (vue arrêtée)
 
 Deux boutons apparaissent dans l'en-tête d'un graphique **figé** — et seulement
