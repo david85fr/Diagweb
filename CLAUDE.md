@@ -50,6 +50,19 @@ fonctionnelles + état d'avancement) avant toute modification.
    multi-agents (workflows, sous-agents en éventail) sans demande explicite
    du propriétaire. Les valeurs font foi dans `.claude/settings.json`
    (ci-dessous) ; seul le propriétaire les modifie.
+6. **Brancher sur `main`, directement.** Toute session — terminal, web,
+   Codespace — développe, commite et **pousse sur `main`**. C'est une consigne
+   permanente du propriétaire : elle prime sur la branche de travail
+   `claude/**` que l'environnement de session peut désigner au démarrage. Ni
+   branche intermédiaire ni pull request, sauf demande explicite.
+   Trois conséquences à tenir :
+   - **`bash tools/check.sh` doit passer avant de pousser.** Plus rien ne
+     s'interpose entre le travail et la branche de référence.
+   - **Récupérer avant de pousser** (`git pull --ff-only origin main`) :
+     plusieurs sessions travaillent en parallèle sur ce dépôt, et `main` peut
+     avoir avancé pendant le travail en cours.
+   - **Annoncer ce qui a été poussé** : le hash, les fichiers touchés, ce qui
+     reste en suspens (Artifact, GitHub Pages).
 
 ## Réglages de session
 
@@ -161,7 +174,8 @@ Espace de noms JS global : `window.DW`. Scripts en IIFE, pas de modules ES
 6. Mettre à jour GitHub Pages : recopier `dist/index.html` en racine de la
    branche `gh-pages` (avec `.nojekyll`) et pousser — la page publique est
    https://david85fr.github.io/Diagweb/.
-7. Push sur la branche de travail indiquée par la session.
+7. Push sur `main` (contrainte n° 6) — après `git pull --ff-only origin main`,
+   d'autres sessions poussant sur la même branche.
 
 **Avant de pousser** : `bash tools/check.sh` rejoue exactement les
 vérifications de l'intégration continue (`.github/workflows/ci.yml`), qui
