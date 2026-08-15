@@ -397,6 +397,23 @@ check('liens réseau : lien et point déclarés, ajoutés au diagnostic',
   protos >= 7 && pointRow === '@banc.pression' && netRow === 1,
   protos + ' protocoles · ' + pointRow + ' · valeur ' + (netVal || '—').trim());
 
+// Diagnostic : le motif se lit SOUS la ligne du lien, pas dans une infobulle
+// — sur écran tactile il n'y a pas de survol, et c'est là qu'on diagnostique.
+// Ici la page est ouverte hors serveur : le diagnostic doit le dire sans
+// détour, puisque aucun lien ne peut être ouvert dans ces conditions.
+await p2.click('#menuBtn');
+await p2.waitForTimeout(150);
+await p2.click('#netBtn');
+await p2.waitForSelector('.modal[aria-label="Liens réseau"]', { timeout: 5000 });
+await p2.waitForTimeout(300);
+const diagTxt = await p2.locator('.px-row .px-diag').first().textContent().catch(() => '');
+const diagTitre = await p2.locator('.px-row .px-diag').first().getAttribute('title').catch(() => '');
+check('liens réseau : le diagnostic d’un lien est affiché en clair',
+  /simul/i.test(diagTxt || '') && !!diagTitre,
+  (diagTxt || 'aucune ligne de diagnostic').slice(0, 80));
+await p2.keyboard.press('Escape');
+await p2.waitForTimeout(200);
+
 // Suggestions : le point réseau est proposé et filtrable
 await p2.fill('#searchInput', '@banc');
 await p2.waitForTimeout(300);

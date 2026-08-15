@@ -43,9 +43,9 @@ aujourd'hui, OID SNMP ou nœud OPC UA demain) est déclarée **à côté** de lu
 ne change jamais la manière dont la valeur est produite.
 
 ```
-signal « pression » : sinusoïde 3,5 bar ± 0,4
+signal « pression » : dent de scie 1 → 10 en dix secondes
       │
-      ├── modbus : registre de maintien 40, uint16, gain 0,1
+      ├── modbus : registre de maintien 40, uint16
       ├── snmp   : (à venir)
       └── opcua  : (à venir)
 ```
@@ -107,6 +107,11 @@ Groupe hydraulique — unité 1 (banc)
   03  10       float32       1  m3/h         4.312  debit — Débit refoulement
   01  0        bit           1                   1  pompe — Pompe en marche
 ```
+
+**En Codespace, il démarre tout seul** : `tools/share.sh --server` (rejoué à
+chaque attachement) le lance sur `127.0.0.1:5020` si rien n'y écoute déjà, et
+`--restart` le relance après une recompilation. Le port n'est jamais publié —
+c'est le serveur de diagnostic, sur la même machine, qui s'y connecte.
 
 ## Configurer les équipements
 

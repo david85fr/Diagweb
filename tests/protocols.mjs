@@ -516,10 +516,14 @@ check('métadonnées transmises (libellé, unité, famille)',
 // seule sa requête est mise de côté, les autres points continuent.
 const st2 = await api('/api/protocols/status');
 const banc2 = (st2.json || []).find((x) => x.id === 'banc');
-check('une adresse refusée n’abat pas le lien (motif affiché, autres points lus)',
-  banc2 && banc2.state === 'up' && /hors plage/.test(banc2.detail || '') &&
+// L'avertissement est publié À PART de l'état : une exception sur une requête
+// n'est pas un état de lien, et l'écraser dans « detail » rendait le motif
+// éternellement vrai, y compris après que le lien soit retombé.
+check('une adresse refusée n’abat pas le lien (avertissement à part, autres points lus)',
+  banc2 && banc2.state === 'up' && banc2.detail === 'lien établi' &&
+  /hors plage/.test(banc2.warn || '') && banc2.warnS >= 0 &&
   got.get('@banc.absent').length === 0 && got.get('@banc.reg0').length > 5,
-  banc2 ? banc2.detail : 'état absent');
+  banc2 ? banc2.detail + ' | ⚠ ' + banc2.warn : 'état absent');
 
 const cadence = got.get('@banc.reg0').length;
 check('cadence de lecture respectée (~10 lectures/s)', cadence >= 8 && cadence <= 40,

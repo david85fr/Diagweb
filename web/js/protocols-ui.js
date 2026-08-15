@@ -23,7 +23,7 @@
     todo: ['⋯', 'non branché', 'Protocole configurable, lecture pas encore implémentée (voir docs/PROTOCOLES.md).'],
   };
 
-  let root = null, view = null, editing = null, noteEl = null;
+  let root = null, view = null, editing = null, noteEl = null, veille = null;
 
   // ---------------------------------------------------------------- champs
   function fieldRow(f, params, onInput) {
@@ -127,12 +127,24 @@
     noteEl = back.querySelector('#pxNote');
     view = 'links';
     render();
-    if (P.mode === 'server') P.refreshStatus().then(() => { if (view === 'links') render(); });
+    // Écran de diagnostic : il se rafraîchit tout seul. On regarde un lien
+    // repartir sans avoir à refermer et rouvrir la fenêtre — et seules les
+    // vues de LISTE sont redessinées, jamais un formulaire en cours de saisie.
+    if (P.mode === 'server') {
+      const majuscule = async () => {
+        if (!root) return;
+        await P.refreshStatus();
+        if (root && (view === 'links' || view === 'points')) render();
+      };
+      majuscule();
+      veille = setInterval(majuscule, 2000);
+    }
   }
 
   function close() {
     const r = document.getElementById('modalRoot');
     if (r) r.innerHTML = '';
+    if (veille) { clearInterval(veille); veille = null; }
     root = null; view = null; editing = null;
   }
 
@@ -148,6 +160,78 @@
     else if (view === 'link') renderLink(b);
     else if (view === 'points') renderPoints(b);
     else if (view === 'point') renderPoint(b);
+  }
+
+  // ------------------------------------------------------- diagnostic
+  /**
+   * Âge en clair. Le serveur publie des SECONDES ÉCOULÉES et non des dates :
+   * son horloge compte depuis son démarrage, et la page n'a pas à connaître
+   * cette origine pour écrire « il y a 3 s ».
+   */
+  function age(s) {
+    if (s == null || s < 0) return null;
+    if (s < 1.5) return 'à l’instant';
+    if (s < 90) return 'il y a ' + Math.round(s) + ' s';
+    if (s < 5400) return 'il y a ' + Math.round(s / 60) + ' min';
+    return 'il y a ' + Math.round(s / 3600) + ' h';
+  }
+
+  const pluriel = (n, mot) => n + ' ' + mot + (n > 1 ? 's' : '');
+
+  /**
+   * La phrase de diagnostic d'un lien — celle qui doit suffire à savoir quoi
+   * faire. Elle est AFFICHÉE, pas seulement mise en infobulle : sur écran
+   * tactile il n'y a pas de survol, et c'est justement là qu'on diagnostique.
+   */
+  function linkDiag(link, st) {
+    if (P.mode !== 'server') {
+      return 'Page ouverte hors du serveur de diagnostic : aucun lien n’est ouvert, ' +
+             'les valeurs affichées sont simulées.';
+    }
+    if (link.enabled === false) return 'Lien désactivé : aucun échange réseau.';
+    const bouts = [];
+    if (st.detail) bouts.push(st.detail);
+    if (st.state === 'down' && st.attempts > 1) {
+      bouts.push(pluriel(st.attempts, 'tentative') + ' de connexion');
+    }
+    if (st.state === 'up' || st.state === 'sim') {
+      const muets = (st.points || []).filter((p) => !p.samples).length;
+      const total = (st.points || []).length;
+      bouts.push(st.samples ? pluriel(st.samples, 'échantillon') + ' reçu' + (st.samples > 1 ? 's' : '')
+                            : 'aucun échantillon reçu');
+      const quand = age(st.lastS);
+      if (quand) bouts.push('dernier ' + quand);
+      if (muets && total) {
+        bouts.push(muets === total
+          ? 'AUCUN point ne remonte de valeur : vérifier l’adressage des points'
+          : muets + ' point' + (muets > 1 ? 's' : '') + ' sur ' + total + ' sans aucune valeur');
+      }
+    }
+    // L'avertissement est daté, et affiché À PART de l'état : une exception sur
+    // une requête n'abat pas le lien, mais elle explique un point muet.
+    if (st.warn) {
+      bouts.push('⚠ ' + st.warn + (age(st.warnS) ? ' (' + age(st.warnS) + ')' : ''));
+    }
+    if (st.sinceS >= 0 && st.state !== 'sim') {
+      const d = age(st.sinceS);
+      if (d) bouts.push('dans cet état ' + d);
+    }
+    // Cible locale injoignable : la cause la plus fréquente est que le serveur
+    // de test n'est pas démarré. Le dire vaut mieux que laisser chercher.
+    if (st.state === 'down' && presetIntact(link)) {
+      bouts.push('→ ce lien vise un serveur de test local : le démarrer par ' +
+                 '« bash tools/share.sh --server --local »');
+    }
+    return bouts.join(' · ');
+  }
+
+  /** Le diagnostic d'un point : ce qu'il a réellement produit. */
+  function pointDiag(link, pt) {
+    const ps = P.pointState(link.id, pt.id);
+    if (!ps) return null;
+    if (!ps.samples) return 'aucune valeur reçue depuis la configuration de ce lien';
+    return pluriel(ps.samples, 'valeur') + ' reçue' + (ps.samples > 1 ? 's' : '') +
+           (age(ps.lastS) ? ' · dernière ' + age(ps.lastS) : '');
   }
 
   // ---- liste des liens ---------------------------------------------
@@ -203,6 +287,15 @@
       row.querySelector('.px-sub').textContent =
         target(link) + ' · ' + (link.points || []).length + ' point(s)';
       row.querySelector('.px-sub').title = 'Cible du lien et nombre de points configurés';
+
+      // Le motif en clair, sous la ligne — pas seulement dans l'infobulle de
+      // l'état : c'est la phrase qu'on vient chercher quand rien n'arrive.
+      const diag = document.createElement('div');
+      diag.className = 'px-diag st-' + st.key;
+      diag.textContent = linkDiag(link, st);
+      diag.title = 'Ce que le serveur de diagnostic constate sur ce lien : motif, ' +
+                   'compteurs et ancienneté. « Tester » rejoue une connexion à la demande.';
+      if (diag.textContent) row.appendChild(diag);
 
       const acts = document.createElement('div');
       acts.className = 'm-actions px-acts';
@@ -413,6 +506,19 @@
       const sub = row.querySelector('.px-sub');
       sub.textContent = (pt.label || pt.id) + ' · ' + P.pointSummary(link, pt) + ' · ' + pt.periodMs + ' ms';
       sub.title = 'Libellé, adressage protocole et période de lecture';
+
+      // Un lien « connecté » dont un point reste muet est le cas le plus
+      // trompeur : la ligne ci-dessous répond point par point.
+      const dg = pointDiag(link, pt);
+      if (dg) {
+        const d = document.createElement('div');
+        const ps = P.pointState(link.id, pt.id);
+        d.className = 'px-diag' + (ps && ps.samples ? ' st-up' : ' st-down');
+        d.textContent = dg;
+        d.title = 'Ce que CE point a produit depuis que le lien est configuré. ' +
+                  'Zéro valeur sur un lien connecté désigne son adressage, pas la connexion.';
+        row.appendChild(d);
+      }
 
       const acts = document.createElement('div');
       acts.className = 'm-actions px-acts';

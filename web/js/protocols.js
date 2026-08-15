@@ -826,11 +826,36 @@
       return { ok: !!j.ok, detail: j.detail || (j.ok ? 'connexion établie' : 'échec') };
     },
 
+    /**
+     * État d'un lien, TOUJOURS sous la même forme — c'est `key` que
+     * l'interface lit. Le serveur, lui, envoie le champ `state` : rendre son
+     * objet tel quel laissait `key` indéfini, et tout lien réellement servi
+     * s'affichait « ○ désactivé », y compris quand il communiquait. Le motif,
+     * lui, était bien là mais caché dans une infobulle.
+     */
     linkState(id) {
+      if (this.mode !== 'server') {
+        return { key: 'sim', state: 'sim', label: 'simulé',
+                 detail: 'Valeurs simulées (pas de serveur de diagnostic).' };
+      }
       const st = this.status[id];
-      if (this.mode !== 'server') return { key: 'sim', label: 'simulé', detail: 'Valeurs simulées (pas de serveur de diagnostic).' };
-      if (!st) return { key: 'off', label: 'inconnu', detail: 'État non communiqué par le serveur.' };
-      return st;
+      if (!st) {
+        return { key: 'off', state: 'off', label: 'inconnu',
+                 detail: 'État pas encore communiqué par le serveur de diagnostic.' };
+      }
+      return Object.assign({ key: st.state }, st);
+    },
+
+    /**
+     * Ce qu'un point a réellement produit : nombre d'échantillons et âge du
+     * dernier. `null` quand le serveur ne le dit pas (page hors serveur, ou
+     * état pas encore reçu) — on n'invente pas un « 0 » qui se lirait comme
+     * « le serveur affirme que ce point est muet ».
+     */
+    pointState(linkId, pointId) {
+      const st = this.mode === 'server' ? this.status[linkId] : null;
+      if (!st || !Array.isArray(st.points)) return null;
+      return st.points.find((p) => p.id === pointId) || null;
     },
 
     addrOf, pointSummary, kindOf, defaults, fieldApplies, linkDefaults, localPreset,

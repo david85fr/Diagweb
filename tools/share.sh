@@ -79,6 +79,11 @@ Journaux   : /tmp/diagweb-server.log · /tmp/diagweb-serve.log
 TXT
 }
 
+
+# Simulateur d'équipements : le port que la fenêtre « Liens réseau » pré-remplit
+# pour Modbus TCP (voir web/js/protocols.js). Il n'est jamais publié — c'est le
+# serveur de diagnostic, sur la MÊME machine, qui s'y connecte.
+SIM_PORT="${SIM_PORT:-5020}"
 MODE="apercu"
 PARTAGE=1
 RELANCE=1        # relance par défaut : voir --no-restart
@@ -120,13 +125,44 @@ except Exception:
 PY
 }
 
-listening() {
-  python3 - "$PORT" <<'PY' 2>/dev/null
+listening() { port_ouvert "$PORT"; }
+
+port_ouvert() {
+  python3 - "$1" <<'PY' 2>/dev/null
 import socket, sys
 s = socket.socket()
 s.settimeout(0.5)
 sys.exit(0 if s.connect_ex(("127.0.0.1", int(sys.argv[1]))) == 0 else 1)
 PY
+}
+
+# Simulateur d'équipements : sans lui, l'adresse pré-remplie d'un lien Modbus
+# neuf ne mène à rien, et l'utilisateur cherche la panne du côté du pilote.
+# Démarré en local, jamais publié, et laissé tranquille s'il tourne déjà.
+demarrer_simulateur() {
+  [ -x build/diagweb-simulator ] || return 0
+  if port_ouvert "$SIM_PORT"; then
+    # --restart vient d'une recompilation : le simulateur qui tourne est alors
+    # l'ANCIEN binaire, et le laisser en place ferait éprouver du code périmé.
+    if [ "$RELANCE" = 0 ]; then
+      echo "→ Simulateur d'équipements déjà en fonctionnement (port $SIM_PORT) — inchangé"
+      return 0
+    fi
+    for pid in $(port_owners "$SIM_PORT"); do kill "$pid" 2> /dev/null; done
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      port_ouvert "$SIM_PORT" || break
+      sleep 0.2
+    done
+  fi
+  nohup ./build/diagweb-simulator --port "$SIM_PORT" --bind 127.0.0.1 --quiet \
+    > /tmp/diagweb-simulator.log 2>&1 &
+  sleep 0.6
+  if port_ouvert "$SIM_PORT"; then
+    echo "→ Simulateur d'équipements sur 127.0.0.1:$SIM_PORT (registres en dent de scie 1 → 10)"
+  else
+    echo "→ Simulateur d'équipements : démarrage impossible"
+    sed 's/^/     /' /tmp/diagweb-simulator.log
+  fi
 }
 
 # Processus qui écoutent sur $PORT, trouvés par /proc — sans outil externe.
@@ -137,7 +173,7 @@ PY
 # le voyait — share.sh annonçait donc un démarrage réussi tout en continuant
 # de servir la simulation. Le noyau, lui, est toujours là.
 port_owners() {
-  python3 - "$PORT" <<'PY' 2>/dev/null
+  python3 - "${1:-$PORT}" <<'PY' 2>/dev/null
 import os, sys
 
 port = int(sys.argv[1])
@@ -259,6 +295,9 @@ if [ "$MODE" = "serveur" ]; then
       exit 1
     fi
   fi
+  # 3. L'équipement d'en face, pour que le lien pré-rempli ait quelqu'un à qui
+  #    parler. Son absence ne fait pas échouer le démarrage du serveur.
+  demarrer_simulateur
 elif ! listening; then
   echo "→ Démarrage de l'aperçu statique (port $PORT)"
   nohup python3 tools/serve.py --port "$PORT" > /tmp/diagweb-serve.log 2>&1 &

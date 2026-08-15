@@ -167,7 +167,8 @@ check('lien établi sur l’unité 1', stMap.banc && stMap.banc.state === 'up', 
 check('second équipement servi sur le même port (unité 2)',
   stMap.compteur && stMap.compteur.state === 'up', dit('compteur'));
 check('unité inconnue : « équipement muet » plutôt qu’une valeur inventée',
-  stMap.fantome && /muet|passerelle/i.test(stMap.fantome.detail || ''), dit('fantome'));
+  stMap.fantome && /muet|passerelle/i.test(stMap.fantome.warn || ''),
+  dit('fantome') + ' | ⚠ ' + (stMap.fantome ? stMap.fantome.warn : ''));
 
 const test = await api('/api/protocols/test', {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -218,10 +219,61 @@ check('adresse hors table : aucun échantillon publié',
   got.get('@banc.absent').length + ' échantillon(s)');
 const apres = await api('/api/protocols/status');
 const apresMap = Object.fromEntries((apres.json || []).map((s) => [s.id, s]));
-check('exception Modbus : le lien survit et le motif est lisible',
+
+// --- ce que l'état publie pour le DIAGNOSTIC ---------------------------
+// « up » ne dit pas que tout va bien : un lien peut être établi et un point
+// rester muet. Ces compteurs sont ce que la fenêtre « Liens réseau » affiche
+// en clair, et c'est par eux qu'on distingue un défaut de liaison d'un défaut
+// d'adressage.
+const banc = apresMap.banc || {};
+const pt = (id) => (banc.points || []).find((p) => p.id === id) || null;
+check('état : compteurs par point publiés',
+  Array.isArray(banc.points) && banc.points.length === 8,
+  (banc.points || []).length + ' point(s) décrits');
+check('point qui remonte : échantillons comptés et datés',
+  pt('pression') && pt('pression').samples > 0 && pt('pression').lastS >= 0,
+  pt('pression') ? pt('pression').samples + ' valeur(s), dernière il y a ' +
+                   pt('pression').lastS + ' s' : 'absent');
+// Le point hors table est le cas trompeur : le lien est debout, lui est muet.
+check('point muet : zéro échantillon et « jamais reçu »',
+  pt('absent') && pt('absent').samples === 0 && pt('absent').lastS < 0,
+  pt('absent') ? pt('absent').samples + ' valeur(s), lastS ' + pt('absent').lastS : 'absent');
+check('état : ancienneté et tentatives publiées',
+  banc.sinceS >= 0 && banc.attempts >= 1 && banc.lastS >= 0,
+  'dans cet état depuis ' + banc.sinceS + ' s · ' + banc.attempts + ' tentative(s)');
+
+// Port fermé : le motif doit nommer la CIBLE et la cause, en français. Sans
+// l'adresse, on ne sait pas si c'est la configuration ou l'équipement.
+const ferme = await api('/api/protocols', {
+  method: 'PUT', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ version: 1, links: [lien('mort', 'Port fermé', 1, [
+    POINT('x', 'Registre', '', 'word', { fn: 3, reg: 0, type: 'uint16' })]) ] }),
+});
+if (ferme.status === 200) {
+  // Le lien vise volontairement un port sur lequel personne n'écoute.
+  await api('/api/protocols', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ version: 1, links: [{
+      id: 'mort', label: 'Port fermé', protocol: 'modbus-tcp', enabled: true,
+      params: { host: '127.0.0.1', port: 1, unitId: 1, timeoutMs: 500, groupMax: 32 },
+      points: [POINT('x', 'Registre', '', 'word', { fn: 3, reg: 0, type: 'uint16' })],
+    }] }),
+  });
+  await sleep(1500);
+  const st2 = await api('/api/protocols/status');
+  const mort = ((st2.json || []).find((s) => s.id === 'mort')) || {};
+  check('port fermé : motif en français, avec l’adresse visée',
+    mort.state === 'down' && /127\.0\.0\.1:1/.test(mort.detail || '') &&
+    /refus|injoignable|délai/i.test(mort.detail || ''),
+    mort.detail || 'aucun motif');
+}
+check('exception Modbus : le lien survit, l’avertissement est daté et lisible',
   apresMap.banc && apresMap.banc.state === 'up' &&
-  /adresse|plage/i.test(apresMap.banc.detail || ''),
-  apresMap.banc ? apresMap.banc.state + ' · ' + apresMap.banc.detail : 'absent');
+  apresMap.banc.detail === 'lien établi' &&
+  /adresse|plage/i.test(apresMap.banc.warn || '') &&
+  /exception 2/.test(apresMap.banc.warn || '') && apresMap.banc.warnS >= 0,
+  apresMap.banc ? apresMap.banc.state + ' · ⚠ ' + apresMap.banc.warn +
+                  ' (il y a ' + apresMap.banc.warnS + ' s)' : 'absent');
 
 await api('/api/protocols', {
   method: 'PUT', headers: { 'Content-Type': 'application/json' },

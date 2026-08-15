@@ -93,6 +93,10 @@ pareil, simplement sans le gain.
   pas la simulation navigateur. Le port reste privé — publier est une
   décision, pas un effet de bord. Les variables internes, elles, restent
   simulées tant que le binding vers le `controller` n'existe pas (phase 2).
+- **Le simulateur d'équipements démarre avec lui**, sur `127.0.0.1:5020` et
+  sans jamais être publié : c'est l'adresse que la fenêtre « Liens réseau »
+  pré-remplit pour Modbus TCP, elle mène donc à un équipement qui répond
+  (registres en dent de scie de 1 à 10).
 - **Et il se met à jour tout seul** : `post-attach.sh` lance aussi
   `tools/sync.sh --watch`, qui surveille `origin/main`. À chaque commit
   poussé, le Codespace arrête proprement les enregistrements, récupère,

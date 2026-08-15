@@ -34,13 +34,33 @@
 
 namespace diagweb {
 
-/** État d'un lien, tel que l'interface l'affiche. */
+/** Ce qu'un point a réellement produit — la moitié du diagnostic. */
+struct PointStatus {
+  std::string id;
+  long long samples = 0;
+  double last = 0;               // instant du dernier échantillon (0 = jamais)
+};
+
+/**
+ * État d'un lien, tel que l'interface l'affiche.
+ *
+ * « up » ne suffit pas à dire que tout va bien : un lien peut être établi et
+ * ses points rester muets (mauvaise adresse de registre, objet refusé, flux
+ * absent). Les compteurs sont donc là pour répondre à la question suivante —
+ * « ça communique, mais est-ce que MES points arrivent ? » — sans quoi il ne
+ * reste qu'à regarder une courbe vide en se demandant qui est en cause.
+ */
 struct LinkStatus {
   std::string id;
   std::string state = "off";     // up | down | off | todo | sim
   std::string detail;
-  double since = 0;
+  double since = 0;              // instant du dernier changement d'état
   long long samples = 0;
+  double last = 0;               // instant du dernier échantillon, tous points
+  long long attempts = 0;        // ouvertures tentées depuis la configuration
+  std::string warning;           // dernier avertissement (exception, horloge…)
+  double warn_since = 0;         // et quand il a été émis (0 = aucun)
+  std::vector<PointStatus> points;
 };
 
 /**
@@ -131,8 +151,12 @@ class ProtocolSource : public IVariableSource {
         }
         LinkStatus st;
         st.id = link.id;
+        st.since = now();
         st.state = link.enabled ? "down" : "off";
         st.detail = link.enabled ? "connexion en cours…" : "lien désactivé";
+        // Les points sont listés dès maintenant, à zéro échantillon : un point
+        // qui n'a jamais rien reçu doit se VOIR, et non manquer du tableau.
+        for (const auto& p : link.points) st.points.push_back({p.id, 0, 0});
         status_[link.id] = st;
       }
     }
@@ -243,11 +267,13 @@ class ProtocolSource : public IVariableSource {
    public:
     LinkSink(ProtocolSource& src, const LinkConfig& link) : src_(src) {
       for (const auto& p : link.points) {
+        ids_.push_back(p.id);
         addrs_.push_back(net_addr(link.id, p.id));
         period_.push_back(p.period_ms / 1000.0);
         last_t_.push_back(-1e18);
         last_v_.push_back(0);
         last_ret_.push_back(-1e18);
+        n_.push_back(0);
         // Par défaut on prend l'horodatage de l'équipement quand le protocole
         // en fournit un ; « serveur » l'ignore délibérément.
         source_t_.push_back(p.str("timestamp", "source") != "server");
@@ -263,7 +289,14 @@ class ProtocolSource : public IVariableSource {
      * borne donc la cadence conservée — mais tout changement de valeur passe,
      * pour ne jamais masquer une transition.
      */
-    void warn(const std::string& msg) override { src_.set_status(id_, "up", msg); }
+    /**
+      * Un avertissement N'EST PAS un état. Une exception Modbus sur une seule
+      * requête écrasait « lien établi » et forçait l'état à « up » : le motif
+      * restait ensuite vrai pour toujours, et l'état affiché devenait faux dès
+      * que le lien tombait. Les deux vivent donc séparément, l'avertissement
+      * étant horodaté — périmé, il se voit.
+      */
+     void warn(const std::string& msg) override { src_.set_warning(id_, msg); }
 
     void publish(size_t idx, double value, double t_source) override {
       if (idx >= addrs_.size()) return;
@@ -283,7 +316,14 @@ class ProtocolSource : public IVariableSource {
       if (t_ret > last_ret_[idx]) last_ret_[idx] = t_ret;
       src_.push(addrs_[idx], value, t_ret, t_source > 0 ? t_source : 0.0);
       ++count_;
-      if (count_ % 64 == 1) src_.bump_samples(id_, count_);
+      ++n_[idx];
+      // Compteurs remontés au plus une fois par demi-seconde : assez frais
+      // pour un écran de diagnostic, assez rare pour ne pas prendre le verrou
+      // de l'état à chaque échantillon d'un flux à 100 Hz.
+      if (t - dernier_rapport_ >= 0.5) {
+        dernier_rapport_ = t;
+        src_.report(id_, count_, t, snapshot());
+      }
     }
 
     /**
@@ -328,16 +368,28 @@ class ProtocolSource : public IVariableSource {
       return g > last_ret_[idx] ? g : t;
     }
 
+    /** Ce que chaque point a produit, pour l'écran de diagnostic. */
+    std::vector<PointStatus> snapshot() const {
+      std::vector<PointStatus> out;
+      out.reserve(ids_.size());
+      for (size_t i = 0; i < ids_.size(); ++i) {
+        out.push_back({ids_[i], n_[i], last_t_[i] < -1e17 ? 0 : last_t_[i]});
+      }
+      return out;
+    }
+
    private:
     ProtocolSource& src_;
-    std::vector<std::string> addrs_;
+    std::vector<std::string> ids_, addrs_;
     std::vector<double> period_, last_t_, last_v_;
     std::vector<double> last_ret_;    // dernier horodatage retenu, par point
+    std::vector<long long> n_;        // échantillons publiés, par point
     std::vector<bool> source_t_;      // ce point suit-il l'horloge de l'équipement ?
     std::string id_;
     double ecart_max_ = 10;
     bool derive_signalee_ = false;
     long long count_ = 0;
+    double dernier_rapport_ = -1e18;
   };
 
   /** Réceptacle qui jette tout (test de connexion). */
@@ -409,20 +461,52 @@ class ProtocolSource : public IVariableSource {
     while (!ch.buf.empty() && ch.buf.front().t < min_t) ch.buf.pop_front();
   }
 
-  void bump_samples(const std::string& link_id, long long n) {
+  /** Dernier avertissement du pilote, sans toucher à l'état du lien. */
+  void set_warning(const std::string& link_id, const std::string& msg) {
     std::lock_guard<std::mutex> lock(mu_);
     auto it = status_.find(link_id);
-    if (it != status_.end()) it->second.samples = n;
+    if (it == status_.end()) return;
+    it->second.warning = msg;
+    it->second.warn_since = now();
+  }
+
+  /** Une ouverture de plus a été tentée : un compteur qui grimpe dit la boucle. */
+  void bump_attempt(const std::string& link_id) {
+    std::lock_guard<std::mutex> lock(mu_);
+    auto it = status_.find(link_id);
+    if (it != status_.end()) ++it->second.attempts;
+  }
+
+  /** Compteurs d'un lien : total, dernier échantillon, et le détail par point. */
+  void report(const std::string& link_id, long long n, double t,
+              std::vector<PointStatus> points) {
+    std::lock_guard<std::mutex> lock(mu_);
+    auto it = status_.find(link_id);
+    if (it == status_.end()) return;
+    it->second.samples = n;
+    it->second.last = t;
+    it->second.points = std::move(points);
   }
 
  public:
   void set_status(const std::string& id, const std::string& state, const std::string& detail) {
     std::lock_guard<std::mutex> lock(mu_);
     auto& st = status_[id];
+    // `since` date le CHANGEMENT d'état, pas le dernier passage ici. La boucle
+    // de reconnexion rappelle set_status à chaque essai : le remettre à zéro
+    // à chaque fois aurait affiché « en défaut depuis 2 s » sur un lien tombé
+    // depuis un quart d'heure — le contraire du renseignement recherché.
+    if (st.id.empty() || st.state != state) {
+      st.since = now();
+      // Un avertissement appartient à la session qui l'a produit : le garder
+      // au-delà d'un changement d'état ferait lire une exception d'il y a deux
+      // connexions comme si elle venait d'arriver.
+      st.warning.clear();
+      st.warn_since = 0;
+    }
     st.id = id;
     st.state = state;
     st.detail = detail;
-    st.since = now();
   }
 
  private:
@@ -446,6 +530,7 @@ class ProtocolSource : public IVariableSource {
             return;                                  // inutile de réessayer
           }
           std::string err;
+          bump_attempt(cfg.id);
           if (!drv->open(err)) {
             set_status(cfg.id, "down", err.empty() ? "connexion impossible" : err);
             sleep_backoff(raw, backoff);

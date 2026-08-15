@@ -14,6 +14,13 @@
   "use strict";
   const DW = (window.DW = window.DW || {});
 
+  // L'état d'un lien est un mot de CODE côté serveur (« up », « down »…) : il
+  // se traduit avant d'être montré, sans quoi la seule vue qui affichait la
+  // cause la donnait sous la forme « down · Connection refused ».
+  const ETAT_LIEN = { up: 'connecté', down: 'en défaut', off: 'désactivé',
+                      todo: 'non branché', sim: 'simulé' };
+  const etatLien = (s) => (ETAT_LIEN[s.state] || s.state) + (s.detail ? ' · ' + s.detail : '');
+
   const $ = (id) => document.getElementById(id);
   const surServeur = () => DW.sourceMode === 'ws';
 
@@ -129,7 +136,7 @@
               DW.escapeHtml(l.id), DW.escapeHtml(l.protocol), DW.escapeHtml(l.target || '—'),
               String(l.points),
               l.secretRef ? 'référence « ' + DW.escapeHtml(l.secretRef) + ' »' : '—',
-              st[l.id] ? DW.escapeHtml(st[l.id].state + ' · ' + st[l.id].detail) : '—',
+              st[l.id] ? DW.escapeHtml(etatLien(st[l.id])) : '—',
             ]),
             'Aucun lien réseau configuré.') + '</div>' +
 
@@ -188,6 +195,10 @@
     for (const k of d.links || []) {
       l.push('  ' + k.id + '  ' + k.protocol + '  ' + (k.target || '—') + '  ' +
              k.points + ' point(s)' + (k.secretRef ? '  secrets: ' + k.secretRef : ''));
+      // L'état et son motif dans le rapport : c'est ce texte qu'on copie dans
+      // un compte rendu, et il omettait justement la panne dont on parle.
+      const e = (DW.protocols && DW.protocols.status) ? DW.protocols.status[k.id] : null;
+      if (e) l.push('      état : ' + etatLien(e));
     }
     l.push('');
     l.push('INTERFACES');

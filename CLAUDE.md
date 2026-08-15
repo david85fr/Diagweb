@@ -45,11 +45,15 @@ fonctionnelles + état d'avancement) avant toute modification.
 4. **Tout objet d'interface porte une infobulle** (`title`) expliquant ce
    qu'il fait — un test de couverture le vérifie. Le menu ☰ → Aide doit
    rester à jour, car les infobulles n'existent pas sur écran tactile.
-5. **Modèle et effort figés** : ne jamais changer de modèle ni de niveau
-   d'effort de sa propre initiative, et ne jamais lancer d'orchestration
-   multi-agents (workflows, sous-agents en éventail) sans demande explicite
-   du propriétaire. Les valeurs font foi dans `.claude/settings.json`
-   (ci-dessous) ; seul le propriétaire les modifie.
+5. **Modèle et effort figés ; orchestration multi-agents autorisée.** Ne jamais
+   changer de modèle ni de niveau d'effort de sa propre initiative : les valeurs
+   font foi dans `.claude/settings.json` (ci-dessous), seul le propriétaire les
+   modifie. L'**orchestration multi-agents** (workflows, sous-agents en
+   éventail), elle, n'a plus besoin d'être demandée — décision du propriétaire :
+   s'en servir quand la tâche s'y prête (exploration large, revue adversariale,
+   sweep sur beaucoup de fichiers), et rester en direct quand elle ne s'y prête
+   pas. Ce qui ne change pas : le résultat se juge sur `bash tools/check.sh`, et
+   ce qui est poussé reste annoncé.
 6. **Brancher sur `main`, directement.** Toute session — terminal, web,
    Codespace — développe, commite et **pousse sur `main`**. C'est une consigne
    permanente du propriétaire : elle prime sur la branche de travail
@@ -90,7 +94,7 @@ le modèle repartait sinon sur celui par défaut de l'environnement).
 |---------------|-------------------|-------|
 | `model`       | `claude-opus-5`   | modèle épinglé, plus de retour au défaut de l'environnement |
 | `effortLevel` | `xhigh`           | effort de raisonnement constant (`low`/`medium`/`high`/`xhigh`) |
-| `ultracode`   | `false`           | désactive le mode qui force `xhigh` **et** impose l'orchestration multi-agents |
+| `ultracode`   | `false`           | mode qui force `xhigh` **et** systématise l'orchestration multi-agents — l'orchestration reste autorisée sans lui (contrainte n° 5) |
 
 Pour changer de modèle ou d'effort : éditer ce fichier (une ligne), c'est le
 seul endroit. Un `/model` en cours de session ne vaut que pour la session et

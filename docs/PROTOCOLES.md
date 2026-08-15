@@ -135,6 +135,41 @@ casse aucune disposition — l'adresse Diagweb ne bouge pas.
 L'état de chaque lien est affiché en permanence : ● connecté · ⚠ en défaut
 (avec la cause) · ○ désactivé · ⋯ non branché · ~ simulé.
 
+### Diagnostiquer un lien qui ne donne rien
+
+Sous chaque lien, une ligne dit ce que le serveur **constate** — elle est
+affichée, pas rangée dans une infobulle : sur écran tactile il n'y a pas de
+survol, et c'est précisément là qu'on diagnostique.
+
+```
+⚠ en défaut
+  connexion refusée par 10.0.0.5:502 — la machine répond, mais rien n'écoute
+  sur ce port · 8 tentatives de connexion · dans cet état il y a 21 s
+
+● connecté
+  1 253 échantillons reçus · dernier à l'instant · 1 point sur 3 sans aucune
+  valeur · dans cet état il y a 4 min
+```
+
+Et dans la liste des points, point par point : « 1 253 valeurs reçues ·
+dernière à l'instant », ou « aucune valeur reçue depuis la configuration de ce
+lien ». La fenêtre se rafraîchit toute seule : on voit un lien repartir sans la
+refermer.
+
+**La grille de lecture tient en deux lignes**, et c'est tout l'intérêt de
+séparer les deux compteurs :
+
+| Ce qu'on lit | Où est le problème |
+|---|---|
+| Lien **en défaut** | la liaison : adresse, port, équipement éteint, filtrage |
+| Lien **connecté**, point **sans aucune valeur** | l'adressage de ce point : registre, type, unité — pas le réseau |
+| Lien connecté, points alimentés, courbe vide | l'affichage : période, échelle, fenêtre de temps |
+
+Le motif d'échec nomme toujours la **cible** : « connexion refusée par
+10.0.0.5:502 » ne se confond pas avec « hôte introuvable : « automate-3 » ».
+Sans l'adresse, il resterait à deviner si c'est la configuration ou
+l'équipement qui est en cause.
+
 **Où vit la configuration ?** Sur le contrôleur (`<data-dir>/protocols.json`)
 dès que la page est servie par le serveur de diagnostic : elle est donc
 partagée par tous les postes qui s'y connectent, et rechargée au redémarrage.

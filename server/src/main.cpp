@@ -144,8 +144,26 @@ std::string statuses_json() {
     for (const auto& st : g_net->statuses()) {
       if (!first) o << ',';
       first = false;
+      // Les instants sont publiés en ÂGE (secondes écoulées) plutôt qu'en date :
+      // l'horloge du serveur compte depuis son démarrage, et la page n'a aucune
+      // raison de connaître cette origine pour afficher « il y a 3 s ».
+      const double t = g_net->now();
+      const auto age = [t](double instant) { return instant > 0 ? t - instant : -1.0; };
       o << "{\"id\":\"" << jesc(st.id) << "\",\"state\":\"" << jesc(st.state)
-        << "\",\"detail\":\"" << jesc(st.detail) << "\",\"samples\":" << st.samples << '}';
+        << "\",\"detail\":\"" << jesc(st.detail) << "\",\"samples\":" << st.samples
+        << ",\"sinceS\":" << jnum(age(st.since), 1)
+        << ",\"lastS\":" << jnum(age(st.last), 1)
+        << ",\"attempts\":" << st.attempts
+        << ",\"warn\":\"" << jesc(st.warning) << "\",\"warnS\":" << jnum(age(st.warn_since), 1)
+        << ",\"points\":[";
+      bool p1 = true;
+      for (const auto& pt : st.points) {
+        if (!p1) o << ',';
+        p1 = false;
+        o << "{\"id\":\"" << jesc(pt.id) << "\",\"samples\":" << pt.samples
+          << ",\"lastS\":" << jnum(age(pt.last), 1) << '}';
+      }
+      o << "]}";
     }
   }
   o << ']';

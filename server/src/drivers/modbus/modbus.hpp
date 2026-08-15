@@ -31,6 +31,12 @@ class ModbusDriver : public IProtocolDriver {
 
   bool open(std::string& err) override {
     close();
+    // Un point qu'aucune requête ne lira ne doit pas rester muet SANS RAISON :
+    // c'est le pire des diagnostics — une variable plate, et rien à l'écran.
+    if (ignores_) {
+      sink_.warn(std::to_string(ignores_) + " point(s) ignoré(s) : seules les " +
+                 "fonctions de lecture 01 à 04 sont interrogeables");
+    }
     if (serial_) {
       fd_ = net::serial_open(link_.str("device", "/dev/ttyS0"),
                              static_cast<int>(link_.num("baud", 19200)),
@@ -112,7 +118,7 @@ class ModbusDriver : public IProtocolDriver {
     for (size_t i = 0; i < link_.points.size(); ++i) {
       const PointConfig& p = link_.points[i];
       const int fn = static_cast<int>(p.num("fn", 3));
-      if (fn < 1 || fn > 4) continue;
+      if (fn < 1 || fn > 4) { ++ignores_; continue; }
       const std::string type = p.str("type", "uint16");
       const int span = (fn == 1 || fn == 2) ? 1 : regs_for(type);
       items.push_back({fn, static_cast<int>(p.num("reg", 0)), span, i, &p});
@@ -167,17 +173,26 @@ class ModbusDriver : public IProtocolDriver {
     return crc;
   }
 
-  static const char* exception_text(uint8_t code) {
+  /**
+    * Motif d'une exception, AVEC son code : c'est par le code que l'exploitant
+    * recoupe avec la documentation de son équipement, et les codes réservés
+    * aux constructeurs n'ont pas d'autre nom que leur numéro.
+    */
+  static std::string exception_text(uint8_t code) {
+    const char* quoi = nullptr;
     switch (code) {
-      case 1: return "fonction non gérée par l'équipement";
-      case 2: return "adresse hors plage";
-      case 3: return "valeur ou quantité refusée";
-      case 4: return "défaut interne de l'équipement";
-      case 5: return "acquittement différé";
-      case 6: return "équipement occupé";
-      case 11: return "passerelle : équipement cible muet";
-      default: return "exception Modbus";
+      case 1: quoi = "fonction non gérée par l'équipement"; break;
+      case 2: quoi = "adresse hors plage"; break;
+      case 3: quoi = "valeur ou quantité refusée"; break;
+      case 4: quoi = "défaut interne de l'équipement"; break;
+      case 5: quoi = "acquittement différé"; break;
+      case 6: quoi = "équipement occupé"; break;
+      case 8: quoi = "erreur de parité mémoire"; break;
+      case 10: quoi = "passerelle : chemin indisponible"; break;
+      case 11: quoi = "passerelle : équipement cible muet"; break;
+      default: quoi = "exception non répertoriée"; break;
     }
+    return "exception " + std::to_string(static_cast<int>(code)) + " : " + quoi;
   }
 
   /** Nombre d'octets de données attendus pour une requête donnée. */
@@ -213,6 +228,7 @@ class ModbusDriver : public IProtocolDriver {
         err = exception_text(head[2]);
         return Fail::Request;
       }
+
       if (head[1] != static_cast<uint8_t>(r.fn)) { err = "fonction inattendue en réponse"; return Fail::Link; }
       const size_t n = head[2];
       if (n != expected_bytes(r)) { err = "taille de réponse incohérente"; return Fail::Link; }
@@ -251,7 +267,12 @@ class ModbusDriver : public IProtocolDriver {
       }
       if (mbap[7] & 0x80) {
         uint8_t code = 0;
-        net::read_exact(fd_, &code, 1, timeout_ms());
+        // Sans ce contrôle, une réponse tronquée laissait code = 0 et
+        // fabriquait un motif d'exception qui n'a jamais été émis.
+        if (!net::read_exact(fd_, &code, 1, timeout_ms())) {
+          err = "exception annoncée, code jamais reçu (réponse tronquée)";
+          return Fail::Link;
+        }
         err = exception_text(code);
         return Fail::Request;
       }
@@ -318,6 +339,7 @@ class ModbusDriver : public IProtocolDriver {
 
   LinkConfig link_;
   IPointSink& sink_;
+  int ignores_ = 0;               // points dont la fonction n'est pas lisible
   bool serial_ = false;
   int fd_ = -1;
   uint16_t tid_ = 0;

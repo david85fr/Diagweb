@@ -33,6 +33,38 @@ inline double mono_s() {
              std::chrono::steady_clock::now().time_since_epoch()).count()) / 1e6;
 }
 
+/**
+ * Motif d'un échec de connexion, en clair : la cause, la CIBLE, et de quoi
+ * savoir où chercher.
+ *
+ * `strerror` seul rendait « Connection refused » — juste, en anglais, et sans
+ * dire vers quoi. Or c'est l'adresse qui tranche entre les deux causes
+ * possibles : le mauvais port dans la configuration, ou l'équipement qui
+ * n'écoute pas. L'utilisateur lit cette phrase dans l'état du lien ; elle doit
+ * suffire à décider quoi faire.
+ */
+inline std::string connect_error(const std::string& host, int port, int code, int timeout_ms) {
+  const std::string cible = host + ':' + std::to_string(port);
+  switch (code) {
+    case ECONNREFUSED:
+      return "connexion refusée par " + cible + " — la machine répond, mais rien n'écoute sur ce port";
+    case ETIMEDOUT:
+      return "pas de réponse de " + cible + " (délai de " + std::to_string(timeout_ms) +
+             " ms dépassé) — équipement éteint, ou trafic filtré";
+    case EHOSTUNREACH:
+      return "hôte injoignable : " + cible + " (aucune route vers cette machine)";
+    case ENETUNREACH:
+      return "réseau injoignable : " + cible;
+    case ENETDOWN:
+      return "réseau local hors service (interface éteinte) : " + cible;
+    case EACCES:
+    case EPERM:
+      return "connexion interdite vers " + cible + " (droits ou filtrage local)";
+    default:
+      return "connexion impossible vers " + cible + " : " + std::strerror(code);
+  }
+}
+
 /** Connexion TCP non bloquante bornée à `timeout_ms`. -1 et `err` en cas d'échec. */
 inline int tcp_connect(const std::string& host, int port, int timeout_ms, std::string& err) {
   if (host.empty()) { err = "hôte non renseigné"; return -1; }
@@ -43,7 +75,8 @@ inline int tcp_connect(const std::string& host, int port, int timeout_ms, std::s
   const std::string service = std::to_string(port);
   const int rc = ::getaddrinfo(host.c_str(), service.c_str(), &hints, &res);
   if (rc != 0 || !res) {
-    err = "hôte introuvable (" + std::string(::gai_strerror(rc)) + ")";
+    err = "hôte introuvable : « " + host + " » (" + std::string(::gai_strerror(rc)) +
+          ") — nom mal orthographié, ou résolution de noms indisponible";
     return -1;
   }
 
@@ -61,13 +94,14 @@ inline int tcp_connect(const std::string& host, int port, int timeout_ms, std::s
         socklen_t len = sizeof soerr;
         ::getsockopt(fd, SOL_SOCKET, SO_ERROR, &soerr, &len);
         r = soerr == 0 ? 0 : -1;
-        if (soerr) err = std::strerror(soerr);
+        if (soerr) err = connect_error(host, port, soerr, timeout_ms);
       } else {
-        err = r == 0 ? "délai de connexion dépassé" : std::strerror(errno);
+        err = r == 0 ? connect_error(host, port, ETIMEDOUT, timeout_ms)
+                     : connect_error(host, port, errno, timeout_ms);
         r = -1;
       }
     } else if (r < 0) {
-      err = std::strerror(errno);
+      err = connect_error(host, port, errno, timeout_ms);
     }
     if (r == 0) {
       int one = 1;
