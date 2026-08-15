@@ -637,7 +637,15 @@ bool handle_api(int fd, const Request& req, IVariableSource& src, const Options&
 // ----------------------------------------------------------- fichiers statiques
 void handle_static(int fd, const Request& req, const Options& opt) {
   std::string rel = req.target.substr(0, req.target.find('?'));
-  if (rel == "/" || rel.empty()) rel = "/web/index.html";
+  // La racine RENVOIE vers la page, elle ne la sert pas. La servir telle
+  // quelle sous « / » laissait le navigateur résoudre « css/app.css » en
+  // « /css/app.css » : 404, donc page sans style ni script. C'est exactement
+  // ce que voit quiconque ouvre le port sans chemin — redirection de port d'un
+  // Codespace, favori, adresse tapée à la main.
+  if (rel == "/" || rel.empty()) {
+    respond(fd, 302, "Found", "text/plain", "", "Location: /web/index.html\r\n");
+    return;
+  }
   if (rel == "/favicon.ico") { respond(fd, 204, "No Content", "image/x-icon", ""); return; }
   if (rel.find("..") != std::string::npos) { respond(fd, 400, "Bad Request", "text/plain", "chemin invalide"); return; }
 
@@ -648,7 +656,15 @@ void handle_static(int fd, const Request& req, const Options& opt) {
     respond(fd, 403, "Forbidden", "text/plain", "hors racine");
     return;
   }
-  if (fs::is_directory(file, ec)) file /= "index.html";
+  // Même piège pour un dossier demandé sans barre finale (« /web ») : servir
+  // son index.html à cette adresse casserait les chemins relatifs de la page.
+  if (fs::is_directory(file, ec)) {
+    if (rel.back() != '/') {
+      respond(fd, 302, "Found", "text/plain", "", "Location: " + rel + "/\r\n");
+      return;
+    }
+    file /= "index.html";
+  }
 
   std::ifstream f(file, std::ios::binary);
   if (!f) { respond(fd, 404, "Not Found", "text/plain", "introuvable"); return; }
@@ -909,7 +925,7 @@ int main(int argc, char** argv) {
             << (opt.sim_protocols ? " (simules)" : "") << '\n'
             << "  racine  : " << fs::weakly_canonical(opt.root).string() << '\n'
             << "  donnees : " << opt.data_dir << '\n'
-            << "  ecoute  : http://localhost:" << opt.port << "/web/index.html\n"
+            << "  ecoute  : http://localhost:" << opt.port << "/  (renvoie vers /web/index.html)\n"
             << "            (flux temps reel : ws://localhost:" << opt.port << "/ws)\n"
             << std::endl;
 

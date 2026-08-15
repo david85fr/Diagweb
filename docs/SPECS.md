@@ -571,6 +571,16 @@ processus cœur, C++). La période de rafraîchissement de chaque abonnement
 (défaut 10 ms) est transmise au serveur de diag, qui échantillonne le
 `controller` en conséquence.
 
+### Fichiers servis
+
+La page vit sous `/web/` (ou `/dist/`), et la **racine `/` y renvoie** par une
+redirection — elle ne sert pas la page à sa place. Un `index.html` rendu sous
+`/` ferait résoudre ses chemins relatifs (`css/app.css`, `js/app.js`) à la
+racine du site : 404 sur chacun, page nue sans style ni script. Même règle pour
+un dossier demandé sans barre finale (`/web` → `/web/`). C'est l'adresse que
+donnent une redirection de port (Codespace), un favori ou une saisie à la main :
+elle doit mener à une page complète.
+
 ### Protocole du flux (WebSocket `/ws`, trames texte JSON)
 
 - client → `{"c":"sub","addr":…,"periodMs":…}` · `{"c":"unsub","addr":…}` ·

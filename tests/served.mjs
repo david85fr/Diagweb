@@ -49,7 +49,7 @@ function findChromium() {
   return undefined;
 }
 
-console.log('Cible : ' + BASE + '/web/index.html\n');
+console.log('Cible : ' + BASE + '/  (la racine, comme l’ouvre un exploitant)\n');
 
 const exec = findChromium();
 let browser;
@@ -79,7 +79,10 @@ const etat = () => page.evaluate(() => ({
   abonnees: DW.source ? DW.source.count() : 0,
 }));
 
-await page.goto(BASE + '/web/index.html', { waitUntil: 'networkidle' });
+// On ouvre la RACINE, pas /web/index.html : c'est l'adresse qu'offre une
+// redirection de port ou un favori. Servir la page telle quelle sous « / »
+// faisait résoudre « css/app.css » en « /css/app.css » — 404, page nue.
+await page.goto(BASE + '/', { waitUntil: 'networkidle' });
 await page.waitForFunction(() => window.DW && DW.source && DW.source.now, null, { timeout: 15000 });
 
 // L'origine de capture ne se distingue du démarrage du serveur que si celui-ci
@@ -97,6 +100,18 @@ e = await etat();
 check('page servie : chargée sans erreur ni ressource manquante',
   erreurs.length === 0 && reseau.length === 0,
   erreurs.concat(reseau).join(' · ') || 'aucune erreur console, aucune 404');
+
+// La feuille de style est-elle vraiment appliquée ? Une page sans CSS se charge
+// « sans erreur » de son point de vue : seule une règle connue le dit.
+const style = await page.evaluate(() => {
+  const t = document.querySelector('.topbar');
+  return { url: location.pathname,
+           position: t ? getComputedStyle(t).position : null,
+           feuilles: document.styleSheets.length };
+});
+check('racine : redirigée vers la page, styles et scripts servis',
+  style.url === '/web/index.html' && style.position === 'sticky' && style.feuilles > 0,
+  'ouverture de « / » → ' + style.url + ' · .topbar ' + style.position);
 
 // Le flux : on s'abonne explicitement plutôt que de compter sur la disposition
 // restaurée, qui dépend du stockage local du navigateur.
