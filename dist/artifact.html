@@ -1147,7 +1147,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     <div class="topIcons">
       <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" aria-label="Figer ou reprendre tout l’onglet" title="Figer d’un coup tout l’onglet actif : les courbes ET les valeurs numériques s’arrêtent sur l’instant courant">⏸</button>
       <button id="stopBtn" class="iconbtn pausebtn" type="button" aria-label="Arrêter ou relancer l’acquisition" title="Arrêter l’acquisition : plus aucun échantillon n’est enregistré et l’horloge se fige. L’historique déjà acquis reste consultable et mesurable.">⏹</button>
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">3e36f7d · #142</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">be52118 · clone superficiel</span>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
@@ -2260,6 +2260,65 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     return o;
   }
 
+  // ------------------------------------------------------------------
+  // Serveurs de test locaux
+  // ------------------------------------------------------------------
+  /**
+   * Coordonnées des équipements de test qui tournent sur la MÊME machine que
+   * le serveur de diagnostic, en développement (Codespace, poste local) :
+   * `tools/bench.mjs` pour les protocoles sur IP, et le simulateur
+   * d'équipements pour Modbus (docs/SIMULATEUR.md).
+   *
+   * Un lien neuf part avec ces valeurs — c'est exactement ce qu'on aurait tapé
+   * à la main, et une adresse tapée à la main se trompe. Rien n'est pré-rempli
+   * ailleurs : un « 127.0.0.1 » proposé par défaut sur un contrôleur en
+   * exploitation ferait chercher la panne au mauvais endroit.
+   *
+   * Les ports sont décalés des ports normalisés (502, 2404, 161, 102, 4840),
+   * qui sont privilégiés et hors de portée d'un utilisateur non root.
+   * `tools/check-drivers.mjs` vérifie qu'ils n'ont pas dérivé de ceux que le
+   * banc ouvre réellement.
+   */
+  const BANC_LOCAL = {
+    'modbus-tcp': { via: 'simulateur d’équipements',
+                    params: { host: '127.0.0.1', port: 5020, unitId: 1 } },
+    'iec104':     { via: 'banc d’essai',
+                    params: { host: '127.0.0.1', port: 12404, asdu: 1 } },
+    'snmp':       { via: 'banc d’essai',
+                    params: { host: '127.0.0.1', port: 11161, version: 'v2c',
+                              community: 'public' } },
+    'iec61850':   { via: 'banc d’essai',
+                    params: { host: '127.0.0.1', port: 10102, mode: 'mms', iedName: 'IED1' } },
+    'opcua':      { via: 'banc d’essai',
+                    params: { endpoint: 'opc.tcp://127.0.0.1:14840' } },
+  };
+
+  /**
+   * Poste de développement : la page vient de la machine elle-même (localhost,
+   * fichier ouvert directement) ou d'un Codespace. Jamais d'un contrôleur en
+   * exploitation ni de la page publique — c'est ce qui autorise le
+   * pré-remplissage.
+   */
+  const posteDeDev = (function () {
+    if (typeof location === 'undefined') return false;
+    const h = String(location.hostname || '');
+    return h === '' || h === 'localhost' || h === '127.0.0.1' || h === '::1' ||
+           /\.github\.dev$/.test(h) || /\.gitpod\.io$/.test(h);
+  })();
+
+  /** Pré-remplissage applicable à ce protocole, ou null. */
+  function localPreset(protoId) {
+    return posteDeDev ? BANC_LOCAL[protoId] || null : null;
+  }
+
+  /** Paramètres d'un lien NEUF : les défauts, complétés du serveur de test. */
+  function linkDefaults(proto) {
+    const p = defaults(proto.linkFields);
+    const pre = localPreset(proto.id);
+    if (pre) Object.assign(p, pre.params);
+    return p;
+  }
+
   /** Type de variable Diagweb déduit des paramètres d'un point. */
   function kindOf(proto, point) {
     const p = point.params || {};
@@ -2444,7 +2503,10 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       return st;
     },
 
-    addrOf, pointSummary, kindOf, defaults, fieldApplies,
+    addrOf, pointSummary, kindOf, defaults, fieldApplies, linkDefaults, localPreset,
+    // Exposée pour tools/check-drivers.mjs, qui compare ces ports à ceux que
+    // tools/bench.mjs ouvre réellement.
+    localBench: BANC_LOCAL,
   };
 
   function indexStatus(list) {
@@ -7378,13 +7440,24 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
   }
 
   // ---- édition d'un lien -------------------------------------------
+  /** Le lien porte-t-il encore, à l'identique, le pré-remplissage du banc ? */
+  function presetIntact(link) {
+    const pre = P.localPreset(link.protocol);
+    if (!pre) return null;
+    const params = link.params || {};
+    for (const k in pre.params) {
+      if (String(params[k]) !== String(pre.params[k])) return null;
+    }
+    return pre;
+  }
+
   function newLink() {
     const proto = DW.PROTOCOLS[0];
     let n = 1;
     while (P.link('lien' + n)) n++;
     return {
       id: 'lien' + n, label: 'Lien ' + n, protocol: proto.id, enabled: true,
-      params: P.defaults(proto.linkFields), points: [], _new: true,
+      params: P.linkDefaults(proto), points: [], _new: true,
     };
   }
 
@@ -7425,7 +7498,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     sel.addEventListener('change', () => {
       link.protocol = sel.value;
       const np = P.descriptor(link.protocol);
-      link.params = P.defaults(np.linkFields);
+      link.params = P.linkDefaults(np);
       for (const pt of link.points || []) pt.params = P.defaults(np.pointFields);
       render();
     });
@@ -7433,7 +7506,31 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     protoRow.appendChild(sel);
     b.appendChild(protoRow);
 
-    b.appendChild(fieldsForm(proto.linkFields, link.params));
+    const form = fieldsForm(proto.linkFields, link.params);
+    b.appendChild(form);
+
+    // Pré-remplissage : le dire, et seulement tant que c'est vrai. La mention
+    // s'efface dès qu'un champ s'écarte du banc — sans quoi elle finirait par
+    // désigner une adresse qui n'est plus la sienne, ce qui est pire que de
+    // n'avoir rien dit.
+    const preNote = document.createElement('p');
+    preNote.className = 'm-note';
+    preNote.title = 'Poste de développement (Codespace ou machine locale) : les champs de ' +
+                    'connexion d’un lien neuf partent avec les coordonnées des serveurs de ' +
+                    'test qui tournent ici. Sur un contrôleur en exploitation, rien n’est ' +
+                    'pré-rempli.';
+    const majPreNote = () => {
+      const pre = presetIntact(link);
+      preNote.textContent = pre
+        ? 'Pré-rempli pour le ' + pre.via + ' de cette machine — à remplacer par ' +
+          'l’adresse de l’équipement réel.'
+        : '';
+      preNote.hidden = !pre;
+    };
+    majPreNote();
+    form.addEventListener('input', majPreNote);
+    form.addEventListener('change', majPreNote);
+    b.appendChild(preNote);
 
     const acts = document.createElement('div');
     acts.className = 'm-actions';
@@ -10222,6 +10319,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
             ['Point', 'Une variable lue sur un lien (registre, IOA, SPN, objet…), avec son unité et sa période. Elle s’adresse ensuite <b>@lien.point</b> comme n’importe quelle variable.'],
             ['Horodatage', 'Réglable <b>point par point</b> : la date attachée par l’équipement quand le protocole en transporte une (IEC-104 horodaté, IEC 61850, OPC UA en abonnement, SNMP par un OID d’horodatage de la MIB), ou celle du serveur, forcée, quand l’horloge de l’équipement n’est pas de confiance.'],
             ['Sans serveur', 'La configuration reste dans le navigateur et les valeurs des points sont simulées — l’interface est démontrable sans matériel.'],
+            ['Poste de développement', 'Sur une machine locale ou un Codespace, un lien <b>neuf</b> part pré-rempli avec les coordonnées des serveurs de test qui tournent là (simulateur d’équipements pour Modbus, banc d’essai pour les autres) : plus d’adresse à retaper. La mention sous les champs le dit, et disparaît dès qu’un champ est modifié. Sur un contrôleur, rien n’est pré-rempli.'],
           ]) +
           S('Courbes') +
           L([
