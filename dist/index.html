@@ -1171,7 +1171,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     <div class="topIcons">
       <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" aria-label="Figer ou reprendre tout l’onglet" title="Figer d’un coup tout l’onglet actif : les courbes ET les valeurs numériques s’arrêtent sur l’instant courant">⏸</button>
       <button id="stopBtn" class="iconbtn pausebtn" type="button" aria-label="Arrêter ou relancer l’acquisition" title="Arrêter l’acquisition : plus aucun échantillon n’est enregistré et l’horloge se fige. L’historique déjà acquis reste consultable et mesurable.">⏹</button>
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">e8a44eb · #149</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">9705f66 · #155</span>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
@@ -2952,9 +2952,13 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       try { m = JSON.parse(ev.data); } catch (e) { return; }
 
       if (m.e === 'hello') {
-        // Le flux commence ici : c'est l'origine de la capture. Le tampon est
-        // vide, contrairement à la simulation qui pré-remplit.
-        captureT0 = brut();
+        // Recalage d'horloge D'ABORD : tout ce qui suit se date dans le temps
+        // du serveur. L'inverse donnait une origine de capture prise sur
+        // l'horloge locale (≈ 0 au chargement) puis relue sur celle du serveur
+        // (son temps de fonctionnement) : une page fraîchement ouverte
+        // annonçait une capture aussi vieille que le serveur.
+        skew = m.now - localSec();
+        haveSkew = true;
         horizonS = m.horizonS || horizonS;
         srcName = m.source || srcName;
         api.name = srcName;
@@ -2974,8 +2978,13 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
           for (const ch of chans.values()) { ch.ts.length = 0; ch.vs.length = 0; }
           setStatus('Serveur redémarré — historique réinitialisé.');
         }
-        skew = m.now - localSec();
-        haveSkew = true;
+        // Origine de la capture = le plus ancien échantillon encore détenu, à
+        // défaut l'instant présent (tampon vide : première connexion, ou purge
+        // ci-dessus). Une reconnexion garde ainsi l'origine de ce qui est déjà
+        // à l'écran, au lieu de remettre les temps affichés à zéro.
+        let minT = Infinity;
+        for (const ch of chans.values()) if (ch.ts.length) minT = Math.min(minT, ch.ts[0]);
+        captureT0 = isFinite(minT) ? minT : brut();
         if (onHello) { const f = onHello; onHello = null; f(); }
         return;
       }
