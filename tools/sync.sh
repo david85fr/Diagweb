@@ -2,9 +2,15 @@
 # Diagweb — remettre le Codespace à niveau après un commit poussé sur main.
 #
 #   bash tools/sync.sh                récupère, recompile et relance si besoin
+#   bash tools/sync.sh --full         recompile et relance DANS TOUS LES CAS
 #   bash tools/sync.sh --watch [N]    boucle toutes les N secondes (60 par défaut)
 #   bash tools/sync.sh --no-restart   ne touche pas au serveur en fonctionnement
 #   bash tools/sync.sh --force        relance même si un enregistrement est en cours
+#
+# --full et --force ne disent pas la même chose : --full porte sur le TRAVAIL
+# (tout refaire, même si le diff ne le demandait pas), --force sur la
+# PROTECTION (relancer malgré un enregistrement en cours). Les deux se
+# combinent.
 #
 # Pourquoi un script et pas un simple « git pull »
 # -----------------------------------------------
@@ -38,6 +44,7 @@ BOUCLE=0
 INTERVALLE=60
 RELANCER=1
 FORCER=0
+TOUT=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -45,8 +52,9 @@ while [ $# -gt 0 ]; do
                   case "${2:-}" in [0-9]*) INTERVALLE=$2; shift ;; esac ;;
     --no-restart) RELANCER=0 ;;
     --force)      FORCER=1 ;;
+    --full)       TOUT=1 ;;
     *) echo "option inconnue : $1" >&2
-       echo "usage : bash tools/sync.sh [--watch [N]] [--no-restart] [--force]" >&2
+       echo "usage : bash tools/sync.sh [--full] [--watch [N]] [--no-restart] [--force]" >&2
        exit 2 ;;
   esac
   shift
@@ -119,7 +127,13 @@ une_passe() {
 
   avant=$(git rev-parse HEAD)
   apres=$(git rev-parse origin/main)
-  [ "$avant" = "$apres" ] && { echo "Déjà à jour ($(git rev-parse --short HEAD))."; return 0; }
+  if [ "$avant" = "$apres" ]; then
+    echo "Déjà à jour ($(git rev-parse --short HEAD))."
+    # --full sert justement à lever le doute quand on n'est pas sûr de ce que
+    # contient le binaire en mémoire : on refait tout, même sans commit neuf.
+    [ "$TOUT" = 0 ] && return 0
+    recompiler=1
+  fi
 
   # Des commits locaux non poussés interdisent l'avance rapide : on préfère le
   # dire plutôt que de fabriquer une fusion que personne n'a demandée.
@@ -129,12 +143,17 @@ une_passe() {
     return 1
   fi
 
-  echo "→ $(git rev-list --count "$avant".."$apres") commit(s) à appliquer :"
-  git log --format='    %h %s' "$avant".."$apres" | head -12
-
-  git merge --ff-only -q "$apres" || { echo "⚠ avance rapide impossible"; return 1; }
+  if [ "$avant" != "$apres" ]; then
+    echo "→ $(git rev-list --count "$avant".."$apres") commit(s) à appliquer :"
+    git log --format='    %h %s' "$avant".."$apres" | head -12
+    git merge --ff-only -q "$apres" || { echo "⚠ avance rapide impossible"; return 1; }
+  fi
 
   fichiers=$(git diff --name-only "$avant" "$apres")
+  # Le tri par diff est le mode normal : recompiler ce qui n'a pas changé
+  # coûterait du temps à chaque récupération, et relancer sans raison
+  # déconnecterait les navigateurs. --full assume ce coût pour lever le doute.
+  [ "$TOUT" = 1 ] && recompiler=1
   grep -qE '^(server/|meson\.build|meson_options\.txt|simulator/|tests/.*\.cpp)' <<< "$fichiers" && recompiler=1
   grep -q '^\.devcontainer/' <<< "$fichiers" &&
     echo "  ⚠ .devcontainer modifié — seul « Codespaces: Rebuild Container » l'applique."

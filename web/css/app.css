@@ -141,6 +141,21 @@ button { font-family: var(--sans); }
   line-height: 1.3;
   white-space: nowrap;
   margin-right: 2px;
+  /* Le tag cède avant les onglets.
+     Il a suffi qu'il s'allonge — un clone sans historique complet affichait
+     « clone superficiel » au lieu de « #140 » — pour qu'en nowrap il pousse la
+     liste d'onglets à zéro : plus un seul onglet atteignable sur téléphone. Un
+     numéro de version n'a pas à valoir plus que la navigation, donc il rétrécit
+     et se tronque, et son contenu complet reste dans l'infobulle.
+
+     Un plafond, et pas seulement « min-width: 0 » : .topIcons occupe une
+     colonne de grille « auto », qui grossit à la demande de son contenu — le
+     tag pouvait donc pousser sans jamais céder. 16ch laisse passer la forme
+     normale (« 0c6b1a4 · #140 ») et tronque tout ce qui déborde. */
+  max-width: 16ch;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .searchrow {

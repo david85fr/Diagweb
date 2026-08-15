@@ -91,7 +91,11 @@ fi
 
 echo
 echo "→ Dépendances optionnelles des pilotes et des tests"
-if apt_poser libsnmp-dev snmpd socat tcpdump can-utils iproute2; then
+# git-lfs : ce dépôt ne s'en sert pas (ni .gitattributes, ni filtre), mais
+# l'image Codespaces pose des hooks LFS par core.hookspath. Sans l'outil, tout
+# « git pull » crache un avertissement alarmant au milieu de la sortie utile —
+# on l'a pris pour un défaut de tools/sync.sh. Trois mégaoctets pour du silence.
+if apt_poser libsnmp-dev snmpd socat tcpdump can-utils iproute2 git-lfs; then
   # snmpd est installé pour la BIBLIOTHÈQUE et comme agent de test lancé à la
   # demande ; le démon du système n'a rien à écouter en permanence ici.
   $SUDO systemctl stop snmpd 2> /dev/null || true

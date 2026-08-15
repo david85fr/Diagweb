@@ -46,7 +46,12 @@ def git_version() -> str:
             ["git", "rev-parse", "--is-shallow-repository"],
             cwd=ROOT, text=True).strip() == "true"
         if superficiel:
-            return f"{h} · clone superficiel"
+            # « #? » et non une phrase : ce tag vit dans la barre du haut, en
+            # nowrap, à côté des onglets. « clone superficiel » y prenait 171 px
+            # sur 366 et écrasait la liste d'onglets à zéro — les onglets
+            # devenaient inatteignables sur téléphone. Dire l'inconnu doit
+            # coûter deux caractères, pas la mise en page.
+            return f"{h} · #?"
         n = subprocess.check_output(
             ["git", "rev-list", "--count", "HEAD"], cwd=ROOT, text=True).strip()
         return f"{h} · #{n}"
