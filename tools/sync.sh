@@ -30,13 +30,53 @@ BOUCLE=0
 INTERVALLE=60
 RELANCER=1
 
+aide() {
+  cat <<'TXT'
+Diagweb — resynchronisation complète du Codespace sur main.
+
+  bash tools/sync.sh                 coupe tout, synchronise, recompile, relance
+  bash tools/sync.sh --watch [N]     en boucle, toutes les N secondes (60 par défaut)
+  bash tools/sync.sh --no-relaunch   s'arrête après la recompilation
+  bash tools/sync.sh --help          cette aide
+
+Ce qu'une resynchronisation fait, dans cet ordre :
+
+  1. arrête PROPREMENT les enregistrements — campagnes de journalisation et
+     captures de trames, par leur point d'entrée REST et non à coups de signal :
+     un CSV ou un pcap fermé proprement reste exploitable et téléchargeable,
+     tué en pleine écriture il est tronqué ;
+  2. arrête les processus : banc d'essai, simulateur d'équipements, serveur de
+     diagnostic, aperçu statique. Ce qui tournait est noté ;
+  3. synchronise git (avance rapide sur origin/main) ;
+  4. RECOMPILE systématiquement — pas de tri par diff : on veut la certitude ;
+  5. relance tout ce qui tournait avant, à l'identique. Ce qui ne tournait pas
+     ne remonte pas.
+
+Deux refus, qui protègent ton travail et non le confort du script :
+
+  · un arbre modifié localement n'est jamais écrasé ;
+  · un historique divergent n'est jamais fusionné d'office (pousse tes commits,
+    ou « git rebase origin/main » à la main).
+
+Variables d'environnement :
+
+  PORT        port du serveur de diagnostic et de l'aperçu   (défaut 8080)
+  PORT_SIMU   port du simulateur d'équipements               (défaut 5020)
+
+Journaux : /tmp/diagweb-server.log · /tmp/diagweb-bench.log
+           /tmp/diagweb-simulator.log · /tmp/diagweb-serve.log
+TXT
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
+    -h|--help)     aide; exit 0 ;;
     --watch)       BOUCLE=1
                    case "${2:-}" in [0-9]*) INTERVALLE=$2; shift ;; esac ;;
     --no-relaunch) RELANCER=0 ;;
     *) echo "option inconnue : $1" >&2
-       echo "usage : bash tools/sync.sh [--watch [N]] [--no-relaunch]" >&2
+       echo >&2
+       aide >&2
        exit 2 ;;
   esac
   shift
@@ -218,7 +258,7 @@ une_passe() {
   else
     echo "→ Relance"
     if [ "$serveur" = 1 ]; then
-      bash tools/share.sh --server --local --restart > /dev/null 2>&1 &&
+      bash tools/share.sh --server --local > /dev/null 2>&1 &&
         echo "   ▶ serveur de diagnostic (port $PORT)" ||
         echo "   ⚠ serveur de diagnostic : échec (voir /tmp/diagweb-server.log)"
     elif [ "$apercu" = 1 ]; then

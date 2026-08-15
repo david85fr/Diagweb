@@ -28,7 +28,10 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
-bash tools/share.sh --server --local && exit 0
+# --no-restart : ce script est rejoué à CHAQUE attachement. La relance est le
+# défaut de share.sh, mais l'appliquer ici couperait une campagne de
+# journalisation ou une capture à chaque reconnexion d'onglet.
+bash tools/share.sh --server --local --no-restart && exit 0
 
 # Le serveur n'a pas pu démarrer (outillage absent, compilation en échec). On
 # se replie sur l'aperçu, mais en le DISANT : un repli muet reproduirait

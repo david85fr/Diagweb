@@ -5,29 +5,100 @@
 #   bash tools/share.sh              aperçu statique (Python, simulation navigateur)
 #   bash tools/share.sh --server     serveur de diagnostic C++ (flux WebSocket)
 #   bash tools/share.sh --local      démarre sans toucher à la visibilité du port
-#   bash tools/share.sh --restart    relance même si un serveur répond déjà
+#   bash tools/share.sh --no-restart laisse tranquille un serveur déjà debout
+#   bash tools/share.sh --help       aide détaillée
 #
-# --local existe pour le démarrage automatique du Codespace : publier un port
-# est une décision, pas un effet de bord d'un attachement. Le port reste privé
-# — accessible en étant connecté au même compte GitHub — et « share.sh » sans
+# La RELANCE EST LE DÉFAUT : « --server » arrête ce qui tourne et repart, pour
+# qu'on sache toujours quel binaire est en mémoire. L'exception s'écrit
+# --no-restart, et post-attach.sh est seul à s'en servir : il rejoue ce script
+# à chaque attachement au Codespace, où relancer d'office couperait une
+# campagne de journalisation ou une capture à chaque reconnexion.
+#
+# --local existe pour ce même démarrage automatique : publier un port est une
+# décision, pas un effet de bord d'un attachement. Le port reste privé —
+# accessible en étant connecté au même compte GitHub — et « share.sh » sans
 # cette option le publie quand tu le décides.
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
 PORT="${PORT:-8080}"
+aide() {
+  cat <<'TXT'
+Diagweb — démarre une page servie, et affiche l'adresse pour l'ouvrir.
+
+  bash tools/share.sh                aperçu statique, port publié
+  bash tools/share.sh --server       serveur de diagnostic, port publié
+  bash tools/share.sh --server --local   idem, port laissé privé
+  bash tools/share.sh --help         cette aide
+
+Ce script n'est PAS un serveur : c'est un lanceur. Il démarre l'un des deux
+programmes du dépôt et s'occupe de la plomberie — compiler si besoin, arrêter
+ce qui tourne, libérer le port, publier le port, afficher l'URL.
+
+« --server » ARRÊTE ET RELANCE, toujours : après une recompilation comme après
+un doute, on sait quel binaire répond. Pour ne pas toucher un serveur déjà
+debout — un enregistrement peut être en cours —, voir --no-restart.
+
+Les deux programmes, et ce qui les sépare :
+
+  aperçu statique      tools/serve.py, en Python. Il ne sait que SERVIR DES
+  (par défaut)         FICHIERS : la page tourne alors sur sa simulation
+                       navigateur. Pour travailler le CSS, la mise en page,
+                       les traductions.
+
+  serveur de           build/diagweb-server, en C++. Il sert les mêmes fichiers
+  diagnostic           ET le flux WebSocket, l'API REST, les pilotes réseau, le
+  (--server)           forçage, la journalisation. Pour tout ce qui touche aux
+                       vraies données.
+
+Comment savoir lequel répond : la barre d'état en bas de page l'affiche, et
+« curl -s localhost:8080/api/health » renvoie "role":"diag-server" — l'aperçu
+Python, lui, ne sert aucune API.
+
+Options :
+
+  --server    lance le serveur de diagnostic au lieu de l'aperçu
+  --local     ne touche PAS à la visibilité du port. Il reste privé, donc
+              accessible en étant connecté au même compte GitHub. Publier un
+              port expose le serveur à quiconque a l'adresse : c'est une
+              décision, pas un effet de bord. (Attention au nom : « local » ne
+              veut pas dire boucle locale — le serveur écoute sur toutes les
+              interfaces et le transfert de port Codespaces reste actif.)
+  --no-restart  ne touche pas à un serveur déjà en fonctionnement. Réservé au
+              démarrage automatique du Codespace (post-attach.sh), rejoué à
+              chaque attachement : y relancer d'office couperait une campagne
+              de journalisation ou une capture à chaque reconnexion.
+  --restart   accepté, sans effet : c'est devenu le comportement par défaut.
+
+Variable d'environnement :
+
+  PORT        port à utiliser (défaut 8080) — ex. PORT=8081 bash tools/share.sh
+
+Voir aussi : bash tools/sync.sh --help (remise à niveau après un commit).
+Journaux   : /tmp/diagweb-server.log · /tmp/diagweb-serve.log
+TXT
+}
+
 MODE="apercu"
 PARTAGE=1
-RELANCE=0
+RELANCE=1        # relance par défaut : voir --no-restart
 for arg in "$@"; do
   case "$arg" in
+    -h|--help) aide; exit 0 ;;
     --server)  MODE="serveur" ;;
     --local)   PARTAGE=0 ;;
-    # Un serveur déjà debout est normalement laissé tranquille (voir plus bas).
-    # --restart lève cette protection : c'est ce qu'il faut après avoir
-    # recompilé le binaire, sans quoi l'ancien continuerait de tourner.
+    # La relance est le DÉFAUT : « share.sh --server » arrête ce qui tourne et
+    # repart, pour qu'on sache toujours quel binaire est en mémoire. --restart
+    # reste accepté et ne fait rien de plus — il décrivait ce comportement
+    # avant qu'il devienne la règle.
     --restart) RELANCE=1 ;;
+    # L'exception, et elle a une raison précise : post-attach.sh rejoue ce
+    # script à CHAQUE attachement au Codespace. Y relancer d'office couperait
+    # une campagne de journalisation ou une capture à chaque reconnexion.
+    --no-restart) RELANCE=0 ;;
     *) echo "option inconnue : $arg" >&2
-       echo "usage : bash tools/share.sh [--server] [--local] [--restart]" >&2
+       echo >&2
+       aide >&2
        exit 2 ;;
   esac
 done

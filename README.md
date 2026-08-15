@@ -93,10 +93,11 @@ pareil, simplement sans le gain.
   pas la simulation navigateur. Le port reste privé — publier est une
   décision, pas un effet de bord. Les variables internes, elles, restent
   simulées tant que le binding vers le `controller` n'existe pas (phase 2).
-- **Pour partager le port** : `bash tools/share.sh --server` — le rend
-  public et affiche l'adresse. Sans `--server`, c'est l'aperçu statique
-  (simulation navigateur) qui est publié ; `--local` démarre sans toucher
-  à la visibilité.
+- **Pour partager le port** : `bash tools/share.sh --server` — arrête le
+  serveur en place, le relance et rend le port public. Sans `--server`,
+  c'est l'aperçu statique (simulation navigateur) qui est publié ;
+  `--local` démarre sans toucher à la visibilité, `--no-restart` laisse
+  tranquille un serveur déjà debout. `--help` détaille tout cela.
 - Sinon, adresse seule : `python3 tools/serve.py --url` (elle est aussi
   affichée à la création du Codespace). `/web/index.html` = page de
   développement, `/dist/index.html` = livrable autonome.
@@ -109,12 +110,13 @@ pareil, simplement sans le gain.
   `gh codespace ports visibility 8080:public -c $CODESPACE_NAME`.
   Le serveur envoie des en-têtes anti-cache : chaque rechargement affiche
   la dernière version.
-- **Se remettre à niveau après un commit** : `bash tools/sync.sh` — récupère
-  `main`, recompile **si** le serveur a changé, signale une interface à
-  recharger ou un conteneur à reconstruire, et relance le serveur. Il refuse
-  d'écraser un travail local, et refuse de relancer tant qu'une campagne de
-  journalisation ou une capture est en cours (`--force` passe outre).
-  `--watch [N]` surveille `main` en boucle.
+- **Se remettre à niveau après un commit** : `bash tools/sync.sh` — arrête
+  proprement les enregistrements en cours (campagnes et captures, par l'API :
+  les fichiers restent exploitables), arrête banc, simulateur et serveur,
+  récupère `main`, **recompile systématiquement**, puis relance tout ce qui
+  tournait. Il refuse en revanche d'écraser un travail local ou de fusionner
+  un historique divergent. `--watch [N]` surveille `main` en boucle,
+  `--no-relaunch` s'arrête après la recompilation, `--help` détaille.
 - **Tout vérifier d'un coup** : `bash tools/check.sh` — les mêmes contrôles
   que l'intégration continue (compilation du serveur avec les avertissements
   en erreurs, tests de décodage, liens réseau de bout en bout, syntaxe JS,
