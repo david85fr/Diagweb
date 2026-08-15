@@ -5,6 +5,7 @@
 #   bash tools/share.sh              aperçu statique (Python, simulation navigateur)
 #   bash tools/share.sh --server     serveur de diagnostic C++ (flux WebSocket)
 #   bash tools/share.sh --local      démarre sans toucher à la visibilité du port
+#   bash tools/share.sh --restart    relance même si un serveur répond déjà
 #
 # --local existe pour le démarrage automatique du Codespace : publier un port
 # est une décision, pas un effet de bord d'un attachement. Le port reste privé
@@ -16,12 +17,17 @@ cd "$(dirname "$0")/.."
 PORT="${PORT:-8080}"
 MODE="apercu"
 PARTAGE=1
+RELANCE=0
 for arg in "$@"; do
   case "$arg" in
-    --server) MODE="serveur" ;;
-    --local)  PARTAGE=0 ;;
+    --server)  MODE="serveur" ;;
+    --local)   PARTAGE=0 ;;
+    # Un serveur déjà debout est normalement laissé tranquille (voir plus bas).
+    # --restart lève cette protection : c'est ce qu'il faut après avoir
+    # recompilé le binaire, sans quoi l'ancien continuerait de tourner.
+    --restart) RELANCE=1 ;;
     *) echo "option inconnue : $arg" >&2
-       echo "usage : bash tools/share.sh [--server] [--local]" >&2
+       echo "usage : bash tools/share.sh [--server] [--local] [--restart]" >&2
        exit 2 ;;
   esac
 done
@@ -153,7 +159,7 @@ if [ "$MODE" = "serveur" ]; then
   # 2. Ne rien casser s'il tourne déjà. postAttachCommand rejoue ce script à
   #    CHAQUE attachement : redémarrer couperait une capture ou une campagne de
   #    journalisation en cours, et déconnecterait les navigateurs ouverts.
-  if serveur_deja_la; then
+  if serveur_deja_la && [ "$RELANCE" = 0 ]; then
     echo "→ Serveur de diagnostic déjà en fonctionnement (port $PORT) — inchangé"
   else
     # Un aperçu Python occupe peut-être le port : il est démarré en repli quand
