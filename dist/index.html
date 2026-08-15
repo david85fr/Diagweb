@@ -1156,7 +1156,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     <div class="topIcons">
       <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" aria-label="Figer ou reprendre tout l’onglet" title="Figer d’un coup tout l’onglet actif : les courbes ET les valeurs numériques s’arrêtent sur l’instant courant">⏸</button>
       <button id="stopBtn" class="iconbtn pausebtn" type="button" aria-label="Arrêter ou relancer l’acquisition" title="Arrêter l’acquisition : plus aucun échantillon n’est enregistré et l’horloge se fige. L’historique déjà acquis reste consultable et mesurable.">⏹</button>
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">0c6b1a4 · #140</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">3e36f7d · #142</span>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
@@ -3783,9 +3783,10 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
               'title="Durée affichée — modifiable aussi par pincement ou molette sur le tracé"></select>' +
             '<button class="iconbtn chart-pause" type="button" ' +
               'title="Figer ce graphique sur l’instant courant, ou revenir au temps réel">⏸</button>' +
-            // Mesures : elles n'ont de sens que sur une vue arrêtée — sur un
-            // tracé qui défile, le point d'appui aurait déjà bougé au
-            // relâchement. Les boutons n'apparaissent donc qu'à l'arrêt.
+            // Mesures : elles n'ont de sens que sur un tracé qui ne bouge plus
+            // — sur une vue qui défile, le point d'appui aurait déjà glissé au
+            // relâchement. Les boutons apparaissent donc dès que le tracé est
+            // immobile : tuile figée, OU acquisition arrêtée (⏹).
             '<button class="iconbtn mes-val hide" type="button" ' +
               'title="Mesurer un écart de VALEUR : glisser verticalement sur le tracé. ' +
               'L’écart porte sur la courbe désignée au point d’appui (à défaut, la ' +
@@ -3890,6 +3891,9 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
         tiles: () => this.app.tilesOfCard(this.root),
         onChange: () => this.app.onChange(),
       });
+      // Un graphique créé alors que l'acquisition est déjà arrêtée doit naître
+      // avec ses outils de mesure — l'état de la source ne dépend pas de lui.
+      this.syncPauseUi();
     }
 
     get title() { return this.titleEl.value.trim() || 'Graphique'; }
@@ -3904,18 +3908,32 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       this.viewEnd = null;
       this.syncPauseUi();
     }
+    /**
+     * Vrai quand le tracé ne bouge plus, donc quand une cote posée dessus
+     * garde son sens : soit la tuile est figée, soit l'acquisition est arrêtée
+     * (⏹). Dans ce second cas le graphique est encore « en direct » — mais
+     * l'horloge de la source ne tourne plus et aucun échantillon n'arrive :
+     * refuser les mesures là serait refuser de mesurer une capture terminée,
+     * qui est justement le moment où l'on mesure.
+     */
+    get measurable() {
+      if (this.viewEnd !== null) return true;
+      return !!(DW.source && DW.source.running && !DW.source.running());
+    }
+
     syncPauseUi() {
       const frozen = this.viewEnd !== null;
+      const mesurable = this.measurable;
       this.pauseBtn.textContent = frozen ? '▶' : '⏸';
       this.pauseBtn.classList.toggle('on', frozen);
       this.liveBtn.classList.toggle('hide', !frozen);
       for (const sel of ['.mes-val', '.mes-t']) {
         const b = this.root.querySelector(sel);
-        if (b) b.classList.toggle('hide', !frozen);
+        if (b) b.classList.toggle('hide', !mesurable);
       }
-      // Retour au direct : la mesure posée ne veut plus rien dire, le tracé
-      // qu'elle annotait ayant repris sa course.
-      if (!frozen && (this.measureMode || this.measure)) this.setMeasureMode(null);
+      // Le tracé se remet à défiler : la mesure posée ne veut plus rien dire,
+      // ce qu'elle annotait ayant repris sa course.
+      if (!mesurable && (this.measureMode || this.measure)) this.setMeasureMode(null);
       this.majRetard();
     }
 
@@ -10002,6 +10020,16 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
         'l’historique précédent est effacé.';
   }
 
+  /**
+   * L'arrêt de l'acquisition immobilise le tracé aussi sûrement qu'une pause :
+   * les outils de mesure doivent donc s'ouvrir sur TOUS les graphiques, y
+   * compris ceux restés « en direct ». Rien à mémoriser — chaque graphique
+   * déduit leur présence de l'état de la source.
+   */
+  function majMesurable() {
+    for (const tab of state.tabs) for (const c of tab.charts) c.syncPauseUi();
+  }
+
   /** « Figer » agit sur TOUTES les tuiles de l'onglet, tableaux compris. */
   function updatePauseBtn() {
     const tab = state.active;
@@ -10092,10 +10120,18 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
         src.stop();
         toast('Acquisition arrêtée — l’historique reste consultable et mesurable.');
       } else {
+        // Capture neuve : l'historique précédent disparaît. Une tuile restée
+        // figée montrerait alors un instant qui n'existe plus — on les ramène
+        // toutes au direct plutôt que de les laisser sur un vide.
         src.start();
+        for (const tab of state.tabs) {
+          for (const c of tab.charts) c.goLive();
+          for (const t of tab.tables) if (t.frozen != null) setTableFrozen(t, false);
+        }
         toast('Nouvelle capture : l’origine des temps repart de zéro.');
       }
       majStopUi();
+      majMesurable();
     });
 
     $('pauseAllBtn').addEventListener('click', () => {
@@ -10204,7 +10240,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
             ['Badge Én', 'Numéro de l’échelle utilisée ; 🔒 signale un réglage manuel.'],
             ['Échelles — regrouper, séparer, nommer', 'Par défaut les courbes de même unité partagent une échelle. Le menu d’une pastille permet de choisir : <b>Échelle automatique</b> (par unité), <b>Échelle dédiée</b> (cette courbe seule), ou <b>Mettre sur l’échelle « … »</b> pour rejoindre celle d’une autre courbe — même si les unités diffèrent. <b>Renommer l’échelle</b> lui donne un nom qui remplace l’unité en tête de sa règle.'],
             ['Plein écran', '<b>⛶</b> dans l’en-tête d’une tuile l’affiche seule sur toute la page, et l’y ramène. La tuile sort de la mosaïque le temps du plein écran : sa place et sa taille sont intactes au retour. Sortie aussi par <b>Échap</b>.'],
-            ['Mesurer sur le tracé', 'Une fois le graphique <b>figé</b>, deux boutons apparaissent dans son en-tête. <b>↕</b> : glisser verticalement mesure un <b>écart de valeur</b>, sur la <b>seule</b> courbe désignée au point d’appui (à défaut, la première affichée) — la question posée est « de combien cette grandeur a-t-elle varié ? », en mêler d’autres brouillerait la réponse. <b>↔</b> : glisser horizontalement mesure un <b>écart de temps</b>, dans un sens ou dans l’autre. Le relevé donne la durée <b>et la variation signée de chaque courbe affichée</b> sur l’intervalle — la question posée est « que s’est-il passé pendant ce laps de temps ? ». Les courbes masquées n’y figurent pas. La cote reste affichée après le relâchement, et elle est ancrée sur les données : régler une échelle ne la fausse pas. Un second appui sur le bouton l’efface.'],
+            ['Mesurer sur le tracé', 'Dès que le tracé ne bouge plus — graphique <b>figé</b> (⏸) ou <b>acquisition arrêtée</b> (⏹) — deux boutons apparaissent dans son en-tête. <b>↕</b> : glisser verticalement mesure un <b>écart de valeur</b>, sur la <b>seule</b> courbe désignée au point d’appui (à défaut, la première affichée) — la question posée est « de combien cette grandeur a-t-elle varié ? », en mêler d’autres brouillerait la réponse. <b>↔</b> : glisser horizontalement mesure un <b>écart de temps</b>, dans un sens ou dans l’autre. Le relevé donne la durée <b>et la variation signée de chaque courbe affichée</b> sur l’intervalle — la question posée est « que s’est-il passé pendant ce laps de temps ? ». Les courbes masquées n’y figurent pas. La cote reste affichée après le relâchement, et elle est ancrée sur les données : régler une échelle ne la fausse pas. Un second appui sur le bouton l’efface.'],
             ['Figer', '<b>⏸</b> sur une tuile, ou <b>⏸ Figer</b> en haut pour tout l’onglet : le tracé <b>et les valeurs numériques</b> s’arrêtent sur l’instant courant, et la grille cesse de défiler. Un badge <b>⏱ −durée</b> dans l’en-tête dit de quand datent les valeurs qu’on lit. Une vue figée <b>retient son historique</b> : elle ne se remet pas à avancer toute seule quand le tampon défile. Passé le plafond de rétention (30 min), le badge passe au rouge et dit « historique épuisé » — c’est le seul cas où la vue suit à nouveau.'],
             ['Adresse ou description', 'Menu ⋮ d’un tableau : <b>Mettre la description en tête</b> intervertit l’adresse et la description. Menu ⋮ d’un graphique : <b>Légende : description plutôt qu’adresse</b>. L’automaticien cherche une adresse, l’exploitant un nom — chaque tuile choisit.'],
             ['Échelles verticales', 'Toutes les règles sont <b>à gauche</b>, empilées dans l’ordre des badges Én : on lit une valeur sans chercher de quel bord vient son échelle. Clic sur une <b>règle d’axe</b> (les graduations, curseur ↕) : saisir le minimum et le maximum exacts, pour cette échelle seule ou pour <b>toutes</b> celles du graphique. Glisser ou molette sur la règle : réglage à la volée ; double-clic : retour à l’automatique. Même réglage depuis le menu d’une pastille (« Bornes de l’échelle… »).'],
