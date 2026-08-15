@@ -109,6 +109,12 @@ pareil, simplement sans le gain.
   `gh codespace ports visibility 8080:public -c $CODESPACE_NAME`.
   Le serveur envoie des en-têtes anti-cache : chaque rechargement affiche
   la dernière version.
+- **Se remettre à niveau après un commit** : `bash tools/sync.sh` — récupère
+  `main`, recompile **si** le serveur a changé, signale une interface à
+  recharger ou un conteneur à reconstruire, et relance le serveur. Il refuse
+  d'écraser un travail local, et refuse de relancer tant qu'une campagne de
+  journalisation ou une capture est en cours (`--force` passe outre).
+  `--watch [N]` surveille `main` en boucle.
 - **Tout vérifier d'un coup** : `bash tools/check.sh` — les mêmes contrôles
   que l'intégration continue (compilation du serveur avec les avertissements
   en erreurs, tests de décodage, liens réseau de bout en bout, syntaxe JS,

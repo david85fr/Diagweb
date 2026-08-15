@@ -147,6 +147,8 @@ tools/build.py  assemble dist/ à partir de web/
 tools/gen-all.py régénère les en-têtes dérivés des sources web
 tools/run-server-tests.sh  serveur lancé + tests qui en dépendent (meson test)
 tools/check.sh  toutes les vérifications de la CI, en local (serveur|interface)
+tools/sync.sh   remet un Codespace à niveau après un commit (récupère, recompile,
+                relance — refuse si un enregistrement est en cours)
 tools/check-dist.py  dist/ à jour + page autonome (aucune ressource externe)
 tools/gen-catalog.mjs  régénère server/src/catalog.generated.hpp depuis config.js
 tools/gen-protocols.mjs régénère server/src/protocols.generated.hpp depuis protocols.js
