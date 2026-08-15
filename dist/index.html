@@ -149,6 +149,21 @@ button { font-family: var(--sans); }
   line-height: 1.3;
   white-space: nowrap;
   margin-right: 2px;
+  /* Le tag cède avant les onglets.
+     Il a suffi qu'il s'allonge — un clone sans historique complet affichait
+     « clone superficiel » au lieu de « #140 » — pour qu'en nowrap il pousse la
+     liste d'onglets à zéro : plus un seul onglet atteignable sur téléphone. Un
+     numéro de version n'a pas à valoir plus que la navigation, donc il rétrécit
+     et se tronque, et son contenu complet reste dans l'infobulle.
+
+     Un plafond, et pas seulement « min-width: 0 » : .topIcons occupe une
+     colonne de grille « auto », qui grossit à la demande de son contenu — le
+     tag pouvait donc pousser sans jamais céder. 16ch laisse passer la forme
+     normale (« 0c6b1a4 · #140 ») et tronque tout ce qui déborde. */
+  max-width: 16ch;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .searchrow {
@@ -1156,7 +1171,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     <div class="topIcons">
       <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" aria-label="Figer ou reprendre tout l’onglet" title="Figer d’un coup tout l’onglet actif : les courbes ET les valeurs numériques s’arrêtent sur l’instant courant">⏸</button>
       <button id="stopBtn" class="iconbtn pausebtn" type="button" aria-label="Arrêter ou relancer l’acquisition" title="Arrêter l’acquisition : plus aucun échantillon n’est enregistré et l’horloge se fige. L’historique déjà acquis reste consultable et mesurable.">⏹</button>
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">be52118 · clone superficiel</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">e8a44eb · #149</span>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
