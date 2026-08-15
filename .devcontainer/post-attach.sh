@@ -28,9 +28,6 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
-# --no-restart : ce script est rejoué à CHAQUE attachement. La relance est le
-# défaut de share.sh, mais l'appliquer ici couperait une campagne de
-# journalisation ou une capture à chaque reconnexion d'onglet.
 demarre_surveillance() {
   # Surveillance de main : c'est elle qui rend la mise à jour automatique.
   # Dès qu'un commit arrive sur origin/main, tools/sync.sh coupe proprement les
@@ -50,8 +47,19 @@ demarre_surveillance() {
   echo "→ Surveillance de main active (journal : /tmp/diagweb-watch.log)"
 }
 
+# La surveillance démarre AVANT tout le reste, et quoi qu'il arrive ensuite.
+#
+# Elle était lancée seulement quand le serveur avait démarré — c'est-à-dire
+# jamais dans le seul cas où elle compte vraiment : compilation cassée ou
+# outillage manquant. Le Codespace serait alors resté en panne indéfiniment,
+# alors que le commit qui répare est peut-être déjà poussé et qu'il suffisait
+# d'aller le chercher.
+demarre_surveillance
+
+# --no-restart : ce script est rejoué à CHAQUE attachement. La relance est le
+# défaut de share.sh, mais l'appliquer ici couperait une campagne de
+# journalisation ou une capture à chaque reconnexion d'onglet.
 if bash tools/share.sh --server --local --no-restart; then
-  demarre_surveillance
   exit 0
 fi
 
