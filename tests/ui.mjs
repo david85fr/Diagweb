@@ -1002,14 +1002,23 @@ await p2.waitForTimeout(200);
 // ⏹ arrête l'ACQUISITION — à distinguer de « Figer », qui n'arrête que
 // l'affichage. Plus rien n'est enregistré, l'horloge de la source se fige, et
 // relancer ouvre une capture neuve dont l'origine des temps repart de zéro.
-const acq = () => p2.evaluate(() => ({
-  bouton: document.getElementById('stopBtn').textContent,
-  marche: DW.source.running(),
-  horloge: DW.source.now(),
-  points: DW.source.data(document.querySelector('.tabpane.on .chart-card').__dwChart.series[0].addr).ts.length,
-  capture: DW.source.now() - DW.source.captureStart(),
-  statut: document.getElementById('statInfo').textContent,
-}));
+const acq = () => p2.evaluate(() => {
+  const carte = document.querySelector('.tabpane.on .chart-card');
+  return {
+    bouton: document.getElementById('stopBtn').textContent,
+    marche: DW.source.running(),
+    horloge: DW.source.now(),
+    points: DW.source.data(carte.__dwChart.series[0].addr).ts.length,
+    capture: DW.source.now() - DW.source.captureStart(),
+    statut: document.getElementById('statInfo').textContent,
+    // Le graphique reste « en direct » : ce sont bien l'arrêt de l'acquisition,
+    // et lui seul, qui doivent ouvrir les outils de mesure.
+    figee: carte.__dwChart.paused,
+    mesures: !carte.querySelector('.mes-val').classList.contains('hide') &&
+             !carte.querySelector('.mes-t').classList.contains('hide'),
+  };
+});
+await p2.evaluate(() => document.querySelector('.tabpane.on .chart-card').__dwChart.goLive());
 const a0 = await acq();
 await p2.click('#stopBtn');
 await p2.waitForTimeout(300);
@@ -1027,6 +1036,14 @@ check('⏹ arrête l’acquisition ; ⏺ ouvre une capture neuve',
   'horloge figée à ' + a1.horloge.toFixed(1) + ' s, ' + a1.points +
   ' points conservés · relance : capture ' + a3.capture.toFixed(1) + ' s, ' +
   a3.points + ' points');
+
+// Une capture arrêtée est justement ce qu'on veut mesurer : les deux outils
+// s'ouvrent sans qu'il faille figer le graphique en plus.
+check('acquisition arrêtée : les mesures s’ouvrent sans figer le graphique',
+  !a0.figee && !a0.mesures && !a1.figee && a1.mesures && a2.mesures && !a3.mesures,
+  'en marche : ' + (a0.mesures ? 'visibles' : 'masquées') +
+  ' · arrêtée : ' + (a1.mesures ? 'visibles' : 'masquées') +
+  ' · relancée : ' + (a3.mesures ? 'visibles' : 'masquées'));
 
 // Couverture des infobulles : chaque objet interactif doit être documenté
 const AUDIT = () => {

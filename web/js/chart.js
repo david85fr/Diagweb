@@ -309,9 +309,10 @@
               'title="Durée affichée — modifiable aussi par pincement ou molette sur le tracé"></select>' +
             '<button class="iconbtn chart-pause" type="button" ' +
               'title="Figer ce graphique sur l’instant courant, ou revenir au temps réel">⏸</button>' +
-            // Mesures : elles n'ont de sens que sur une vue arrêtée — sur un
-            // tracé qui défile, le point d'appui aurait déjà bougé au
-            // relâchement. Les boutons n'apparaissent donc qu'à l'arrêt.
+            // Mesures : elles n'ont de sens que sur un tracé qui ne bouge plus
+            // — sur une vue qui défile, le point d'appui aurait déjà glissé au
+            // relâchement. Les boutons apparaissent donc dès que le tracé est
+            // immobile : tuile figée, OU acquisition arrêtée (⏹).
             '<button class="iconbtn mes-val hide" type="button" ' +
               'title="Mesurer un écart de VALEUR : glisser verticalement sur le tracé. ' +
               'L’écart porte sur la courbe désignée au point d’appui (à défaut, la ' +
@@ -416,6 +417,9 @@
         tiles: () => this.app.tilesOfCard(this.root),
         onChange: () => this.app.onChange(),
       });
+      // Un graphique créé alors que l'acquisition est déjà arrêtée doit naître
+      // avec ses outils de mesure — l'état de la source ne dépend pas de lui.
+      this.syncPauseUi();
     }
 
     get title() { return this.titleEl.value.trim() || 'Graphique'; }
@@ -430,18 +434,32 @@
       this.viewEnd = null;
       this.syncPauseUi();
     }
+    /**
+     * Vrai quand le tracé ne bouge plus, donc quand une cote posée dessus
+     * garde son sens : soit la tuile est figée, soit l'acquisition est arrêtée
+     * (⏹). Dans ce second cas le graphique est encore « en direct » — mais
+     * l'horloge de la source ne tourne plus et aucun échantillon n'arrive :
+     * refuser les mesures là serait refuser de mesurer une capture terminée,
+     * qui est justement le moment où l'on mesure.
+     */
+    get measurable() {
+      if (this.viewEnd !== null) return true;
+      return !!(DW.source && DW.source.running && !DW.source.running());
+    }
+
     syncPauseUi() {
       const frozen = this.viewEnd !== null;
+      const mesurable = this.measurable;
       this.pauseBtn.textContent = frozen ? '▶' : '⏸';
       this.pauseBtn.classList.toggle('on', frozen);
       this.liveBtn.classList.toggle('hide', !frozen);
       for (const sel of ['.mes-val', '.mes-t']) {
         const b = this.root.querySelector(sel);
-        if (b) b.classList.toggle('hide', !frozen);
+        if (b) b.classList.toggle('hide', !mesurable);
       }
-      // Retour au direct : la mesure posée ne veut plus rien dire, le tracé
-      // qu'elle annotait ayant repris sa course.
-      if (!frozen && (this.measureMode || this.measure)) this.setMeasureMode(null);
+      // Le tracé se remet à défiler : la mesure posée ne veut plus rien dire,
+      // ce qu'elle annotait ayant repris sa course.
+      if (!mesurable && (this.measureMode || this.measure)) this.setMeasureMode(null);
       this.majRetard();
     }
 

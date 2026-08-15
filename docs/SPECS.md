@@ -342,14 +342,17 @@ Figer**, qui n'arrête que l'affichage :
   fige** avec. Sans ce gel de l'horloge, le temps continuerait d'avancer sans
   qu'aucune donnée n'arrive : les vues en direct défileraient dans le vide et
   les retards afficheraient un vieillissement que rien ne justifie ;
-- l'historique déjà acquis **reste consultable et mesurable** ;
+- l'historique déjà acquis **reste consultable et mesurable** : les outils de
+  mesure (§4 ter) s'ouvrent sur tous les graphiques, y compris ceux restés en
+  direct, sans qu'il faille les figer un par un ;
 - côté serveur, rien n'est demandé au contrôleur : le flux continue d'arriver,
   c'est l'affichage qui cesse de l'enregistrer. C'est une commande locale.
 
 Le bouton devient **⏺** : il ouvre une **capture neuve**, dont l'origine des
 temps repart de zéro et dont l'historique précédent est effacé — sans cet
 effacement, « temps depuis le début de la capture » n'aurait pas de sens pour
-les échantillons d'avant. La barre d'état affiche la durée de la capture
+les échantillons d'avant. Les tuiles figées **reviennent au direct** à ce
+moment-là : leur instant n'existe plus, elles n'auraient plus rien à montrer. La barre d'état affiche la durée de la capture
 courante, et « (arrêtée) » le cas échéant.
 
 L'origine de la première capture est le **début des données disponibles**, pas
@@ -364,9 +367,16 @@ réel suit entre parenthèses quand la vue est figée.
 
 ## 4 ter. Mesures sur le tracé (vue arrêtée)
 
-Deux boutons apparaissent dans l'en-tête d'un graphique **figé** — et seulement
-là : sur un tracé qui défile, le point d'appui aurait déjà bougé au
-relâchement, la mesure serait fausse par construction.
+Deux boutons apparaissent dans l'en-tête d'un graphique dès que son tracé
+**ne bouge plus** — et seulement là : sur un tracé qui défile, le point d'appui
+aurait déjà bougé au relâchement, la mesure serait fausse par construction.
+Deux états valent immobilité, et les deux ouvrent les mesures :
+
+- le graphique est **figé** (⏸, sur la tuile ou sur tout l'onglet) ;
+- l'**acquisition est arrêtée** (⏹, §4 quater) : le graphique est encore « en
+  direct », mais l'horloge de la source ne tourne plus et aucun échantillon
+  n'arrive. Une capture terminée est précisément ce qu'on veut mesurer — exiger
+  en plus une pause serait un geste pour rien.
 
 Les deux mesures ne répondent pas à la même question, et leur relevé s'en
 déduit :
