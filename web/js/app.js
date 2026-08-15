@@ -2626,7 +2626,33 @@
     }
     perSel.value = String(CFG.defaultPeriodMs);
 
-    $('srcInfo').textContent = 'Source : ' + DW.source.name + ' · défaut ' + DW.source.defaultPeriodMs + ' ms';
+    // Barre d'état : la NATURE des données, pas seulement leur provenance.
+    //
+    // « Serveur de diagnostic (simulation) » se lisait « tout est simulé », y
+    // compris quand six liens réseau acquéraient réellement — de quoi conclure
+    // à une panne là où tout marchait. Les deux faits sont désormais énoncés
+    // séparément, parce qu'ils sont indépendants : les variables internes du
+    // controller peuvent être fabriquées pendant que les liens sont bien réels.
+    //
+    // Assemblé par fragments passés à DW.t() : une phrase portant un nombre ne
+    // peut pas servir de clé de traduction (i18n.js — la clé est le texte
+    // français exact). Aucun compteur d'état ici, volontairement : il
+    // vieillirait entre deux rafraîchissements alors que la fenêtre « Liens
+    // réseau » l'affiche déjà, vivant.
+    const T = (s) => (DW.t ? DW.t(s) : s);
+    const bouts = [T('Source') + ' : ' + T(DW.source.name)];
+    if (DW.sourceMode === 'ws') {
+      if (DW.source.controllerSimulated) {
+        bouts.push(T('variables internes du controller simulées'));
+      }
+      const liens = DW.source.links;
+      if (liens && liens.count > 0) {
+        bouts.push(liens.simulated ? T('liens réseau simulés')
+                                   : T('liens réseau réels'));
+      }
+    }
+    bouts.push(T('défaut') + ' ' + DW.source.defaultPeriodMs + ' ms');
+    $('srcInfo').textContent = bouts.join(' · ');
     if (DW.source.onStatus === null) DW.source.onStatus = (msg, isErr) => toast(msg, isErr ? 'err' : '');
     if (DW.sourceMode === 'ws') toast('Connecté au serveur de diagnostic.');
     else if (DW.sourceFallbackReason) {

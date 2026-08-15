@@ -168,6 +168,20 @@ class IVariableSource {
   /** Horloge de la source, en secondes depuis son démarrage. */
   virtual double now() const = 0;
   virtual const char* name() const = 0;
+
+  /**
+   * Les valeurs sont-elles fabriquées faute de source réelle ?
+   *
+   * Le fait est annoncé à l'interface pour qu'elle le DISE, au lieu de le
+   * cacher dans le nom de la source. « Serveur de diagnostic (simulation) »
+   * se lisait « tout est simulé » alors que les liens réseau, eux, peuvent
+   * acquérir pour de bon — un outil de diagnostic n'a pas le droit d'être
+   * ambigu là-dessus.
+   *
+   * Le jour où le controller réel est branché, sa source rend false sans que
+   * rien d'autre ne bouge.
+   */
+  virtual bool simulated() const { return false; }
 };
 
 }  // namespace diagweb

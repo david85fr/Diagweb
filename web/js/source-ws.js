@@ -77,6 +77,11 @@
         srcName = m.source || srcName;
         api.name = srcName;
         api.defaultPeriodMs = m.defaultPeriodMs || CFG.defaultPeriodMs;
+        // Nature des données, dite par le serveur plutôt que devinée d'un nom :
+        // les variables internes peuvent être simulées pendant que les liens
+        // réseau acquièrent réellement. La barre d'état énonce les deux.
+        api.controllerSimulated = m.controllerSimulated !== false;
+        api.links = m.links || null;
         // Redémarrage du serveur : son horloge (t depuis le démarrage) repart
         // près de zéro. Sans purge, la déduplication (t ≤ dernier t) rejetterait
         // tout échantillon neuf et les courbes gèleraient définitivement. Si
@@ -179,6 +184,10 @@
     const api = {
       name: srcName,
       defaultPeriodMs: CFG.defaultPeriodMs,
+      // Renseignés par « hello » ; par défaut on suppose le pire (simulé),
+      // pour ne jamais annoncer du réel qu'on n'a pas constaté.
+      controllerSimulated: true,
+      links: null,
       onStatus: null,
       now,
       connect,

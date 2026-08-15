@@ -148,6 +148,15 @@ class ProtocolSource : public IVariableSource {
     return out;
   }
 
+  /** Combien de liens sont configurés — pas combien sont ouverts. */
+  size_t link_count() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return config_.links.size();
+  }
+
+  /** Les pilotes sont-ils remplacés par un générateur (--sim-protocols) ? */
+  bool simulated_links() const { return simulate_; }
+
   /** Test à la demande d'un lien : ouvre, ferme, et renvoie le diagnostic. */
   std::string test(const std::string& link_id, bool& ok) {
     LinkConfig cfg;
@@ -461,6 +470,11 @@ class CompositeSource : public IVariableSource {
 
   const char* name() const override { return controller_.name(); }
   double now() const override { return controller_.now(); }
+
+  // La nature simulée rapportée est celle du CONTROLLER seul : les liens
+  // réseau ont la leur, qui n'est pas la même et que l'interface annonce à
+  // part. Les confondre en un seul mot est précisément ce qui égarait.
+  bool simulated() const override { return controller_.simulated(); }
 
   const Meta* subscribe(const std::string& addr, int period_ms) override {
     return pick(addr).subscribe(addr, period_ms);

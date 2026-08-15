@@ -200,6 +200,10 @@
   DW.sources = DW.sources || {};
   DW.sources.sim = {
     name: 'Simulation locale',
+    // Même contrat que source-ws.js : ici tout est simulé, et le nom le dit
+    // déjà — la barre d'état n'a donc rien à ajouter (voir app.js).
+    controllerSimulated: true,
+    links: null,
     /**
      * Retient l'historique jusqu'à cet instant, au-delà de l'horizon ordinaire.
      * Appelé par l'application quand une tuile est figée : ce qu'on regarde ne

@@ -179,7 +179,11 @@ class SimSource : public IVariableSource {
     for (const auto& e : catalog) cat_[e.addr] = &e;
   }
 
-  const char* name() const override { return "Serveur de diagnostic (simulation)"; }
+  // Le nom dit d'où viennent les valeurs, plus leur nature : « (simulation) »
+  // accolé ici se lisait « tout est simulé », liens réseau compris. La nature
+  // passe désormais par simulated(), que l'interface énonce séparément.
+  const char* name() const override { return "Serveur de diagnostic"; }
+  bool simulated() const override { return true; }
   double now() const override { return clock_now() - start_; }
 
   const Meta* subscribe(const std::string& raw, int period_ms) override {

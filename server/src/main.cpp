@@ -286,6 +286,29 @@ std::string safe_name(const std::string& raw) {
   return clean.substr(0, 80);
 }
 
+/**
+ * Nature des données, annoncée à l'interface — et non déduite d'un nom.
+ *
+ * Deux faits distincts, que « Serveur de diagnostic (simulation) » écrasait en
+ * un seul mot : les VARIABLES INTERNES peuvent être fabriquées faute de
+ * controller branché, pendant que les LIENS RÉSEAU acquièrent réellement. La
+ * barre d'état les énonce séparément ; le serveur se contente donc de dire ce
+ * qui est vrai, sans phrase toute faite — l'interface est bilingue, la
+ * traduction ne peut pas venir d'ici.
+ *
+ * « links » ne porte volontairement AUCUN compteur d'état : celui-ci vieillit
+ * entre deux envois, et la fenêtre « Liens réseau » l'affiche déjà, vivant.
+ * Deux affichages d'un même compte finissent toujours par se contredire.
+ */
+std::string nature_json(const IVariableSource& src) {
+  std::ostringstream o;
+  o << ",\"controllerSimulated\":" << (src.simulated() ? "true" : "false")
+    << ",\"links\":{\"count\":" << (g_net ? g_net->link_count() : 0)
+    << ",\"simulated\":"
+    << (g_net && g_net->simulated_links() ? "true" : "false") << "}";
+  return o.str();
+}
+
 // --------------------------------------------------------------------- REST
 bool handle_api(int fd, const Request& req, IVariableSource& src, const Options& opt) {
   const std::string& t = req.target;
@@ -297,7 +320,8 @@ bool handle_api(int fd, const Request& req, IVariableSource& src, const Options&
       << ",\"source\":\"" << jesc(src.name()) << "\""
       << ",\"now\":" << jnum(src.now(), 3)
       << ",\"defaultPeriodMs\":" << kDefaultPeriodMs
-      << ",\"horizonS\":" << jnum(kHorizonS, 0) << "}";
+      << ",\"horizonS\":" << jnum(kHorizonS, 0)
+      << nature_json(src) << "}";
     respond_json(fd, o.str());
     return true;
   }
@@ -662,7 +686,8 @@ void ws_session(int fd, const Request& req, IVariableSource& src, const Options&
     o << "{\"e\":\"hello\",\"now\":" << jnum(src.now(), 3)
       << ",\"horizonS\":" << jnum(kHorizonS, 0)
       << ",\"defaultPeriodMs\":" << kDefaultPeriodMs
-      << ",\"source\":\"" << jesc(src.name()) << "\"}";
+      << ",\"source\":\"" << jesc(src.name()) << "\""
+      << nature_json(src) << "}";
     if (!send_all(fd, ws_encode(Op::Text, o.str()))) return;
   }
   std::cout << "  client connecte" << std::endl;

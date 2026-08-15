@@ -68,6 +68,18 @@ check('disposition de démonstration chargée',
   await p1.locator(PANE + '.chart-card').count() === 2 &&
   await p1.locator(PANE + '.vrow').count() === 6);
 
+// Barre d'état : elle doit dire la NATURE des données, jamais laisser croire
+// que tout est simulé quand des liens réseau acquièrent réellement — ni
+// l'inverse. Ici la page tourne sur sa simulation navigateur : elle ne doit
+// donc revendiquer aucun lien réseau.
+{
+  const barre = (await p1.textContent('#srcInfo') || '').trim();
+  check('barre d’état : source et période annoncées',
+    barre.startsWith('Source :') && /défaut \d+ ms$/.test(barre), barre);
+  check('barre d’état : la simulation navigateur ne revendique aucun lien réseau',
+    !/lien(s)? réseau/.test(barre) && /Simulation locale|Serveur de diagnostic/.test(barre));
+}
+
 await p1.fill('#searchInput', 'MB520');
 await p1.selectOption('#targetSel', { index: 0 });
 await p1.click('#addBtn');

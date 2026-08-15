@@ -37,6 +37,20 @@ if (health.status !== 200 || !health.json || health.json.role !== 'diag-server')
   process.exit(2);
 }
 
+/* Nature des données annoncée séparément, et non déduite du nom de la source.
+ * Le nom seul disait « Serveur de diagnostic (simulation) », ce qui se lisait
+ * « tout est simulé » alors que les liens réseau peuvent acquérir pour de bon.
+ * Deux faits indépendants, donc deux champs. */
+check('nature annoncée : variables internes du controller simulées',
+  health.json.controllerSimulated === true,
+  'nom de la source : ' + health.json.source);
+check('nature annoncée : les pilotes réseau ne sont pas simulés (sans --sim-protocols)',
+  !!health.json.links && health.json.links.simulated === false,
+  JSON.stringify(health.json.links));
+check('le nom de la source ne préjuge plus de la nature des liens',
+  typeof health.json.source === 'string' && !/simulation/i.test(health.json.source),
+  health.json.source);
+
 // ------------------------------------------- persistance après redémarrage
 /* Un déclencheur armé pour attraper un incident rare ne vaut que s'il survit
  * à une coupure — c'est parfois la coupure elle-même qu'on cherche à
