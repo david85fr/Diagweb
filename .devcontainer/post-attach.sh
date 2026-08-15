@@ -31,7 +31,29 @@ cd "$(dirname "$0")/.."
 # --no-restart : ce script est rejoué à CHAQUE attachement. La relance est le
 # défaut de share.sh, mais l'appliquer ici couperait une campagne de
 # journalisation ou une capture à chaque reconnexion d'onglet.
-bash tools/share.sh --server --local --no-restart && exit 0
+demarre_surveillance() {
+  # Surveillance de main : c'est elle qui rend la mise à jour automatique.
+  # Dès qu'un commit arrive sur origin/main, tools/sync.sh coupe proprement les
+  # enregistrements, arrête banc, simulateur et serveur, récupère, recompile et
+  # relance tout — sans qu'on ait rien à taper. Ouvrir la page suffit alors à
+  # voir la dernière version.
+  #
+  # setsid : la boucle doit survivre à la fermeture du terminal et au
+  # détachement de l'onglet, pas seulement au SIGHUP. Elle se verrouille
+  # elle-même par fichier de PID, donc la relancer à chaque attachement est
+  # sans effet si elle tourne déjà.
+  #
+  # DIAGWEB_NO_WATCH=1 dans l'environnement du Codespace la désactive.
+  [ -n "${DIAGWEB_NO_WATCH:-}" ] && { echo "→ Surveillance de main désactivée (DIAGWEB_NO_WATCH)"; return 0; }
+  setsid nohup bash tools/sync.sh --watch 60 >> /tmp/diagweb-watch.log 2>&1 &
+  sleep 0.5
+  echo "→ Surveillance de main active (journal : /tmp/diagweb-watch.log)"
+}
+
+if bash tools/share.sh --server --local --no-restart; then
+  demarre_surveillance
+  exit 0
+fi
 
 # Le serveur n'a pas pu démarrer (outillage absent, compilation en échec). On
 # se replie sur l'aperçu, mais en le DISANT : un repli muet reproduirait

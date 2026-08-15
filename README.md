@@ -93,6 +93,14 @@ pareil, simplement sans le gain.
   pas la simulation navigateur. Le port reste privé — publier est une
   décision, pas un effet de bord. Les variables internes, elles, restent
   simulées tant que le binding vers le `controller` n'existe pas (phase 2).
+- **Et il se met à jour tout seul** : `post-attach.sh` lance aussi
+  `tools/sync.sh --watch`, qui surveille `origin/main`. À chaque commit
+  poussé, le Codespace arrête proprement les enregistrements, récupère,
+  recompile et relance serveur, simulateur et banc d'essai — ouvrir la page
+  suffit alors à voir la dernière version. Rien ne bouge tant qu'aucun commit
+  n'arrive. Journal : `/tmp/diagweb-watch.log` ; `DIAGWEB_NO_WATCH=1`
+  désactive. **Limite** : un Codespace suspendu n'exécute rien — la mise à
+  jour se fait alors à la reprise, pas avant.
 - **Pour partager le port** : `bash tools/share.sh --server` — arrête le
   serveur en place, le relance et rend le port public. Sans `--server`,
   c'est l'aperçu statique (simulation navigateur) qui est publié ;

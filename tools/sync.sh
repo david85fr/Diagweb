@@ -215,6 +215,17 @@ une_passe() {
     return 1
   fi
 
+  # En surveillance, ne RIEN faire tant qu'il n'y a pas de commit neuf.
+  #
+  # Appelé à la main, « sync.sh » coupe et relance même sans commit : c'est ce
+  # qu'on veut quand on doute de ce que contient le binaire en mémoire. Appliqué
+  # en boucle, ce même comportement redémarrerait serveur, banc et simulateur
+  # toutes les N secondes — il couperait le flux temps réel du navigateur en
+  # permanence, pour rien. La surveillance ne réagit donc qu'à un vrai commit.
+  if [ "$BOUCLE" = 1 ] && [ "$avant" = "$apres" ]; then
+    return 0
+  fi
+
   # 1 & 2 — inventaire de ce qui tourne, puis arrêt.
   api /api/health > /dev/null && serveur=1
   for p in $PORTS_BANC; do [ -n "$(proprietaires "$p")" ] && banc=1 && break; done
@@ -284,9 +295,41 @@ if [ "$BOUCLE" = 0 ]; then
   exit $?
 fi
 
-echo "Surveillance de origin/main toutes les ${INTERVALLE} s — Ctrl-C pour arrêter."
-trap 'echo; echo "Surveillance arrêtée."; exit 0' INT TERM
+# ------------------------------------------------------------ surveillance
+
+# Une seule surveillance à la fois. post-attach.sh lance celle-ci à CHAQUE
+# attachement au Codespace : sans ce verrou, ouvrir trois onglets donnerait
+# trois boucles qui se disputeraient le dépôt et les ports. Le verrou est un
+# fichier de PID, vérifié par kill -0 — pas un motif de ligne de commande, qui
+# attraperait le shell exécutant ce script.
+VERROU="${DIAGWEB_WATCH_PID:-/tmp/diagweb-watch.pid}"
+if [ -f "$VERROU" ]; then
+  autre=$(cat "$VERROU" 2> /dev/null)
+  if [ -n "$autre" ] && [ "$autre" != "$$" ] && kill -0 "$autre" 2> /dev/null; then
+    echo "Une surveillance tourne déjà (pid $autre) — rien à faire."
+    exit 0
+  fi
+fi
+echo $$ > "$VERROU"
+trap 'rm -f "$VERROU"; echo; echo "Surveillance arrêtée."; exit 0' INT TERM
+trap 'rm -f "$VERROU"' EXIT
+
+echo "Surveillance de origin/main toutes les ${INTERVALLE} s (pid $$)."
+echo "Rien ne bouge tant qu'aucun commit n'arrive. Ctrl-C pour arrêter."
+derniere=""
 while true; do
-  une_passe
+  # Horodatage seulement quand il se passe quelque chose : une boucle qui écrit
+  # une ligne par minute noie le journal et rend illisible ce qui compte.
+  #
+  # Et une sortie IDENTIQUE à la précédente n'est pas répétée : un arbre
+  # modifié localement ou un historique divergent dure des heures, et le
+  # signaler toutes les minutes enterrerait le seul message qui compte — celui
+  # d'un commit réellement appliqué. Le message revient si l'état change puis
+  # se reproduit.
+  sortie=$(une_passe 2>&1)
+  if [ -n "$sortie" ] && [ "$sortie" != "$derniere" ]; then
+    printf '\n──── %s ────\n%s\n' "$(date '+%F %T')" "$sortie"
+  fi
+  derniere="$sortie"
   sleep "$INTERVALLE"
 done
