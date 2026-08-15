@@ -785,7 +785,7 @@ Trois moyens, qui ne prouvent pas la même chose.
 |---|---|---|---|
 | `--sim-protocols` | **aucun** | tous, en trompe-l'œil | l'interface et les courbes ; les pilotes ne travaillent pas |
 | `node tools/bench.mjs` | vraies sockets | les six | les pilotes au travail contre les équipements des tests, en une commande |
-| `build/diagweb-simulator` | vraies sockets | Modbus TCP (puis les autres) | un **équipement** décrit en JSON : registres, unités, écritures, exceptions |
+| `build/diagweb-simulator` | vraies sockets | Modbus TCP (puis les autres) | un **équipement** décrit en JSON : registres, unités, exceptions |
 
 ### Sans aucune trame — `--sim-protocols`
 
@@ -874,9 +874,10 @@ rendu public.
 `diagweb-simulator` est le **second exécutable** du dépôt (`simulator/`,
 C++23) : là où le banc monte les équipements des tests pour voir vivre
 l'interface, celui-ci simule **un équipement** qu'on décrit — table de
-registres, unités Modbus multiples, lois de mouvement, cellules libres
-accessibles en écriture, exceptions sur adresse hors table — et qui sert le
-port **502** comme un automate. Il est écrit d'après la spécification, sans
+registres, unités Modbus multiples, lois de mouvement, exceptions sur adresse
+hors table — et qui sert le port **502** comme un automate. Lecture seule
+comme le reste de Diagweb : les fonctions d'écriture reçoivent « fonction non
+gérée ». Il est écrit d'après la spécification, sans
 rien connaître du pilote : chacun sert donc de contre-épreuve à l'autre.
 
 Il ne sert aujourd'hui que Modbus TCP ; SNMP, OPC UA et IEC 61850 viendront

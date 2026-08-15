@@ -128,10 +128,7 @@ int main() {
     near("relecture de l'image en unités physiques", d.value_of(pression->modbus),
          std::round(pression->value / 0.1) * 0.1, 0.06);
     near("float32 sur deux registres", d.value_of(debit->modbus), debit->value, 1e-3);
-    near("cellule libre initialisée", d.value_of(consigne->modbus), 3.5, 1e-6);
-    check("cellule libre non pilotée", !consigne->driven && !d.holding_is_driven(50));
-    check("cellule animée pilotée", d.holding_is_driven(40) && d.holding_is_driven(10) &&
-          d.holding_is_driven(11));
+    near("constante lue à sa valeur", d.value_of(consigne->modbus), 3.5, 1e-6);
   }
 
   // ---- lectures ---------------------------------------------------------
@@ -181,36 +178,30 @@ int main() {
           is_exception(ask(bench, 2, read_pdu(3, 0, 1)), 3, modbus::kIllegalAddress));
   }
 
-  // ---- écritures --------------------------------------------------------
+  // ---- aucune écriture --------------------------------------------------
+  // Lecture seule de bout en bout : le serveur de diagnostic n'écrit jamais,
+  // et l'équipement simulé ne saurait pas quoi faire d'une écriture. Les
+  // quatre fonctions d'écriture reçoivent donc « fonction non gérée », et
+  // l'image ne bouge pas — c'est cette dernière vérification qui compte.
   {
-    const std::vector<uint8_t> ok = ask(bench, 1, {6, 0, 50, 0x01, 0x2C});   // 300 = 30,0 bar
-    check("fonction 06 sur cellule libre : requête renvoyée",
-          ok.size() == 5 && ok[0] == 6 && ok[4] == 0x2C);
-    near("valeur écrite conservée", bench.by_unit(1)->reg_at(Area::Holding, 50), 300, 0.5);
-    bench.tick(1.0);
-    near("le rafraîchissement ne l'écrase pas",
-         bench.by_unit(1)->reg_at(Area::Holding, 50), 300, 0.5);
-
-    // Écrire une cellule animée serait accepté puis défait 50 ms plus tard :
-    // un maître qui relit sa propre valeur ne doit jamais la voir disparaître
-    // sans explication.
-    check("fonction 06 sur cellule animée : exception 02",
-          is_exception(ask(bench, 1, {6, 0, 40, 0, 1}), 6, modbus::kIllegalAddress));
-    check("fonction 05 sur bobine animée : exception 02",
-          is_exception(ask(bench, 1, {5, 0, 0, 0xFF, 0}), 5, modbus::kIllegalAddress));
-
-    const std::vector<uint8_t> coil = ask(bench, 1, {5, 0, 2, 0xFF, 0x00});
-    check("fonction 05 sur bobine libre", coil.size() == 5 && bench.by_unit(1)->bit_at(Area::Coils, 2));
-    check("valeur de bobine interdite : exception 03",
-          is_exception(ask(bench, 1, {5, 0, 2, 0x12, 0x34}), 5, modbus::kIllegalValue));
-
-    const std::vector<uint8_t> multi = ask(bench, 1, {16, 0, 50, 0, 1, 2, 0x00, 0x64});
-    check("fonction 16 : adresse et quantité renvoyées",
-          multi.size() == 5 && multi[0] == 16 && multi[2] == 50 && multi[4] == 1);
-    near("écriture multiple appliquée", bench.by_unit(1)->reg_at(Area::Holding, 50), 100, 0.5);
-    check("compte d'octets incohérent : exception 03",
-          is_exception(ask(bench, 1, {16, 0, 50, 0, 1, 4, 0, 0, 0, 0}), 16,
-                       modbus::kIllegalValue));
+    const uint16_t avant = bench.by_unit(1)->reg_at(Area::Holding, 50);
+    const bool bobine_avant = bench.by_unit(1)->bit_at(Area::Coils, 2);
+    check("fonction 05 (bobine) refusée : exception 01",
+          is_exception(ask(bench, 1, {5, 0, 2, 0xFF, 0x00}), 5, modbus::kIllegalFunction));
+    check("fonction 06 (registre) refusée : exception 01",
+          is_exception(ask(bench, 1, {6, 0, 50, 0x01, 0x2C}), 6, modbus::kIllegalFunction));
+    check("fonction 15 (bobines multiples) refusée : exception 01",
+          is_exception(ask(bench, 1, {15, 0, 0, 0, 8, 1, 0xFF}), 15, modbus::kIllegalFunction));
+    check("fonction 16 (registres multiples) refusée : exception 01",
+          is_exception(ask(bench, 1, {16, 0, 50, 0, 1, 2, 0x00, 0x64}), 16,
+                       modbus::kIllegalFunction));
+    near("l'image reste intacte après les tentatives",
+         bench.by_unit(1)->reg_at(Area::Holding, 50), avant);
+    check("bobine intacte après tentative",
+          bench.by_unit(1)->bit_at(Area::Coils, 2) == bobine_avant);
+    // Diagnostic (08), identification (43) : hors périmètre, même réponse.
+    check("fonction de diagnostic refusée : exception 01",
+          is_exception(ask(bench, 1, {8, 0, 0, 0, 0}), 8, modbus::kIllegalFunction));
   }
 
   // ---- découpage du flux ------------------------------------------------

@@ -5,7 +5,7 @@
  * Ce que ce test ajoute à tests/protocols.mjs : là-bas, l'esclave Modbus est
  * celui de tests/devices.mjs, en Node ; ici, c'est le processus
  * `diagweb-simulator` (simulator/), un équipement décrit en JSON — plusieurs
- * unités, cellules libres, exceptions. Deux esclaves indépendants valent mieux
+ * unités, table trouée, exceptions. Deux esclaves indépendants valent mieux
  * qu'un : s'ils divergent, l'un des deux a tort, et il vaut mieux l'apprendre
  * ici que sur site.
  *
@@ -128,7 +128,7 @@ const put = await api('/api/protocols', {
               { fn: 3, reg: 10, type: 'float32', wordOrder: 'big' }),
         POINT('energie', 'Énergie consommée', 'kWh', 'float',
               { fn: 3, reg: 20, type: 'uint32', wordOrder: 'big' }),
-        POINT('consigne', 'Consigne (cellule libre)', 'bar', 'float',
+        POINT('consigne', 'Consigne de pression', 'bar', 'float',
               { fn: 3, reg: 50, type: 'uint16', gain: 0.1 }),
         POINT('vitesse', 'Vitesse pompe', 'tr/min', 'word',
               { fn: 4, reg: 0, type: 'uint16' }),
@@ -187,7 +187,7 @@ check('flottant 32 bits sur deux registres', dans('@banc.debit', 8, 17),
   'valeur ' + last('@banc.debit') + ' m3/h');
 check('entier 32 bits non signé sur deux registres',
   dans('@banc.energie', 120000, 130000), 'valeur ' + last('@banc.energie') + ' kWh');
-check('cellule libre lue à sa valeur initiale',
+check('constante lue à sa valeur',
   last('@banc.consigne') !== null && Math.abs(last('@banc.consigne') - 3.5) < 0.05,
   'valeur ' + last('@banc.consigne') + ' bar');
 check('registre d’entrée lu (fn 04)', dans('@banc.vitesse', 1300, 1600),

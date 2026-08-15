@@ -151,10 +151,10 @@ même port — comme derrière une passerelle. Pour partir de là :
 | `counter` | `rate` | un compteur 16 bits qui reboucle |
 | `jitter` | `base`, `noise`, `spikeP`, `spikeAmp` | du bruit avec des pointes |
 
-Un signal **sans `gen`** n'est pas animé : sa cellule reste **libre**, un maître
-peut y écrire, et la valeur y reste (`initial` fixe son point de départ). C'est
-ainsi qu'on obtient une consigne ou une commande manipulable depuis un outil
-tiers.
+Un signal **sans `gen`** vaut zéro, sans bouger. Une valeur figée se déclare
+donc `"gen": { "kind": "const", "value": 3.5 }` — et beaucoup de registres réels
+sont exactement cela : un numéro de série, une consigne, un mot de
+configuration.
 
 ### Adressage Modbus (`modbus`)
 
@@ -182,18 +182,19 @@ avertissement au démarrage, et le signal fautif n'est **pas** exposé.
 
 ## Ce que sert le protocole
 
-Fonctions de lecture **01, 02, 03, 04** et d'écriture **05, 06, 15, 16**.
+Les quatre fonctions de **lecture**, et elles seules : **01** bobines, **02**
+entrées TOR, **03** registres de maintien, **04** registres d'entrée.
 
-- **Écritures** : elles n'existent que pour manipuler l'équipement depuis un outil
-  tiers. Diagweb, lui, n'écrit jamais sur un lien réseau (voir
-  `docs/PROTOCOLES.md`). Une écriture visant une cellule **animée** est refusée
-  (exception 02) plutôt qu'acceptée puis défaite 50 ms plus tard par le
-  rafraîchissement : un maître qui relit sa propre valeur ne doit pas la voir
-  disparaître sans explication.
-- **Exceptions** : `01` fonction non gérée · `02` adresse hors table ou cellule
-  animée · `03` quantité ou valeur refusée (0 registre, plus de 125, compte
-  d'octets incohérent) · `0B` unité inconnue, comme une passerelle dont la cible
-  reste muette.
+- **Aucune écriture.** Les fonctions 05, 06, 15 et 16 reçoivent l'exception 01,
+  comme un équipement qui n'expose aucun objet inscriptible. C'est le miroir
+  exact de la règle de Diagweb, qui n'écrit jamais vers un équipement (voir
+  `docs/PROTOCOLES.md`) : la propriété tient ici à l'**absence de code**, pas à
+  une option qu'on pourrait retourner — les façades reçoivent un `const Bench&`
+  et le compilateur s'en charge.
+- **Exceptions** : `01` fonction non gérée (toute écriture, le diagnostic, la
+  lecture de fichier, l'identification) · `02` adresse hors table · `03`
+  quantité refusée (0 registre, plus de 125, plus de 2000 bits) · `0B` unité
+  inconnue, comme une passerelle dont la cible reste muette.
 - **Unités** : plusieurs équipements écoutent sur le même port. Les unités `0`
   et `255` — celles qu'un maître emploie faute de mieux — sont servies par le
   premier équipement ; une unité inconnue reçoit `0B` plutôt que les registres
@@ -242,8 +243,12 @@ révèlent que sur site.
 
 ## Hors périmètre
 
+- **Toute écriture** (fonctions 05, 06, 15, 16) : refusée par exception 01, et
+  ce n'est pas une étape à venir. Un banc qu'on peut écrire finit par être
+  écrit, et l'habitude prise sur le simulateur se retrouverait devant un
+  organe réel. Pour changer une valeur, on change la configuration.
+- **Diagnostic Modbus** (fonctions 07, 08, 17, 43) : non servi — exception 01.
 - **Modbus RTU** (liaison série) : le pilote client existe, le côté esclave
   demanderait une paire de pty ; à faire si le besoin se présente.
-- **Diagnostic Modbus** (fonctions 07, 08, 17, 43) : non servi — exception 01.
 - Le simulateur **n'est pas installé** par `meson install` : c'est un outil de
   mise au point et de démonstration, pas un composant du produit embarqué.

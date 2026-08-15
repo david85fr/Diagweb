@@ -231,16 +231,15 @@ inline double decode_regs(const ModbusPoint& m, const uint16_t* words) {
 struct Signal {
   std::string id, label, unit;
   Motion motion;
-  bool driven = false;      // false: free cell, an external master may write it
-  double initial = 0;
   double value = 0;         // last value produced (engineering units)
   ModbusPoint modbus;
 };
 
 /**
- * A simulated device. Its four Modbus areas are plain images; a cell backed by
- * a driven signal is refreshed by tick() and refuses to be written, a free
- * cell holds whatever a master last wrote into it (a setpoint, a command).
+ * A simulated device. Its four Modbus areas are plain images, written by
+ * tick() and by nobody else: the protocol front-ends only read them, which is
+ * the point — Diagweb never writes to an equipment, so neither can anything
+ * reach these cells from the outside.
  */
 struct Device {
   std::string id, label;
@@ -249,7 +248,6 @@ struct Device {
 
   std::vector<uint8_t> coils, discrete;        // one byte per address (0 or 1)
   std::vector<uint16_t> holding, input;
-  std::vector<uint8_t> coil_driven, holding_driven;
 
   size_t area_size(Area a) const {
     switch (a) {
@@ -278,27 +276,6 @@ struct Device {
     return addr >= 0 && static_cast<size_t>(addr) < v.size() ? v[static_cast<size_t>(addr)] : 0;
   }
 
-  /** True when the cell is refreshed by a signal: writing it would be undone. */
-  bool coil_is_driven(int addr) const {
-    return addr >= 0 && static_cast<size_t>(addr) < coil_driven.size() &&
-           coil_driven[static_cast<size_t>(addr)];
-  }
-  bool holding_is_driven(int addr) const {
-    return addr >= 0 && static_cast<size_t>(addr) < holding_driven.size() &&
-           holding_driven[static_cast<size_t>(addr)];
-  }
-
-  void write_coil(int addr, bool on) {
-    if (addr >= 0 && static_cast<size_t>(addr) < coils.size()) {
-      coils[static_cast<size_t>(addr)] = on ? 1 : 0;
-    }
-  }
-  void write_reg(int addr, uint16_t v) {
-    if (addr >= 0 && static_cast<size_t>(addr) < holding.size()) {
-      holding[static_cast<size_t>(addr)] = v;
-    }
-  }
-
   /** Writes one signal into the register image. */
   void apply(const Signal& s) {
     const ModbusPoint& m = s.modbus;
@@ -322,9 +299,11 @@ struct Device {
 
 // --------------------------------------------------------------------- bench
 /**
- * The whole set of simulated devices. Protocol front-ends read it; the tick
- * thread writes it. Callers take `mu` around both — a request served while an
- * update is half written would publish an inconsistent 32-bit value.
+ * The whole set of simulated devices. The tick thread writes it, the protocol
+ * front-ends only read it — they are handed a `const Bench&`, so read-only is
+ * checked by the compiler rather than promised in a comment. Callers still
+ * take a lock around both: a request served while an update is half written
+ * would publish an inconsistent 32-bit value.
  */
 class Bench {
  public:
@@ -336,8 +315,8 @@ class Bench {
    * use when they have nothing better) fall back to the first device, and an
    * unknown unit is refused rather than silently answered by the wrong one.
    */
-  Device* by_unit(int unit) {
-    for (Device& d : devices) {
+  const Device* by_unit(int unit) const {
+    for (const Device& d : devices) {
       if (d.unit_id == unit) return &d;
     }
     if ((unit == 0 || unit == 255) && !devices.empty()) return &devices.front();
@@ -347,7 +326,6 @@ class Bench {
   void tick(double t) {
     for (Device& d : devices) {
       for (Signal& s : d.signals) {
-        if (!s.driven) continue;
         s.value = s.motion(t);
         d.apply(s);
       }
@@ -399,7 +377,6 @@ class Bench {
         std::snprintf(num, sizeof num, "%.4g", d.value_of(m));
         out += row(fn, std::to_string(m.addr), area_is_bit(m.area) ? "bit" : m.type, gain,
                    s.unit, num, s.id + (s.label.empty() ? "" : " — " + s.label));
-        if (!s.driven) out += "      (cellule libre : accessible en écriture)\n";
       }
     }
     return out;
@@ -518,15 +495,15 @@ inline Bench Bench::from_json(const JValue& root, std::vector<std::string>& warn
         }
       }
 
+      // No law of motion: a constant, which many real registers are — a serial
+      // number, a frozen setpoint, a configuration word. It is spelled
+      // `"gen": {"kind": "const", "value": …}`, and defaults to zero.
       const JValue* jg = js.find("gen");
-      s.initial = js.num("initial", 0);
-      s.value = s.initial;
       if (jg && jg->is_obj()) {
         const Kind kind = area_is_bit(s.modbus.area) && s.modbus.exposed ? Kind::Bit : Kind::Float;
         s.motion = Motion::parse(*jg, kind, d.id + "." + s.id, warnings);
-        s.driven = true;
-        s.value = s.motion(0);
       }
+      s.value = s.motion(0);
       d.signals.push_back(std::move(s));
     }
 
@@ -541,21 +518,7 @@ inline Bench Bench::from_json(const JValue& root, std::vector<std::string>& warn
     d.discrete.assign(sized(Area::Discrete, "discrete"), 0);
     d.holding.assign(sized(Area::Holding, "holding"), 0);
     d.input.assign(sized(Area::Input, "input"), 0);
-    d.coil_driven.assign(d.coils.size(), 0);
-    d.holding_driven.assign(d.holding.size(), 0);
 
-    for (const Signal& s : d.signals) {
-      const ModbusPoint& m = s.modbus;
-      if (!m.exposed || !s.driven) continue;
-      if (m.area == Area::Coils && static_cast<size_t>(m.addr) < d.coil_driven.size()) {
-        d.coil_driven[static_cast<size_t>(m.addr)] = 1;
-      } else if (m.area == Area::Holding) {
-        for (int i = 0; i < m.span(); ++i) {
-          const size_t at = static_cast<size_t>(m.addr + i);
-          if (at < d.holding_driven.size()) d.holding_driven[at] = 1;
-        }
-      }
-    }
     for (const Signal& s : d.signals) d.apply(s);   // initial image, before any tick
     bench.devices.push_back(std::move(d));
   }
@@ -592,8 +555,8 @@ inline const char* default_config() {
         { "id": "energie", "label": "Énergie consommée", "unit": "kWh",
           "gen": { "kind": "ramp", "base": 120000, "rate": 0.4 },
           "modbus": { "area": "holding", "addr": 20, "type": "uint32" } },
-        { "id": "consigne", "label": "Consigne de pression (libre)", "unit": "bar",
-          "initial": 3.5,
+        { "id": "consigne", "label": "Consigne de pression", "unit": "bar",
+          "gen": { "kind": "const", "value": 3.5 },
           "modbus": { "area": "holding", "addr": 50, "type": "uint16", "gain": 0.1 } },
         { "id": "vitesse", "label": "Vitesse pompe", "unit": "tr/min",
           "gen": { "kind": "sine", "base": 1450, "amp": 120, "periodS": 20, "noise": 4 },
@@ -610,7 +573,8 @@ inline const char* default_config() {
         { "id": "vanne", "label": "Vanne de by-pass",
           "gen": { "kind": "square", "periodS": 17, "duty": 0.4 },
           "modbus": { "area": "coils", "addr": 1 } },
-        { "id": "commande", "label": "Commande libre (écriture)",
+        { "id": "automatique", "label": "Mode automatique",
+          "gen": { "kind": "const", "value": 1 },
           "modbus": { "area": "coils", "addr": 2 } },
         { "id": "defaut", "label": "Défaut général",
           "gen": { "kind": "bits", "onS": 3, "offS": 60 },

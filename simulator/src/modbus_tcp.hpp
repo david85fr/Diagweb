@@ -5,6 +5,12 @@
 // the driver is checked against an implementation that was written from the
 // specification, not against a recording of its own requests.
 //
+// READ ONLY, like the rest of Diagweb. Only functions 01, 02, 03 and 04 are
+// served; every write function is answered with exception 01, the same way an
+// equipment that holds no writable object would. The mirror is then exact:
+// the driver never writes, and the simulated device could not be written to
+// even by mistake during a trial.
+//
 // Everything here is pure byte handling: a request goes in, a response comes
 // out, no socket in sight. That is what lets tests/simulator.cpp exercise the
 // exception paths, the framing and the limits without opening anything.
@@ -20,16 +26,13 @@ namespace diagweb {
 namespace sim {
 namespace modbus {
 
-// Function codes served. Writes only reach cells no signal drives (see below).
+// The four function codes served. Anything else — writes (05, 06, 15, 16),
+// diagnostics (07, 08), file transfer, identification — is refused.
 enum : uint8_t {
   kReadCoils = 1,
   kReadDiscrete = 2,
   kReadHolding = 3,
   kReadInput = 4,
-  kWriteCoil = 5,
-  kWriteRegister = 6,
-  kWriteCoils = 15,
-  kWriteRegisters = 16,
 };
 
 // Exception codes of the specification.
@@ -58,14 +61,8 @@ inline void push_be16(std::vector<uint8_t>& v, uint16_t x) {
   v.push_back(static_cast<uint8_t>(x & 0xFF));
 }
 
-/**
- * Executes one PDU against one device and returns the response PDU.
- *
- * A write aimed at a cell a signal drives is refused (illegal data address)
- * rather than accepted and undone 50 ms later by the next tick: a master that
- * writes and reads back must never see its own value vanish without a word.
- */
-inline std::vector<uint8_t> execute(Device& d, const uint8_t* pdu, size_t n, Stats& st) {
+/** Executes one PDU against one device and returns the response PDU. */
+inline std::vector<uint8_t> execute(const Device& d, const uint8_t* pdu, size_t n, Stats& st) {
   if (n < 1) return {};
   const uint8_t fn = pdu[0];
 
@@ -102,73 +99,10 @@ inline std::vector<uint8_t> execute(Device& d, const uint8_t* pdu, size_t n, Sta
       return r;
     }
 
-    case kWriteCoil: {
-      if (n < 5) return exception(fn, kIllegalValue);
-      const int addr = be16(pdu + 1);
-      const uint16_t value = be16(pdu + 3);
-      if (value != 0 && value != 0xFF00) return exception(fn, kIllegalValue);
-      if (static_cast<size_t>(addr) >= d.coils.size() || d.coil_is_driven(addr)) {
-        return exception(fn, kIllegalAddress);
-      }
-      d.write_coil(addr, value == 0xFF00);
-      return {pdu, pdu + 5};                      // the specification echoes the request
-    }
-
-    case kWriteRegister: {
-      if (n < 5) return exception(fn, kIllegalValue);
-      const int addr = be16(pdu + 1);
-      if (static_cast<size_t>(addr) >= d.holding.size() || d.holding_is_driven(addr)) {
-        return exception(fn, kIllegalAddress);
-      }
-      d.write_reg(addr, be16(pdu + 3));
-      return {pdu, pdu + 5};
-    }
-
-    case kWriteCoils: {
-      if (n < 6) return exception(fn, kIllegalValue);
-      const int addr = be16(pdu + 1), count = be16(pdu + 3);
-      const size_t nb = pdu[5];
-      if (count < 1 || count > 1968 || nb != static_cast<size_t>((count + 7) / 8) ||
-          n < 6 + nb) {
-        return exception(fn, kIllegalValue);
-      }
-      if (static_cast<size_t>(addr) + static_cast<size_t>(count) > d.coils.size()) {
-        return exception(fn, kIllegalAddress);
-      }
-      for (int i = 0; i < count; ++i) {
-        if (d.coil_is_driven(addr + i)) return exception(fn, kIllegalAddress);
-      }
-      for (int i = 0; i < count; ++i) {
-        d.write_coil(addr + i, (pdu[6 + static_cast<size_t>(i) / 8] >> (i % 8)) & 1);
-      }
-      std::vector<uint8_t> r{fn};
-      push_be16(r, static_cast<uint16_t>(addr));
-      push_be16(r, static_cast<uint16_t>(count));
-      return r;
-    }
-
-    case kWriteRegisters: {
-      if (n < 6) return exception(fn, kIllegalValue);
-      const int addr = be16(pdu + 1), count = be16(pdu + 3);
-      const size_t nb = pdu[5];
-      if (count < 1 || count > 123 || nb != static_cast<size_t>(count) * 2 || n < 6 + nb) {
-        return exception(fn, kIllegalValue);
-      }
-      if (static_cast<size_t>(addr) + static_cast<size_t>(count) > d.holding.size()) {
-        return exception(fn, kIllegalAddress);
-      }
-      for (int i = 0; i < count; ++i) {
-        if (d.holding_is_driven(addr + i)) return exception(fn, kIllegalAddress);
-      }
-      for (int i = 0; i < count; ++i) {
-        d.write_reg(addr + i, be16(pdu + 6 + static_cast<size_t>(i) * 2));
-      }
-      std::vector<uint8_t> r{fn};
-      push_be16(r, static_cast<uint16_t>(addr));
-      push_be16(r, static_cast<uint16_t>(count));
-      return r;
-    }
-
+    // Everything else, writes included: « fonction non gérée par l'équipement ».
+    // Nothing on this bench can be written, so nothing can be written by
+    // mistake — the property is enforced by the absence of code, not by a flag
+    // somebody could flip.
     default:
       (void)st;
       return exception(fn, kIllegalFunction);
@@ -176,11 +110,11 @@ inline std::vector<uint8_t> execute(Device& d, const uint8_t* pdu, size_t n, Sta
 }
 
 /** Same, with the unit identifier resolved against the bench. */
-inline std::vector<uint8_t> execute(Bench& bench, int unit, const uint8_t* pdu, size_t n,
+inline std::vector<uint8_t> execute(const Bench& bench, int unit, const uint8_t* pdu, size_t n,
                                     Stats& st) {
   if (n < 1) return {};
   ++st.requests;
-  Device* d = bench.by_unit(unit);
+  const Device* d = bench.by_unit(unit);
   // No such unit: 0x0B is what a gateway answers for a device that stays
   // silent, and it is the honest answer here too — the alternative, letting
   // another device answer, would publish somebody else's registers.
@@ -196,7 +130,7 @@ inline std::vector<uint8_t> execute(Bench& bench, int unit, const uint8_t* pdu, 
  * because resynchronising a byte stream by guesswork is how a server starts
  * answering the wrong questions.
  */
-inline bool pump(Bench& bench, std::string& in, std::string& out, Stats& st) {
+inline bool pump(const Bench& bench, std::string& in, std::string& out, Stats& st) {
   while (in.size() >= 7) {
     const uint8_t* p = reinterpret_cast<const uint8_t*>(in.data());
     const uint16_t tid = be16(p);
