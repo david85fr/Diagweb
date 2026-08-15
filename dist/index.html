@@ -1085,6 +1085,11 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
 .net-sim { margin: 0 0 4px; padding: 8px 10px; font-size: 12.5px; line-height: 1.45;
   border: 1px solid var(--warn); border-left-width: 4px; border-radius: 6px;
   background: color-mix(in srgb, var(--warn) 12%, transparent); }
+/* Privilège manquant pour la capture : un refus qui se règle en une commande
+   mérite d'être vu tout de suite, pas d'être découvert après l'échec. */
+.cap-priv { color: var(--ink); padding: 8px 10px; line-height: 1.45;
+  border: 1px solid var(--warn); border-left-width: 4px; border-radius: 6px;
+  background: color-mix(in srgb, var(--warn) 12%, transparent); }
 .net-sec { padding: 12px 0; border-top: 1px solid var(--line); }
 .net-sec:first-child { border-top: 0; }
 .net-sec h4 { margin: 0 0 8px; font-size: 12.5px; text-transform: uppercase;
@@ -1171,7 +1176,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     <div class="topIcons">
       <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" aria-label="Figer ou reprendre tout l’onglet" title="Figer d’un coup tout l’onglet actif : les courbes ET les valeurs numériques s’arrêtent sur l’instant courant">⏸</button>
       <button id="stopBtn" class="iconbtn pausebtn" type="button" aria-label="Arrêter ou relancer l’acquisition" title="Arrêter l’acquisition : plus aucun échantillon n’est enregistré et l’horloge se fige. L’historique déjà acquis reste consultable et mesurable.">⏹</button>
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">9705f66 · #155</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">587bbd2 · #?</span>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
@@ -1251,6 +1256,13 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     'liens réseau simulés': 'simulated network links',
     "D'où viennent les données et de quelle nature elles sont : les variables internes du controller peuvent être simulées pendant que les liens réseau acquièrent réellement. État détaillé de chaque lien : ☰ → Liens réseau.":
       'Where the data comes from and what kind it is: the controller internal variables may be simulated while the network links acquire for real. Per-link state: ☰ → Network links.',
+
+    // Capture d'interfaces : privilège manquant. Le motif lui-même vient du
+    // serveur et reste dans sa langue ; l'étiquette qui le porte, elle, se
+    // traduit — c'est elle qui dit d'un coup d'œil que rien ne sera capturé.
+    'Capture impossible en l’état :': 'Capture cannot run as things stand:',
+    'Ouvrir une interface en capture demande la capacité CAP_NET_RAW. Elle manque ici ; le message dit à qui la donner et comment.':
+      'Opening an interface for capture requires the CAP_NET_RAW capability. It is missing here; the message says who needs it and how to grant it.',
   };
 })();
 
@@ -6629,6 +6641,9 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     return {
       simule: true,
       tool: '/usr/bin/tcpdump (simulé)',
+      // Aucun privilège en jeu hors serveur : la simulation ne prétend pas
+      // ouvrir d'interface, elle ne peut donc pas s'en voir refuser une.
+      privilege: '',
       quotaBytes: etat.quotaBytes,
       usedBytes: occupe(),
       message: etat.message,
@@ -7005,6 +7020,15 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       '<h4>Nouvelle capture</h4>' +
       (d.tool ? '' : '<p class="page-vide">tcpdump n’est pas installé sur le contrôleur : ' +
         'la capture est impossible tant qu’il n’y est pas.</p>') +
+      // Le privilège manque plus souvent que l'outil, et son refus est illisible
+      // (« socket : Operation not permitted ») : il se dit AVANT l'essai, avec
+      // la commande qui débloque — sinon on croit s'être trompé d'interface.
+      (d.tool && d.privilege
+        ? '<p class="page-vide cap-priv" title="Ouvrir une interface en capture ' +
+          'demande la capacité CAP_NET_RAW. Elle manque ici ; le message dit à qui ' +
+          'la donner et comment.">' +
+          '<b>Capture impossible en l’état :</b> ' + DW.escapeHtml(d.privilege) + '</p>'
+        : '') +
       '<div class="cap-row">' +
         '<label>Interface<select class="cap-if" title="Interface à capturer. Les ' +
           'interfaces CAN se capturent comme les autres, avec leur propre type de lien.">' +
@@ -10336,7 +10360,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
           S('Pages réseau (☰)') +
           L([
             ['Audit des communications', 'Tout ce que le processus échange avec l’extérieur : les sockets <b>réellement ouvertes</b> (lues dans le noyau), les liens déclarés, les interfaces. Le rapport se copie en texte pour un compte rendu d’audit.'],
-            ['Capture d’interfaces', 'tcpdump sur le contrôleur, format pcap relisible dans Wireshark, interfaces Ethernet et CAN. Quota de disque (100 Mo par défaut), durée maximale, et <b>déclenchement par une variable</b> de diagnostic pour attraper un incident rare. Le quota et le déclencheur sont <b>persistants</b> : ils survivent au redémarrage du contrôleur — c’est parfois la coupure elle-même qu’on cherche à comprendre.'],
+            ['Capture d’interfaces', 'tcpdump sur le contrôleur, format pcap relisible dans Wireshark, interfaces Ethernet et CAN. Quota de disque (100 Mo par défaut), durée maximale, et <b>déclenchement par une variable</b> de diagnostic pour attraper un incident rare. Le quota et le déclencheur sont <b>persistants</b> : ils survivent au redémarrage du contrôleur — c’est parfois la coupure elle-même qu’on cherche à comprendre. Ouvrir une interface demande un <b>privilège</b> (CAP_NET_RAW) : s’il manque, la page le dit avec la commande qui débloque, avant même le premier essai — plutôt qu’un « socket : Operation not permitted » qu’on prendrait pour un défaut de l’interface choisie.'],
             ['Voisinage LLDP', 'Ce qu’annoncent les équipements voisins sur chaque interface : produit, port, adresse d’administration, VLAN. Écoute passive — Diagweb n’émet rien. Un voisin muet disparaît après le délai d’oubli (dix minutes par défaut).'],
             ['Sans serveur', 'Les trois pages fonctionnent aussi hors contrôleur, sur un <b>contrôleur fictif</b> : l’interface se découvre et se règle sans matériel. Un bandeau le dit sur chaque page, et une capture simulée n’offre aucun fichier — il n’y a pas de trames derrière.'],
           ]) +
