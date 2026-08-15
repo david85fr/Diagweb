@@ -22,6 +22,12 @@
 # Rejouable sans risque : idempotent, et jamais bloquant. Un Codespace sans
 # setcap ou sans droit de le faire reste parfaitement utilisable — c'est la
 # seule page capture qui le dira, désormais en clair.
+#
+# SILENCIEUX QUAND IL N'Y A RIEN À FAIRE. Ce script est appelé à chaque
+# démarrage du serveur de diagnostic (tools/share.sh), donc à chaque
+# attachement et à chaque synchronisation automatique : annoncer une capacité
+# déjà posée à chacun de ces passages n'apprendrait plus rien à personne. Il ne
+# parle que lorsqu'il agit, ou lorsqu'il échoue.
 set -uo pipefail
 
 BIN=$(command -v tcpdump 2> /dev/null) || BIN=""
@@ -30,9 +36,9 @@ BIN=$(command -v tcpdump 2> /dev/null) || BIN=""
 SUDO=""
 [ "$(id -u)" -ne 0 ] && SUDO="sudo"
 
-# Déjà en place (image de prebuild, script rejoué) : ne rien réécrire.
+# Déjà en place (image de prebuild, script rejoué) : ne rien réécrire, et ne
+# rien dire — c'est le cas de très loin le plus fréquent.
 if command -v getcap > /dev/null 2>&1 && $SUDO getcap "$BIN" 2> /dev/null | grep -q cap_net_raw; then
-  echo "   capture : cap_net_raw déjà posée sur $BIN"
   exit 0
 fi
 

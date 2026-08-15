@@ -23,10 +23,9 @@ echo "→ Vérification de l'outillage"
 python3 --version
 node --version
 
-# Capacité de capture : posée par on-create.sh, réaffirmée ici parce qu'un
-# conteneur né d'une image de prebuild peut ne pas avoir gardé l'attribut
-# étendu qui la porte. Idempotent, et sans effet si elle est déjà là.
-bash .devcontainer/cap-tcpdump.sh
+# Capacité de capture : posée par on-create.sh à l'installation de tcpdump,
+# puis réaffirmée à chaque démarrage du serveur par tools/share.sh — donc à
+# chaque attachement et à chaque synchronisation. Rien à faire de plus ici.
 
 echo
 echo "→ Vérification de la syntaxe des sources"

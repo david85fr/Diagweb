@@ -208,6 +208,19 @@ liberer_port() {
 }
 
 if [ "$MODE" = "serveur" ]; then
+  # 0. Capacité de capture. Posée ici plutôt qu'à la seule création du
+  #    conteneur, parce que c'est ici qu'elle est REJOUÉE : ce script est
+  #    appelé à chaque attachement (postAttachCommand) et à chaque
+  #    synchronisation automatique (tools/sync.sh). Un Codespace déjà ouvert
+  #    récupère donc la capacité tout seul, sans rien avoir à taper, et un
+  #    conteneur né d'une image de prebuild qui n'aurait pas gardé l'attribut
+  #    étendu la retrouve au démarrage suivant.
+  #
+  #    Silencieux quand elle est déjà là, sans effet ailleurs qu'en conteneur
+  #    de développement — sur le contrôleur, c'est l'unité systemd qui donne
+  #    CAP_NET_RAW au service (docs/PROTOCOLES.md).
+  [ -f .devcontainer/cap-tcpdump.sh ] && bash .devcontainer/cap-tcpdump.sh
+
   # 1. Compilation du serveur de diagnostic si nécessaire
   if [ ! -x build/diagweb-server ]; then
     echo "→ Compilation du serveur de diagnostic"
