@@ -1147,7 +1147,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     <div class="topIcons">
       <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" aria-label="Figer ou reprendre tout l’onglet" title="Figer d’un coup tout l’onglet actif : les courbes ET les valeurs numériques s’arrêtent sur l’instant courant">⏸</button>
       <button id="stopBtn" class="iconbtn pausebtn" type="button" aria-label="Arrêter ou relancer l’acquisition" title="Arrêter l’acquisition : plus aucun échantillon n’est enregistré et l’horloge se fige. L’historique déjà acquis reste consultable et mesurable.">⏹</button>
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">48f9711 · #135</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">36cdda1 · #88</span>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
@@ -1195,7 +1195,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
 </div>
 
 <footer class="statusbar">
-  <span id="srcInfo" title="Source des données et période de rafraîchissement par défaut"></span>
+  <span id="srcInfo" title="D'où viennent les données et de quelle nature elles sont : les variables internes du controller peuvent être simulées pendant que les liens réseau acquièrent réellement. État détaillé de chaque lien : ☰ → Liens réseau."></span>
   <span id="statInfo" title="Nombre de variables actuellement abonnées et nombre d’onglets ouverts"></span>
 </footer>
 
@@ -1215,6 +1215,18 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
   const DW = (window.DW = window.DW || {});
   DW.DICTS = DW.DICTS || {};
   DW.DICTS.en = {
+    // Barre d'état : la nature des données. Assemblée par fragments dans
+    // app.js, parce qu'une phrase portant un nombre ne peut pas être une clé.
+    'Source': 'Source',
+    'défaut': 'default',
+    'Serveur de diagnostic': 'Diagnostic server',
+    'Simulation locale': 'Local simulation',
+    'variables internes du controller simulées':
+      'controller internal variables simulated',
+    'liens réseau réels': 'real network links',
+    'liens réseau simulés': 'simulated network links',
+    "D'où viennent les données et de quelle nature elles sont : les variables internes du controller peuvent être simulées pendant que les liens réseau acquièrent réellement. État détaillé de chaque lien : ☰ → Liens réseau.":
+      'Where the data comes from and what kind it is: the controller internal variables may be simulated while the network links acquire for real. Per-link state: ☰ → Network links.',
   };
 })();
 
@@ -2683,6 +2695,10 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
   DW.sources = DW.sources || {};
   DW.sources.sim = {
     name: 'Simulation locale',
+    // Même contrat que source-ws.js : ici tout est simulé, et le nom le dit
+    // déjà — la barre d'état n'a donc rien à ajouter (voir app.js).
+    controllerSimulated: true,
+    links: null,
     /**
      * Retient l'historique jusqu'à cet instant, au-delà de l'horizon ordinaire.
      * Appelé par l'application quand une tuile est figée : ce qu'on regarde ne
@@ -2857,6 +2873,11 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
         srcName = m.source || srcName;
         api.name = srcName;
         api.defaultPeriodMs = m.defaultPeriodMs || CFG.defaultPeriodMs;
+        // Nature des données, dite par le serveur plutôt que devinée d'un nom :
+        // les variables internes peuvent être simulées pendant que les liens
+        // réseau acquièrent réellement. La barre d'état énonce les deux.
+        api.controllerSimulated = m.controllerSimulated !== false;
+        api.links = m.links || null;
         // Redémarrage du serveur : son horloge (t depuis le démarrage) repart
         // près de zéro. Sans purge, la déduplication (t ≤ dernier t) rejetterait
         // tout échantillon neuf et les courbes gèleraient définitivement. Si
@@ -2959,6 +2980,10 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     const api = {
       name: srcName,
       defaultPeriodMs: CFG.defaultPeriodMs,
+      // Renseignés par « hello » ; par défaut on suppose le pire (simulé),
+      // pour ne jamais annoncer du réel qu'on n'a pas constaté.
+      controllerSimulated: true,
+      links: null,
       onStatus: null,
       now,
       connect,
@@ -10271,7 +10296,33 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     }
     perSel.value = String(CFG.defaultPeriodMs);
 
-    $('srcInfo').textContent = 'Source : ' + DW.source.name + ' · défaut ' + DW.source.defaultPeriodMs + ' ms';
+    // Barre d'état : la NATURE des données, pas seulement leur provenance.
+    //
+    // « Serveur de diagnostic (simulation) » se lisait « tout est simulé », y
+    // compris quand six liens réseau acquéraient réellement — de quoi conclure
+    // à une panne là où tout marchait. Les deux faits sont désormais énoncés
+    // séparément, parce qu'ils sont indépendants : les variables internes du
+    // controller peuvent être fabriquées pendant que les liens sont bien réels.
+    //
+    // Assemblé par fragments passés à DW.t() : une phrase portant un nombre ne
+    // peut pas servir de clé de traduction (i18n.js — la clé est le texte
+    // français exact). Aucun compteur d'état ici, volontairement : il
+    // vieillirait entre deux rafraîchissements alors que la fenêtre « Liens
+    // réseau » l'affiche déjà, vivant.
+    const T = (s) => (DW.t ? DW.t(s) : s);
+    const bouts = [T('Source') + ' : ' + T(DW.source.name)];
+    if (DW.sourceMode === 'ws') {
+      if (DW.source.controllerSimulated) {
+        bouts.push(T('variables internes du controller simulées'));
+      }
+      const liens = DW.source.links;
+      if (liens && liens.count > 0) {
+        bouts.push(liens.simulated ? T('liens réseau simulés')
+                                   : T('liens réseau réels'));
+      }
+    }
+    bouts.push(T('défaut') + ' ' + DW.source.defaultPeriodMs + ' ms');
+    $('srcInfo').textContent = bouts.join(' · ');
     if (DW.source.onStatus === null) DW.source.onStatus = (msg, isErr) => toast(msg, isErr ? 'err' : '');
     if (DW.sourceMode === 'ws') toast('Connecté au serveur de diagnostic.');
     else if (DW.sourceFallbackReason) {
