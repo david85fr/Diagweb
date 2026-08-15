@@ -76,7 +76,11 @@ class SimProtocolDriver : public IProtocolDriver {
     const double t = sink_.now();
     for (size_t i = 0; i < gens_.size(); ++i) {
       if (t < due_[i]) continue;
-      due_[i] = t + link_.points[i].period_ms / 1000.0;
+      // Échéance sur la grille de la période (multiples depuis t = 0) : deux
+      // points de même période tombent au même instant — le journal trié par
+      // horodatage les fusionne alors sur une seule ligne.
+      const double p = link_.points[i].period_ms / 1000.0;
+      due_[i] = (std::floor(t / p) + 1) * p;
       sink_.publish(i, (*gens_[i])(t), 0.0);
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -243,6 +247,7 @@ class ProtocolSource : public IVariableSource {
         period_.push_back(p.period_ms / 1000.0);
         last_t_.push_back(-1e18);
         last_v_.push_back(0);
+        last_ret_.push_back(-1e18);
         // Par défaut on prend l'horodatage de l'équipement quand le protocole
         // en fournit un ; « serveur » l'ignore délibérément.
         source_t_.push_back(p.str("timestamp", "source") != "server");
@@ -266,7 +271,17 @@ class ProtocolSource : public IVariableSource {
       if (t - last_t_[idx] < period_[idx] && value == last_v_[idx]) return;
       last_t_[idx] = t;
       last_v_[idx] = value;
-      src_.push(addrs_[idx], value, horodate(idx, t, t_source));
+      bool source_used = false;
+      double t_ret = horodate(idx, t, t_source, source_used);
+      // Point daté par le serveur : l'échantillon est calé sur la grille de sa
+      // période (multiples depuis le démarrage du serveur). Deux points de même
+      // période portent ainsi le MÊME horodatage, et le journal trié par
+      // horodatage les fusionne en une seule ligne au lieu d'en écrire deux.
+      // Un changement de valeur dans la même période garde son instant réel :
+      // une transition ne doit jamais être antidatée sur la grille.
+      if (!source_used) t_ret = snap_grid(idx, t);
+      if (t_ret > last_ret_[idx]) last_ret_[idx] = t_ret;
+      src_.push(addrs_[idx], value, t_ret, t_source > 0 ? t_source : 0.0);
       ++count_;
       if (count_ % 64 == 1) src_.bump_samples(id_, count_);
     }
@@ -281,7 +296,8 @@ class ProtocolSource : public IVariableSource {
      * heures placerait sinon ses échantillons hors de toute fenêtre visible,
      * ce qui se lit comme une variable morte alors qu'elle remonte très bien.
      */
-    double horodate(size_t idx, double t_serveur, double t_source) {
+    double horodate(size_t idx, double t_serveur, double t_source, bool& source_used) {
+      source_used = false;
       if (t_source <= 0 || !source_t_[idx]) return t_serveur;
       const double ecart = t_source - utc_now();
       if (std::fabs(ecart) > ecart_max_) {
@@ -294,13 +310,29 @@ class ProtocolSource : public IVariableSource {
         }
         return t_serveur;
       }
+      source_used = true;
       return t_serveur + ecart;
+    }
+
+    /**
+     * Cale un horodatage serveur sur le dernier multiple de la période du
+     * point (grille commune à toutes les variables de même période). Si ce
+     * multiple n'est pas postérieur au dernier échantillon du point — valeur
+     * changée dans la même période — l'instant réel est conservé : la grille
+     * cadence les lectures, elle n'antidate jamais une transition.
+     */
+    double snap_grid(size_t idx, double t) {
+      const double p = period_[idx];
+      if (p <= 0) return t;
+      const double g = std::floor(t / p) * p;
+      return g > last_ret_[idx] ? g : t;
     }
 
    private:
     ProtocolSource& src_;
     std::vector<std::string> addrs_;
     std::vector<double> period_, last_t_, last_v_;
+    std::vector<double> last_ret_;    // dernier horodatage retenu, par point
     std::vector<bool> source_t_;      // ce point suit-il l'horloge de l'équipement ?
     std::string id_;
     double ecart_max_ = 10;
@@ -353,14 +385,14 @@ class ProtocolSource : public IVariableSource {
    * en ne remontant que d'une fenêtre bornée. Au-delà, il est trop vieux pour
    * l'historique et on le laisse tomber plutôt que de désordonner le tampon.
    */
-  void push(const std::string& addr, double v, double t) {
+  void push(const std::string& addr, double v, double t, double t_src = 0) {
     std::lock_guard<std::mutex> lock(mu_);
     auto it = chans_.find(addr);
     if (it == chans_.end()) return;
     auto& ch = it->second;
 
     if (ch.buf.empty() || t >= ch.buf.back().t) {
-      ch.buf.push_back({t, v});
+      ch.buf.push_back({t, v, t_src});
     } else {
       size_t recul = 0;
       auto pos = ch.buf.end();
@@ -370,7 +402,7 @@ class ProtocolSource : public IVariableSource {
         if (pos->t <= t) { ++pos; break; }
       }
       if (recul >= 64 && pos->t > t) return;          // hors de portée : ignoré
-      ch.buf.insert(pos, {t, v});
+      ch.buf.insert(pos, {t, v, t_src});
     }
 
     const double min_t = now() - horizon_s_;

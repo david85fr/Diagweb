@@ -120,7 +120,7 @@ class J1939Driver : public CanDriverBase {
 
     for (Demande& d : demandes_) {
       if (t < d.due) continue;
-      d.due = t + d.period_s;
+      d.due = next_poll_due(t, sink_.now(), d.period_s);
       send_request(d.pgn, d.dest);
     }
     return true;

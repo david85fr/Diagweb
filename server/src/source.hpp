@@ -34,8 +34,13 @@ struct Meta {
 };
 
 struct Sample {
-  double t = 0;   // secondes depuis le démarrage du serveur
+  double t = 0;      // secondes depuis le démarrage du serveur
   double v = 0;
+  // Horodatage produit par l'ÉQUIPEMENT (secondes UTC depuis l'époque Unix),
+  // 0 = aucun. Conservé TEL QUEL, même quand `t` retombe sur l'horloge du
+  // serveur (écart d'horloge trop grand) : le journal doit pouvoir montrer
+  // les deux dates, celle retenue et celle que l'équipement affirme.
+  double t_src = 0;
 };
 
 /** Résultat d'analyse d'une adresse saisie par l'opérateur. */

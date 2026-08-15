@@ -114,7 +114,8 @@ const start = await api('/api/datalog/start', {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
     name: NAME,
-    addrs: [{ addr: 'MB414', periodMs: 50 }, { addr: 'Regulation.mesure.vitesse', periodMs: 100 }],
+    addrs: [{ addr: 'MB414', periodMs: 50, name: 'Mot 414' },
+            { addr: 'Regulation.mesure.vitesse', periodMs: 100 }],
   }),
 });
 check('démarrage d’une campagne de journalisation serveur',
@@ -129,14 +130,34 @@ check('la campagne enregistre sans navigateur connecté',
   camp && camp.samples > 5 && camp.vars === 2,
   camp ? camp.samples + ' échantillons, ' + camp.vars + ' variables' : 'campagne absente');
 
+// Tri par horodatage (défaut) : une ligne par instant, une colonne par
+// variable « adresse — nom ».
 const csv = await api('/api/datalog/file?name=' + encodeURIComponent(NAME));
 const lines = (csv.text || '').trim().split(/\r?\n/);
-check('téléchargement du CSV enregistré (entête + lignes)',
-  csv.status === 200 && lines[0] === 'horodatage_iso;t_s;adresse;valeur' && lines.length > 5,
-  lines.length + ' lignes');
-check('les lignes du CSV portent les bonnes variables',
-  lines.slice(1).some((l) => l.includes(';MB414;')) &&
-  lines.slice(1).some((l) => l.includes(';Regulation.mesure.vitesse;')));
+check('CSV trié par horodatage : entête large, adresse et nom en colonne',
+  csv.status === 200 && lines[0].startsWith('horodatage_iso;t_s;') &&
+  lines[0].includes('MB414 — Mot 414') &&
+  lines[0].includes('Regulation.mesure.vitesse') && lines.length > 5,
+  lines[0]);
+// Les deux périodes (50 et 100 ms) sont calées sur la même grille : aux
+// multiples communs, la ligne doit porter LES DEUX valeurs — c'est tout
+// l'objet du calage (sinon deux lignes en quinconce).
+const fusionnees = lines.slice(1).filter((l) => {
+  const c = l.split(';');
+  return c.length >= 4 && c[2] !== '' && c[3] !== '';
+});
+check('variables de même grille fusionnées sur une seule ligne',
+  fusionnees.length > 0, fusionnees.length + ' ligne(s) à deux valeurs');
+
+// Tri par variable : une ligne par échantillon, groupées par variable.
+const csvVar = await api('/api/datalog/file?name=' + encodeURIComponent(NAME) + '&sort=var');
+const linesVar = (csvVar.text || '').trim().split(/\r?\n/);
+check('CSV trié par variable : une ligne par échantillon, deux horodatages',
+  csvVar.status === 200 &&
+  linesVar[0] === 'adresse;nom;horodatage_iso;horodatage_source_iso;t_s;valeur' &&
+  linesVar.slice(1).some((l) => l.startsWith('MB414;Mot 414;')) &&
+  linesVar.slice(1).some((l) => l.startsWith('Regulation.mesure.vitesse;')),
+  linesVar[0]);
 
 const stop = await api('/api/datalog/stop', {
   method: 'POST', headers: { 'Content-Type': 'application/json' },

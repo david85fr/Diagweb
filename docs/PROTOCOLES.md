@@ -717,7 +717,24 @@ il est donc rangé à sa place, en ne remontant que d'une fenêtre bornée
 
 **Journalisation.** Le journal autonome écrit l'horodatage retenu, source
 comprise : c'est le sens de tout ce mécanisme — une campagne enregistrée porte
-l'heure des événements, pas celle de leur transmission.
+l'heure des événements, pas celle de leur transmission. Quand l'équipement a
+fourni une date, elle est **aussi** conservée telle quelle (colonne
+`horodatage_source_iso`) : le fichier téléchargé montre les deux, celle
+retenue pour la chronologie et celle que l'équipement affirme — y compris
+quand le garde-fou l'a écartée.
+
+**Grille des périodes.** Les échantillons **sans** date d'équipement — points
+réglés « du serveur », protocoles qui n'en transportent pas — sont calés sur
+la **grille de la période du point** : les multiples de la période dans
+l'horloge du serveur, donc des secondes entières dès que la période divise la
+seconde. Les interrogations elles-mêmes sont cadencées sur cette grille
+(échéance `next_poll_due`), et l'horodatage publié est l'instant de grille —
+jamais antidaté au-delà d'une transition déjà publiée. Deux points de même
+période portent ainsi le **même** horodatage, et le journal téléchargé trié
+par horodatage les range sur **une seule ligne** au lieu de deux en
+quinconce. Les variables internes du contrôleur suivent la même règle. Un
+échantillon daté par l'équipement, lui, garde sa date : un événement n'a pas
+à tomber juste.
 
 ## Robustesse
 

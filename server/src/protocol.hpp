@@ -60,6 +60,24 @@ inline double utc_now() {
              std::chrono::system_clock::now().time_since_epoch()).count()) / 1e6;
 }
 
+/**
+ * Prochaine échéance de polling, calée sur la GRILLE de la période : les
+ * multiples de `period_s` dans l'horloge de la source (secondes depuis le
+ * démarrage du serveur — donc des secondes entières quand la période divise
+ * la seconde). Toutes les variables interrogées à la même période tombent
+ * ainsi au même instant, et le journal trié par horodatage les range sur une
+ * seule ligne au lieu de deux.
+ *
+ * Les pilotes cadencent souvent sur leur propre horloge (net::mono_s()) :
+ * `t_pilote` est l'instant courant dans cette horloge-là, `t_source` le même
+ * instant lu sur la source (sink.now()), et l'échéance rendue est exprimée
+ * dans l'horloge du pilote.
+ */
+inline double next_poll_due(double t_pilote, double t_source, double period_s) {
+  if (period_s <= 0) return t_pilote;
+  return t_pilote + ((std::floor(t_source / period_s) + 1.0) * period_s - t_source);
+}
+
 /** Où un pilote dépose ses valeurs (une entrée par point du lien). */
 class IPointSink {
  public:

@@ -89,7 +89,7 @@ class CanOpenDriver : public CanDriverBase {
     pending_ = 0;
     for (size_t i = 0; i < link_.points.size(); ++i) {
       if (!keys_[i].sdo || t < due_[i]) continue;
-      due_[i] = t + link_.points[i].period_ms / 1000.0;
+      due_[i] = next_poll_due(t, sink_.now(), link_.points[i].period_ms / 1000.0);
       uint8_t d[8] = {0x40,                            // « initiate upload »
                       static_cast<uint8_t>(keys_[i].index & 0xFF),
                       static_cast<uint8_t>((keys_[i].index >> 8) & 0xFF),

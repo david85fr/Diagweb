@@ -55,7 +55,10 @@
       if (holdT != null) minT = Math.min(minT, Math.max(holdT, now() - CFG.holdMaxS));
       let cut = 0;
       while (cut < ch.ts.length && ch.ts[cut] < minT) cut++;
-      if (cut > 400) { ch.ts.splice(0, cut); ch.vs.splice(0, cut); }
+      if (cut > 400) {
+        ch.ts.splice(0, cut); ch.vs.splice(0, cut);
+        if (ch.tss) ch.tss.splice(0, cut);
+      }
     }
 
     // Instant retenu par une vue figée : l'historique qu'elle montre survit à
@@ -93,7 +96,10 @@
         let maxT = -Infinity;
         for (const ch of chans.values()) if (ch.ts.length) maxT = Math.max(maxT, ch.ts[ch.ts.length - 1]);
         if (isFinite(maxT) && m.now < maxT - 1) {
-          for (const ch of chans.values()) { ch.ts.length = 0; ch.vs.length = 0; }
+          for (const ch of chans.values()) {
+            ch.ts.length = 0; ch.vs.length = 0;
+            if (ch.tss) ch.tss.length = 0;
+          }
           setStatus('Serveur redémarré — historique réinitialisé.');
         }
         // Origine de la capture = le plus ancien échantillon encore détenu, à
@@ -145,9 +151,15 @@
         for (const addr in m.s) {
           const ch = chans.get(addr);
           if (!ch) continue;
-          for (const [t, v] of m.s[addr]) {
+          for (const s of m.s[addr]) {
+            const t = s[0];
             if (ch.ts.length && t <= ch.ts[ch.ts.length - 1]) continue;
-            ch.ts.push(t); ch.vs.push(v);
+            // 3ᵉ élément facultatif : horodatage de l'équipement (secondes
+            // UTC). Le tableau tss n'existe qu'à partir du premier reçu.
+            const tsrc = s[2] || 0;
+            if (tsrc && !ch.tss) ch.tss = new Array(ch.ts.length).fill(0);
+            ch.ts.push(t); ch.vs.push(s[1]);
+            if (ch.tss) ch.tss.push(tsrc);
           }
           trim(ch);
         }
@@ -245,7 +257,10 @@
       start() {
         enMarche = true;
         captureT0 = brut();
-        for (const ch of chans.values()) { ch.ts.length = 0; ch.vs.length = 0; }
+        for (const ch of chans.values()) {
+          ch.ts.length = 0; ch.vs.length = 0;
+          if (ch.tss) ch.tss.length = 0;
+        }
       },
 
       /** Voir sim.js : retient l'historique d'une vue figée au-delà de l'horizon. */
@@ -270,7 +285,10 @@
 
       data(addr) {
         const ch = chans.get(addr);
-        return ch ? { ts: ch.ts, vs: ch.vs } : { ts: [], vs: [] };
+        // tss : horodatages source (secondes UTC), présent dès qu'un point en
+        // a reçu un — même contrat que sim.js.
+        return ch ? { ts: ch.ts, vs: ch.vs, tss: ch.tss || null }
+                  : { ts: [], vs: [], tss: null };
       },
 
       meta(addr) {

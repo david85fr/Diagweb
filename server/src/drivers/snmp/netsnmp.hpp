@@ -125,7 +125,7 @@ class NetSnmpDriver : public IProtocolDriver {
         std::clamp<double>(link_.num("maxVars", 16), 1, 32));
     for (size_t i = 0; i < points_.size() && lot.size() < max_vars; ++i) {
       if (!points_[i].valide || t < points_[i].due) continue;
-      points_[i].due = t + points_[i].period_s;
+      points_[i].due = next_poll_due(t, sink_.now(), points_[i].period_s);
       lot.push_back(i);
     }
     if (lot.empty()) { net::sleep_ms(5); return true; }

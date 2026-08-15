@@ -133,6 +133,33 @@ const logTxt = await p1.locator('#logStatus').textContent();
 check('journal en cours d\'enregistrement', /En cours/.test(logTxt), logTxt.slice(0, 48));
 await p1.click('.m-close');
 
+// Export du journal : le tri par horodatage écrit UNE ligne par instant (les
+// variables de même période, calées sur la même grille, la partagent) ; le
+// tri par variable groupe les échantillons ; chaque variable porte son
+// adresse ET son nom, et un point horodaté source montre ses deux dates.
+const exportCsv = await p1.evaluate(() => {
+  const rows = [[1, 'M1.1', 0], [1, 'MB414', 5],
+                [2, 'M1.1', 1, 1755250000.5], [2, 'MB414', 6]];
+  const names = { 'M1.1': 'Marche', 'MB414': 'Consigne' };
+  return {
+    time: window.DW.store.logCsv(rows, { sort: 'time', names }),
+    par: window.DW.store.logCsv(rows, { sort: 'var', names }),
+  };
+});
+const lgT = exportCsv.time.trim().split('\r\n');
+const lgV = exportCsv.par.trim().split('\r\n');
+check('journal CSV trié par horodatage : instants fusionnés, adresse — nom, date source',
+  lgT.length === 3 && lgT[0].includes('M1.1 — Marche') &&
+  lgT[0].includes('MB414 — Consigne') && lgT[0].includes('(horodatage source)') &&
+  lgT[1].split(';').length === lgT[0].split(';').length,
+  lgT[0]);
+check('journal CSV trié par variable : échantillons groupés, deux horodatages',
+  lgV.length === 5 &&
+  lgV[0] === 'adresse;nom;horodatage_iso;horodatage_source_iso;t_s;valeur' &&
+  lgV[1].startsWith('M1.1;Marche;') && lgV[3].startsWith('MB414;Consigne;') &&
+  lgV[2].includes(new Date(1755250000.5 * 1000).toISOString()),
+  lgV[0]);
+
 // Menu d'une pastille de légende + bascule ouvrir/fermer
 const chip = p1.locator(PANE + '.chart-card').first().locator('.chip').first();
 await chip.click();

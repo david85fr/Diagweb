@@ -196,14 +196,72 @@
       }
       return L.join('\r\n') + '\r\n';
     },
-    /** CSV d'un journal de données [t, addr, v]. */
-    logCsv(rows) {
+    /**
+     * CSV d'un journal de données.
+     * `rows`  : [t, addr, v, tsrc?] — tsrc en secondes UTC (horodatage de
+     *           l'équipement), absent ou 0 quand la variable n'en a pas.
+     * `opts`  : { sort, names } —
+     *   sort 'time' (défaut) : trié par horodatage, une ligne par INSTANT et
+     *     une colonne « adresse — nom » par variable (plus une colonne
+     *     « (horodatage source) » pour les points qui en portent un). Les
+     *     variables de même période, échantillonnées sur la même grille,
+     *     partagent ainsi leurs lignes ;
+     *   sort 'var' : une ligne par échantillon, groupées par variable puis en
+     *     ordre chronologique, avec les deux horodatages en colonnes.
+     */
+    logCsv(rows, opts) {
       const F = this.csvField;
+      const names = (opts && opts.names) || {};
       const wall0 = Date.now() - (DW.source ? DW.source.now() * 1000 : 0);
-      const L = ['horodatage_iso;t_s;adresse;valeur'];
+      const iso = (t) => new Date(wall0 + t * 1000).toISOString();
+      const isoSrc = (ts) => (ts > 0 ? new Date(ts * 1000).toISOString() : '');
+
+      if (opts && opts.sort === 'var') {
+        const sorted = rows.slice().sort((a, b) =>
+          a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : a[0] - b[0]);
+        const L = ['adresse;nom;horodatage_iso;horodatage_source_iso;t_s;valeur'];
+        for (const r of sorted) {
+          L.push(F(r[1]) + ';' + F(names[r[1]] || '') + ';' + iso(r[0]) + ';' +
+            isoSrc(r[3] || 0) + ';' + r[0].toFixed(3) + ';' + r[2]);
+        }
+        return L.join('\r\n') + '\r\n';
+      }
+
+      // Tri par horodatage : pivot « une ligne par instant », colonnes par
+      // adresse croissante.
+      const cols = new Map();   // addr -> { name, hasSrc, idx }
       for (const r of rows) {
-        L.push(new Date(wall0 + r[0] * 1000).toISOString() + ';' +
-          r[0].toFixed(3) + ';' + F(r[1]) + ';' + r[2]);
+        let c = cols.get(r[1]);
+        if (!c) { c = { name: names[r[1]] || '', hasSrc: false, idx: 0 }; cols.set(r[1], c); }
+        if (r[3] > 0) c.hasSrc = true;
+      }
+      const addrs = [...cols.keys()].sort();
+      let ncell = 0;
+      for (const a of addrs) {
+        const c = cols.get(a);
+        c.idx = ncell;
+        ncell += c.hasSrc ? 2 : 1;
+      }
+      const byT = new Map();    // t -> cellules de la ligne
+      const instants = [];
+      for (const r of rows) {
+        let cells = byT.get(r[0]);
+        if (!cells) { cells = new Array(ncell).fill(''); byT.set(r[0], cells); instants.push(r[0]); }
+        const c = cols.get(r[1]);
+        cells[c.idx] = String(r[2]);
+        if (c.hasSrc) cells[c.idx + 1] = isoSrc(r[3] || 0);
+      }
+      instants.sort((a, b) => a - b);
+      let head = 'horodatage_iso;t_s';
+      for (const a of addrs) {
+        const c = cols.get(a);
+        const label = c.name ? a + ' — ' + c.name : a;
+        head += ';' + F(label);
+        if (c.hasSrc) head += ';' + F(label + ' (horodatage source)');
+      }
+      const L = [head];
+      for (const t of instants) {
+        L.push(iso(t) + ';' + t.toFixed(3) + ';' + byT.get(t).join(';'));
       }
       return L.join('\r\n') + '\r\n';
     },

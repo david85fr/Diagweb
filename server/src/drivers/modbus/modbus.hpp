@@ -50,10 +50,11 @@ class ModbusDriver : public IProtocolDriver {
   bool service(std::string& err) override {
     if (fd_ < 0) { err = "lien fermé"; return false; }
     const double t = net::mono_s();
+    const double ts = sink_.now();
     bool worked = false;
     for (auto& r : reqs_) {
       if (t < r.due || t < r.retry_at) continue;
-      r.due = t + r.period_s;
+      r.due = next_poll_due(t, ts, r.period_s);
       worked = true;
       // Une adresse refusée par l'équipement ne concerne que sa requête :
       // le lien reste ouvert et les autres points continuent d'être lus.

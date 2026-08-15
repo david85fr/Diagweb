@@ -150,7 +150,7 @@ class OpcUaDriver : public IProtocolDriver {
     for (size_t i = 0; i < points_.size(); ++i) {
       Point& p = points_[i];
       if (!p.resolu || t < p.due) continue;
-      p.due = t + p.period_s;
+      p.due = next_poll_due(t, sink_.now(), p.period_s);
       travail = true;
       UA_Variant v;
       UA_Variant_init(&v);

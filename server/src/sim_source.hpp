@@ -196,7 +196,11 @@ class SimSource : public IVariableSource {
     auto it = chans_.find(p.addr);
     if (it != chans_.end()) {
       ++it->second.refs;
-      it->second.period_s = std::min(it->second.period_s, period_s);
+      if (period_s < it->second.period_s) {
+        // Période resserrée : repartir sur la grille de la nouvelle période.
+        it->second.period_s = period_s;
+        it->second.next_k = static_cast<long long>(std::floor(now() / period_s)) + 1;
+      }
       return &it->second.meta;
     }
 
@@ -220,12 +224,20 @@ class SimSource : public IVariableSource {
       ch.gen = std::make_unique<Generator>(default_spec(p.kind, p.addr), p.kind, p.addr);
     }
 
-    // Pré-remplissage de l'historique : les courbes sont pleines dès l'ajout
+    // Pré-remplissage de l'historique : les courbes sont pleines dès l'ajout.
+    // Les instants sont les multiples ENTIERS de la période (t = k·période) :
+    // toutes les variables de même période échantillonnent aux mêmes instants
+    // — et, quand la période divise la seconde, sur des secondes entières.
+    // Sans ce calage, deux variables de même période écrivaient leurs lignes
+    // en quinconce dans le journal trié par horodatage.
     const double t_now = now();
-    for (double t = t_now - horizon_s_; t <= t_now; t += ch.period_s) {
+    long long k = static_cast<long long>(std::ceil((t_now - horizon_s_) / ch.period_s - 1e-9));
+    const long long k_end = static_cast<long long>(std::floor(t_now / ch.period_s + 1e-9));
+    for (; k <= k_end; ++k) {
+      const double t = static_cast<double>(k) * ch.period_s;
       push(ch, t, (*ch.gen)(t));
     }
-    ch.next_t = t_now + ch.period_s;
+    ch.next_k = k_end + 1;
 
     auto [ins, ok] = chans_.emplace(p.addr, std::move(ch));
     return &ins->second.meta;
@@ -271,12 +283,16 @@ class SimSource : public IVariableSource {
     std::lock_guard<std::mutex> lock(mu_);
     const double t = now();
     for (auto& [addr, ch] : chans_) {
-      if (t - ch.next_t > 2.0) ch.next_t = t;   // rattrapage borné
+      if (t - static_cast<double>(ch.next_k) * ch.period_s > 2.0) {
+        // Rattrapage borné (processus suspendu) — en restant sur la grille.
+        ch.next_k = static_cast<long long>(std::ceil(t / ch.period_s));
+      }
       const auto fit = forced_.find(addr);
       const bool held = fit != forced_.end();
-      while (ch.next_t <= t) {
-        push(ch, ch.next_t, held ? fit->second : (*ch.gen)(ch.next_t));
-        ch.next_t += ch.period_s;
+      while (static_cast<double>(ch.next_k) * ch.period_s <= t) {
+        const double tk = static_cast<double>(ch.next_k) * ch.period_s;
+        push(ch, tk, held ? fit->second : (*ch.gen)(tk));
+        ++ch.next_k;
       }
     }
   }
@@ -310,7 +326,7 @@ class SimSource : public IVariableSource {
     std::unique_ptr<Generator> gen;
     std::deque<Sample> buf;
     double period_s = 0.01;
-    double next_t = 0;
+    long long next_k = 0;   // prochain échantillon : t = next_k · period_s
     int refs = 0;
   };
 

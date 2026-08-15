@@ -157,7 +157,9 @@
       log: {
         // dest 'browser' : accumulation en mémoire de la page ;
         // dest 'server'  : journalisation autonome côté serveur (page fermée OK).
-        enabled: false, dest: 'browser',
+        // sort : tri du fichier téléchargé — 'time' (une ligne par instant)
+        // ou 'var' (échantillons groupés par variable).
+        enabled: false, dest: 'browser', sort: 'time',
         rows: [], lastT: {}, enableT: 0, truncated: false,
       },
     };
@@ -167,6 +169,7 @@
     if (logOpts) {
       // 'controller' est l'ancien nom de la journalisation côté serveur.
       tab.log.dest = (logOpts.dest === 'server' || logOpts.dest === 'controller') ? 'server' : 'browser';
+      tab.log.sort = logOpts.sort === 'var' ? 'var' : 'time';
       if (logOpts.enabled) startLogging(tab);
     }
     rebuildTabbar();
@@ -1325,7 +1328,7 @@
       active: Math.max(0, state.tabs.indexOf(state.active)),
       tabs: state.tabs.map((tab) => ({
         name: tab.name,
-        log: { enabled: tab.log.enabled, dest: tab.log.dest },
+        log: { enabled: tab.log.enabled, dest: tab.log.dest, sort: tab.log.sort },
         data: serializeConfig(tab),
       })),
     };
@@ -1446,6 +1449,22 @@
     return set;
   }
 
+  /**
+   * Nom d'affichage d'une variable pour le journal : le nom donné par
+   * l'opérateur (tableaux puis courbes), sinon le libellé du catalogue.
+   * Le fichier téléchargé porte l'adresse ET ce nom.
+   */
+  function tabVarName(tab, addr) {
+    for (const tbl of tab.tables) {
+      for (const e of tbl.entries) if (e.addr === addr && e.name) return e.name;
+    }
+    for (const c of tab.charts) {
+      for (const s of c.series) if (s.addr === addr && s.name) return s.name;
+    }
+    const m = DW.source.meta(addr);
+    return (m && m.label) || '';
+  }
+
   /** Journalisation navigateur ou serveur, selon la destination de l'onglet. */
   function startLogging(tab) {
     if (tab.log.dest === 'server') return startServerLog(tab);
@@ -1479,7 +1498,8 @@
       for (const c of tab.charts) for (const s of c.series) if (s.addr === addr && s.periodMs) {
         periodMs = periodMs ? Math.min(periodMs, s.periodMs) : s.periodMs;
       }
-      return { addr, periodMs: periodMs || CFG.defaultPeriodMs };
+      // Le nom d'affichage part avec l'adresse : le CSV du serveur porte les deux.
+      return { addr, periodMs: periodMs || CFG.defaultPeriodMs, name: tabVarName(tab, addr) };
     });
     if (!addrs.length) { toast('Aucune variable à journaliser dans cet onglet.', 'err'); return; }
     fetch('/api/datalog/start', {
@@ -1534,7 +1554,9 @@
         const from = (addr in lg.lastT) ? lg.lastT[addr] : lg.enableT;
         const i0 = lowerBound(d.ts, from);
         for (let i = i0; i < d.ts.length; i++) {
-          lg.rows.push([d.ts[i], addr, d.vs[i]]);
+          // 4ᵉ élément : horodatage source (secondes UTC), quand le point en a.
+          lg.rows.push(d.tss && d.tss[i] ? [d.ts[i], addr, d.vs[i], d.tss[i]]
+                                         : [d.ts[i], addr, d.vs[i]]);
         }
         if (i0 < d.ts.length) lg.lastT[addr] = d.ts[d.ts.length - 1];
       }
@@ -1565,6 +1587,13 @@
           '<input type="radio" name="logdest" value="server"' + (available ? '' : ' disabled') +
           ' title="Journaliser côté serveur (autonome)"> Serveur (autonome, sur disque)' +
           '<span class="opt-note" id="logServerNote"></span></label>' +
+        '</div>' +
+        '<div class="log-opts" role="radiogroup" aria-label="Tri du fichier téléchargé">' +
+          '<span title="Ordre des lignes du CSV téléchargé — chaque variable y porte son adresse et son nom">Tri du fichier :</span>' +
+          '<label title="Une ligne par instant, une colonne par variable : les variables de même période partagent leurs lignes">' +
+          '<input type="radio" name="logsort" value="time" title="Trier le fichier par horodatage"> Par horodatage</label>' +
+          '<label title="Une ligne par échantillon : les échantillons de chaque variable se suivent, en ordre chronologique">' +
+          '<input type="radio" name="logsort" value="var" title="Trier le fichier par variable"> Par variable</label>' +
         '</div>' +
         '<div class="log-status" id="logStatus" ' +
           'title="État du journal : échantillons, variables suivies, taille">—</div>' +
@@ -1598,6 +1627,13 @@
         refresh();
       });
     }
+    for (const r of back.querySelectorAll('input[name="logsort"]')) {
+      r.checked = r.value === (lg.sort === 'var' ? 'var' : 'time');
+      r.addEventListener('change', () => {
+        lg.sort = r.value === 'var' ? 'var' : 'time';
+        onChange();
+      });
+    }
 
     // --- Rendu des actions selon la destination ----------------------
     function actBtn(id, label, cls, title) {
@@ -1617,22 +1653,26 @@
         setTimeout(refresh, 150);
       });
       if (lg.dest === 'server') {
-        actBtn('logDl', 'Télécharger CSV', '', 'Télécharger le journal enregistré par le serveur')
+        actBtn('logDl', 'Télécharger CSV', '', 'Télécharger le journal enregistré par le serveur, dans l’ordre choisi')
           .addEventListener('click', () => {
-            window.open('/api/datalog/file?name=' + encodeURIComponent(tab.name), '_blank');
+            window.open('/api/datalog/file?name=' + encodeURIComponent(tab.name) +
+              '&sort=' + (lg.sort === 'var' ? 'var' : 'time'), '_blank');
           });
         noteEl.textContent = 'La journalisation serveur écrit sur le disque du contrôleur et ' +
           'continue même si vous fermez ou rechargez cette page. Le CSV se télécharge à tout moment.';
       } else {
-        actBtn('logDlCsv', 'Télécharger CSV', '', 'Télécharger le journal en CSV (horodatage, adresse, valeur)')
+        actBtn('logDlCsv', 'Télécharger CSV', '', 'Télécharger le journal en CSV (horodatages, adresse, nom, valeur), dans l’ordre choisi')
           .addEventListener('click', () => {
             if (!lg.rows.length) { toast('Journal vide.', 'err'); return; }
-            DW.store.download('journal_' + tab.name, DW.store.logCsv(lg.rows), 'csv', 'text/csv');
+            DW.store.download('journal_' + tab.name,
+              DW.store.logCsv(lg.rows, { sort: lg.sort, names: logNames(tab, lg) }),
+              'csv', 'text/csv');
           });
-        actBtn('logDlJson', 'Télécharger JSON', '', 'Télécharger le journal en JSON')
+        actBtn('logDlJson', 'Télécharger JSON', '', 'Télécharger le journal en JSON (horodatages, adresses, noms, valeurs)')
           .addEventListener('click', () => {
             if (!lg.rows.length) { toast('Journal vide.', 'err'); return; }
-            const payload = JSON.stringify({ app: 'diagweb-journal', version: 1, tab: tab.name, rows: lg.rows });
+            const payload = JSON.stringify({ app: 'diagweb-journal', version: 2, tab: tab.name,
+              names: logNames(tab, lg), rows: lg.rows });
             DW.store.download('journal_' + tab.name, payload, 'json', 'application/json');
           });
         actBtn('logClear', 'Vider', '', 'Effacer les échantillons déjà enregistrés en mémoire')
@@ -1680,6 +1720,22 @@
     renderActions();
     refresh();
     statusTimer = setInterval(refresh, 1000);
+  }
+
+  /**
+   * Noms d'affichage pour l'export du journal : chaque adresse rencontrée
+   * dans les lignes (une variable retirée de l'onglet peut y figurer encore),
+   * plus celles suivies en ce moment.
+   */
+  function logNames(tab, lg) {
+    const names = {};
+    for (const r of lg.rows) {
+      if (!(r[1] in names)) names[r[1]] = tabVarName(tab, r[1]);
+    }
+    for (const addr of tabAddrs(tab)) {
+      if (!(addr in names)) names[addr] = tabVarName(tab, addr);
+    }
+    return names;
   }
 
   /** Nom de campagne serveur : mêmes règles d'assainissement que le serveur. */
@@ -2514,6 +2570,13 @@
             ['Arrêter l’acquisition', '<b>⏹</b> dans la barre du haut arrête l’<b>acquisition</b> — à ne pas confondre avec <b>⏸ Figer</b>, qui n’arrête que l’affichage. Plus aucun échantillon n’est enregistré et l’horloge de la source se fige ; l’historique déjà acquis reste consultable et mesurable. Le bouton devient <b>⏺</b> : il ouvre alors une <b>capture neuve</b>, dont l’origine des temps repart de zéro — l’historique précédent est effacé. La barre d’état affiche la durée de la capture en cours.'],
             ['Curseur de mesure', 'L’encart près du curseur donne le temps <b>depuis le début de la capture</b> (« t = 5 min 08 s ») : un relevé se note et se compare, là où « il y a 12 s » change de sens à chaque seconde. L’âge par rapport au temps réel suit entre parenthèses quand la vue est figée.'],
             ['Barre du haut', 'Elle ne porte que ce qui sert à chaque instant : les onglets, la saisie d’une variable avec sa destination, et <b>⏸ Figer</b>, qui arrête d’un coup tous les graphiques de l’onglet actif. Elle <b>s’escamote quand on descend</b> dans la page et revient dès qu’on remonte : la place gagnée va aux courbes. <b>Journal de données</b> et <b>Configurations</b> sont dans le menu ☰, avec les autres fonctions qui ne dépendent pas de ce qui est affiché.'],
+          ]) +
+          S('Journal de données (☰)') +
+          L([
+            ['Destination', '<b>Navigateur</b> : le journal s’accumule en mémoire de la page (100 000 lignes au plus) — à télécharger avant de la fermer. <b>Serveur</b> : le serveur de diagnostic enregistre sur son disque et continue page fermée ; le CSV se télécharge à tout moment.'],
+            ['Tri du fichier', '<b>Par horodatage</b> (défaut) : une ligne par instant, une colonne par variable — les variables de même période, échantillonnées aux mêmes instants, partagent leurs lignes. <b>Par variable</b> : une ligne par échantillon, les échantillons de chaque variable à la suite, en ordre chronologique.'],
+            ['Colonnes', 'Chaque variable est identifiée par son <b>adresse et son nom</b> (le nom d’affichage, sinon le libellé du catalogue). Quand un point porte un horodatage de l’équipement, le fichier montre <b>les deux dates</b> : celle retenue pour la chronologie et celle que l’équipement affirme.'],
+            ['Secondes entières', 'Les variables sans horodatage à la source sont échantillonnées sur la <b>grille de leur période</b> — des secondes entières quand la période divise la seconde. Deux variables de même période tombent ainsi sur la <b>même ligne</b> du fichier trié par horodatage, au lieu de s’écrire en quinconce.'],
           ]) +
           S('Pages réseau (☰)') +
           L([

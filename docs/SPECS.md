@@ -495,14 +495,31 @@ configuration à la racine) est acceptée et convertie en un onglet.
     Artifact) : l'option est alors désactivée.
 - État affiché : en cours/arrêt, nb d'échantillons, nb de variables ; taille
   du fichier (serveur) ou durée couverte et taille CSV estimée (navigateur).
-  Actions navigateur : démarrer/arrêter, télécharger **CSV**
-  (`horodatage_iso;t_s;adresse;valeur`) ou **JSON**
-  (`{app:'diagweb-journal', version, tab, rows:[[t,addr,v]…]}`), vider.
+  Actions navigateur : démarrer/arrêter, télécharger **CSV** ou **JSON**
+  (`{app:'diagweb-journal', version:2, tab, names:{addr:nom},
+  rows:[[t,addr,v,tsrc?]…]}`), vider.
   Actions serveur : démarrer/arrêter, télécharger le CSV.
+- **Tri du fichier téléchargé**, au choix dans la fenêtre du journal (mémorisé
+  par onglet), identique pour les deux destinations :
+  - **par horodatage** (défaut) : **une ligne par instant**, une colonne
+    « adresse — nom » par variable, suivie d'une colonne « (horodatage
+    source) » pour les points qui portent la date de l'équipement. Les
+    variables de même période, échantillonnées sur la **grille de leur
+    période** (multiples de la période — secondes entières quand elle divise
+    la seconde), partagent leurs lignes au lieu de s'écrire en quinconce ;
+  - **par variable** : une ligne par échantillon
+    (`adresse;nom;horodatage_iso;horodatage_source_iso;t_s;valeur`), les
+    échantillons de chaque variable à la suite, en ordre chronologique.
+- Chaque variable du fichier porte son **adresse et son nom** (nom
+  d'affichage, sinon libellé du catalogue) ; un point horodaté par
+  l'équipement montre **les deux dates** (retenue et affirmée par
+  l'équipement).
 - REST (serveur) : `GET /api/datalog` (état des campagnes), `POST
-  /api/datalog/start` (`{name, addrs:[{addr,periodMs}]}`), `POST
-  /api/datalog/stop` (`{name}`), `GET /api/datalog/file?name=` (CSV). Le nom
-  de campagne est celui de l'onglet (assaini : `/ \ . :` remplacés).
+  /api/datalog/start` (`{name, addrs:[{addr,periodMs,name}]}`), `POST
+  /api/datalog/stop` (`{name}`), `GET /api/datalog/file?name=&sort=time|var`
+  (CSV transformé au téléchargement ; le fichier brut sur disque garde une
+  ligne par échantillon, dans l'ordre d'arrivée). Le nom de campagne est
+  celui de l'onglet (assaini : `/ \ . :` remplacés).
 - L'activation et la destination sont mémorisées dans la session (la
   journalisation navigateur redémarre au rechargement si elle était active ;
   la journalisation serveur, elle, n'a jamais cessé).

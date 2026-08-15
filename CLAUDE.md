@@ -156,7 +156,7 @@ tools/check-drivers.mjs  un dossier de pilote par protocole (rejoué par la CI)
 tools/check-i18n.mjs  couverture de la traduction (parcourt toutes les vues)
 tools/serve.py  serveur d'aperçu (port 8080, en-têtes anti-cache)
 tools/bench.mjs banc d'essai : équipements simulés sur ports fixes, liens posés
-tests/ui.mjs    tests d'interface Playwright (39 vérifications)
+tests/ui.mjs    tests d'interface Playwright (56 vérifications)
 tests/dnd.mjs   tests de placement et déplacement de tuiles (10 vérifications, http requis)
 tests/devices.mjs    équipements simulés, partagés par les tests et le banc
 tests/protocols.mjs  liens réseau bout en bout (équipements simulés + agent snmpd

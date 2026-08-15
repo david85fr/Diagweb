@@ -106,7 +106,12 @@
   }
 
   // --- Registre des abonnements ---------------------------------------
-  // addr -> { meta, gen, ts:[], vs:[], refs, periodS, nextT }
+  // addr -> { meta, gen, ts:[], vs:[], tss, refs, periodS, nextK }
+  // Les instants d'échantillonnage sont les multiples ENTIERS de la période
+  // (t = k·période) : toutes les variables de même période tombent aux mêmes
+  // instants — sur des secondes entières quand la période divise la seconde.
+  // Sans ce calage, deux variables de même période écrivaient leurs lignes en
+  // quinconce dans le journal téléchargé trié par horodatage.
   const regs = new Map();
   // Valeurs forcées (diagnostic) : tant qu'une adresse y figure, la simulation
   // sert cette valeur au lieu du générateur (voir DW.source.write).
@@ -143,24 +148,51 @@
    * Une souscription supplémentaire avec une période plus courte resserre
    * le flux existant (un seul flux par variable).
    */
+  /**
+   * Le point réseau simulé suit-il l'horloge de « l'équipement » ?
+   * Miroir du réglage « Horodatage » du point (défaut : source). La
+   * simulation fabrique alors un horodatage source — l'équipement simulé a
+   * une horloge parfaitement à l'heure — pour que le journal téléchargé
+   * montre ses deux colonnes de dates comme avec un vrai lien.
+   */
+  function netSourceTs(addr) {
+    const P = DW.protocols;
+    if (!P || !P.config || addr[0] !== '@') return false;
+    const dot = addr.indexOf('.');
+    const l = (P.config.links || []).find((x) => x.id === addr.slice(1, dot));
+    const p = l && (l.points || []).find((x) => x.id === addr.slice(dot + 1));
+    return !!p && (p.params && p.params.timestamp) !== 'server';
+  }
+  // Horloge murale de t = 0, figée au chargement (horodatages source simulés).
+  const wall0 = Date.now() / 1000 - brut();
+
   function subscribe(addr, opts) {
     const periodS = clampPeriodMs(opts && opts.periodMs) / 1000;
     let rec = regs.get(addr);
     if (rec) {
       rec.refs++;
-      if (periodS < rec.periodS) rec.periodS = periodS;
+      if (periodS < rec.periodS) {
+        // Période resserrée : repartir sur la grille de la nouvelle période.
+        rec.periodS = periodS;
+        rec.nextK = Math.floor(now() / periodS) + 1;
+      }
       return rec;
     }
     const meta = DW.resolveMeta(addr);
     if (!meta) return null;
-    rec = { meta, gen: makeGen(meta, addr), ts: [], vs: [], refs: 1, periodS, nextT: 0 };
+    rec = { meta, gen: makeGen(meta, addr), ts: [], vs: [],
+            tss: netSourceTs(addr) ? [] : null, refs: 1, periodS, nextK: 0 };
     // Pré-remplissage de tout l'horizon (les t négatifs sont autorisés)
     // pour que les courbes soient pleines dès l'ajout d'une variable.
     const tNow = now();
-    for (let t = tNow - CFG.horizonS; t <= tNow; t += periodS) {
+    let k = Math.ceil((tNow - CFG.horizonS) / periodS - 1e-9);
+    const kEnd = Math.floor(tNow / periodS + 1e-9);
+    for (; k <= kEnd; k++) {
+      const t = k * periodS;
       rec.ts.push(t); rec.vs.push(rec.gen(t));
+      if (rec.tss) rec.tss.push(wall0 + t);
     }
-    rec.nextT = tNow + periodS;
+    rec.nextK = kEnd + 1;
     regs.set(addr, rec);
     return rec;
   }
@@ -181,18 +213,24 @@
     let minT = t - CFG.horizonS;
     if (holdT != null) minT = Math.min(minT, Math.max(holdT, t - CFG.holdMaxS));
     for (const [addr, rec] of regs) {
-      // Rattrapage borné : si l'onglet a été suspendu, on saute en avant.
-      if (t - rec.nextT > 2) rec.nextT = t;
+      // Rattrapage borné : si l'onglet a été suspendu, on saute en avant —
+      // en restant sur la grille de la période.
+      if (t - rec.nextK * rec.periodS > 2) rec.nextK = Math.ceil(t / rec.periodS);
       const held = forced.has(addr) ? forced.get(addr) : null;
-      while (rec.nextT <= t) {
-        rec.ts.push(rec.nextT);
-        rec.vs.push(held != null ? held : rec.gen(rec.nextT));
-        rec.nextT += rec.periodS;
+      while (rec.nextK * rec.periodS <= t) {
+        const tk = rec.nextK * rec.periodS;
+        rec.ts.push(tk);
+        rec.vs.push(held != null ? held : rec.gen(tk));
+        if (rec.tss) rec.tss.push(wall0 + tk);
+        rec.nextK++;
       }
       // Purge de l'historique au-delà de l'horizon
       let cut = 0;
       while (cut < rec.ts.length && rec.ts[cut] < minT) cut++;
-      if (cut > 400) { rec.ts.splice(0, cut); rec.vs.splice(0, cut); }
+      if (cut > 400) {
+        rec.ts.splice(0, cut); rec.vs.splice(0, cut);
+        if (rec.tss) rec.tss.splice(0, cut);
+      }
     }
   }
   setInterval(tick, CFG.defaultPeriodMs);
@@ -233,7 +271,8 @@
       captureT0 = brut();
       for (const rec of regs.values()) {
         rec.ts.length = 0; rec.vs.length = 0;
-        rec.nextT = captureT0;
+        if (rec.tss) rec.tss.length = 0;
+        rec.nextK = Math.ceil(captureT0 / rec.periodS - 1e-9);
       }
     },
     defaultPeriodMs: CFG.defaultPeriodMs,
@@ -259,7 +298,10 @@
     },
     data(addr) {
       const rec = regs.get(addr);
-      return rec ? { ts: rec.ts, vs: rec.vs } : { ts: [], vs: [] };
+      // tss : horodatages source (secondes UTC), seulement pour les points
+      // réseau qui en portent — même contrat que source-ws.js.
+      return rec ? { ts: rec.ts, vs: rec.vs, tss: rec.tss || null }
+                 : { ts: [], vs: [], tss: null };
     },
     meta(addr) {
       const rec = regs.get(addr);

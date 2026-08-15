@@ -23,7 +23,9 @@
 //   GET  /api/datalog           état des campagnes de journalisation
 //   POST /api/datalog/start     démarre une campagne autonome (navigateur fermé)
 //   POST /api/datalog/stop      arrête une campagne
-//   GET  /api/datalog/file?name= télécharge le CSV d'une campagne
+//   GET  /api/datalog/file?name=&sort=time|var  télécharge le CSV d'une
+//                               campagne, trié par horodatage (une ligne par
+//                               instant) ou par variable
 //   GET  /...                   fichiers statiques sous --root
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -593,10 +595,13 @@ bool handle_api(int fd, const Request& req, IVariableSource& src, const Options&
     bool ok = false;
     const JValue j = jparse(req.body, &ok);
     if (!ok) { respond_json(fd, "{\"error\":\"JSON invalide\"}", 400); return true; }
-    std::vector<std::pair<std::string, int>> addrs;
+    std::vector<RecVar> addrs;
     for (const JValue& a : j.list("addrs")) {
-      const std::string addr = a.str("addr");
-      if (!addr.empty()) addrs.emplace_back(addr, static_cast<int>(a.num("periodMs", 200)));
+      RecVar v;
+      v.addr = a.str("addr");
+      v.period_ms = static_cast<int>(a.num("periodMs", 200));
+      v.name = a.str("name");
+      if (!v.addr.empty()) addrs.push_back(std::move(v));
     }
     const std::string err = g_rec->start(j.str("name", "journal"), addrs);
     if (!err.empty()) { respond_json(fd, "{\"error\":\"" + jesc(err) + "\"}", 400); return true; }
@@ -615,16 +620,21 @@ bool handle_api(int fd, const Request& req, IVariableSource& src, const Options&
     return true;
   }
   if (t.rfind("/api/datalog/file", 0) == 0 && req.method == "GET" && g_rec) {
-    // Nom passé en requête : /api/datalog/file?name=<campagne>
-    std::string name;
-    const size_t q = req.target.find("name=");
-    if (q != std::string::npos) name = safe_name(req.target.substr(q + 5));
+    // /api/datalog/file?name=<campagne>[&sort=time|var]
+    auto query_param = [&](const char* key) {
+      const std::string pat = std::string(key) + "=";
+      const size_t q = req.target.find(pat);
+      if (q == std::string::npos) return std::string();
+      const size_t from = q + pat.size();
+      return req.target.substr(from, req.target.find('&', from) - from);
+    };
+    const std::string name = safe_name(query_param("name"));
+    const std::string sort = query_param("sort");
     const fs::path file = g_rec->dir() / (Recorder::safe_name(name) + ".csv");
-    std::ifstream f(file, std::ios::binary);
-    if (!f) { respond_json(fd, "{\"error\":\"journal inconnu\"}", 404); return true; }
-    std::ostringstream body;
-    body << f.rdbuf();
-    respond(fd, 200, "OK", "text/csv; charset=utf-8", body.str(),
+    bool ok = false;
+    const std::string body = Recorder::render_csv(file.string(), sort, ok);
+    if (!ok) { respond_json(fd, "{\"error\":\"journal inconnu\"}", 404); return true; }
+    respond(fd, 200, "OK", "text/csv; charset=utf-8", body,
             "Content-Disposition: attachment; filename=\"journal_" +
                 Recorder::safe_name(name) + ".csv\"\r\n");
     return true;
@@ -682,6 +692,8 @@ void handle_static(int fd, const Request& req, const Options& opt) {
  *            {"e":"meta","addr":..,"label":..,"unit":..,"kind":..,"family":..,"known":..}
  *            {"e":"err","addr":..,"msg":..}
  *            {"e":"d","now":..,"s":{"<addr>":[[t,v],..]}}
+ *              (3ᵉ élément facultatif d'un échantillon : horodatage de
+ *               l'équipement en secondes UTC, quand le protocole en fournit un)
  */
 void ws_session(int fd, const Request& req, IVariableSource& src, const Options& opt) {
   const auto key = req.headers.find("sec-websocket-key");
@@ -789,7 +801,11 @@ void ws_session(int fd, const Request& req, IVariableSource& src, const Options&
       o << '"' << jesc(addr) << "\":[";
       for (size_t i = 0; i < tmp.size(); ++i) {
         if (i) o << ',';
-        o << '[' << jnum(tmp[i].t, 3) << ',' << jnum(tmp[i].v, 4) << ']';
+        o << '[' << jnum(tmp[i].t, 3) << ',' << jnum(tmp[i].v, 4);
+        // Horodatage de l'équipement (secondes UTC), quand le protocole en a
+        // fourni un : le journal du navigateur doit pouvoir montrer les deux.
+        if (tmp[i].t_src > 0) o << ',' << jnum(tmp[i].t_src, 3);
+        o << ']';
       }
       o << ']';
       cursor = tmp.back().t;
