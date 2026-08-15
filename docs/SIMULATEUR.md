@@ -233,8 +233,10 @@ entrées TOR, **03** registres de maintien, **04** registres d'entrée.
 ./build/diagweb-server --port 8080 --root .
 ```
 
-Puis, dans la page (**☰ → Liens réseau…**) : nouveau lien **Modbus TCP**,
-identifiant `banc`, hôte `127.0.0.1`, port `5020`, unité `1` ; **Tester** ; puis
+Puis, dans la page (**☰ → Liens réseau…**) : nouveau lien **Modbus TCP**. Sur
+un poste de développement, hôte `127.0.0.1`, port `5020` et unité `1` sont déjà
+là — c'est le pré-remplissage décrit dans `docs/PROTOCOLES.md`, et c'est
+précisément ce port-là qu'il vise. Reste l'identifiant `banc`, **Tester**, puis
 un point `pression` — fonction 03, registre 40, `uint16`, gain 1, unité `bar`.
 L'adresse Diagweb est alors `@banc.pression`, et la courbe doit monter de 1 à 10
 en dix secondes puis retomber. Si elle ne le fait pas, le défaut est en amont du

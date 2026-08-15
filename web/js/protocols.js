@@ -590,6 +590,65 @@
     return o;
   }
 
+  // ------------------------------------------------------------------
+  // Serveurs de test locaux
+  // ------------------------------------------------------------------
+  /**
+   * Coordonnées des équipements de test qui tournent sur la MÊME machine que
+   * le serveur de diagnostic, en développement (Codespace, poste local) :
+   * `tools/bench.mjs` pour les protocoles sur IP, et le simulateur
+   * d'équipements pour Modbus (docs/SIMULATEUR.md).
+   *
+   * Un lien neuf part avec ces valeurs — c'est exactement ce qu'on aurait tapé
+   * à la main, et une adresse tapée à la main se trompe. Rien n'est pré-rempli
+   * ailleurs : un « 127.0.0.1 » proposé par défaut sur un contrôleur en
+   * exploitation ferait chercher la panne au mauvais endroit.
+   *
+   * Les ports sont décalés des ports normalisés (502, 2404, 161, 102, 4840),
+   * qui sont privilégiés et hors de portée d'un utilisateur non root.
+   * `tools/check-drivers.mjs` vérifie qu'ils n'ont pas dérivé de ceux que le
+   * banc ouvre réellement.
+   */
+  const BANC_LOCAL = {
+    'modbus-tcp': { via: 'simulateur d’équipements',
+                    params: { host: '127.0.0.1', port: 5020, unitId: 1 } },
+    'iec104':     { via: 'banc d’essai',
+                    params: { host: '127.0.0.1', port: 12404, asdu: 1 } },
+    'snmp':       { via: 'banc d’essai',
+                    params: { host: '127.0.0.1', port: 11161, version: 'v2c',
+                              community: 'public' } },
+    'iec61850':   { via: 'banc d’essai',
+                    params: { host: '127.0.0.1', port: 10102, mode: 'mms', iedName: 'IED1' } },
+    'opcua':      { via: 'banc d’essai',
+                    params: { endpoint: 'opc.tcp://127.0.0.1:14840' } },
+  };
+
+  /**
+   * Poste de développement : la page vient de la machine elle-même (localhost,
+   * fichier ouvert directement) ou d'un Codespace. Jamais d'un contrôleur en
+   * exploitation ni de la page publique — c'est ce qui autorise le
+   * pré-remplissage.
+   */
+  const posteDeDev = (function () {
+    if (typeof location === 'undefined') return false;
+    const h = String(location.hostname || '');
+    return h === '' || h === 'localhost' || h === '127.0.0.1' || h === '::1' ||
+           /\.github\.dev$/.test(h) || /\.gitpod\.io$/.test(h);
+  })();
+
+  /** Pré-remplissage applicable à ce protocole, ou null. */
+  function localPreset(protoId) {
+    return posteDeDev ? BANC_LOCAL[protoId] || null : null;
+  }
+
+  /** Paramètres d'un lien NEUF : les défauts, complétés du serveur de test. */
+  function linkDefaults(proto) {
+    const p = defaults(proto.linkFields);
+    const pre = localPreset(proto.id);
+    if (pre) Object.assign(p, pre.params);
+    return p;
+  }
+
   /** Type de variable Diagweb déduit des paramètres d'un point. */
   function kindOf(proto, point) {
     const p = point.params || {};
@@ -774,7 +833,10 @@
       return st;
     },
 
-    addrOf, pointSummary, kindOf, defaults, fieldApplies,
+    addrOf, pointSummary, kindOf, defaults, fieldApplies, linkDefaults, localPreset,
+    // Exposée pour tools/check-drivers.mjs, qui compare ces ports à ceux que
+    // tools/bench.mjs ouvre réellement.
+    localBench: BANC_LOCAL,
   };
 
   function indexStatus(list) {

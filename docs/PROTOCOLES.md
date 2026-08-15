@@ -96,6 +96,9 @@ Menu **☰ → Liens réseau…** (fonction globale, indépendante des onglets) 
    identifiant d'unité ; CANopen demande interface et nœud). Chaque champ
    porte son infobulle. L'**identifiant** du lien est la première moitié des
    adresses : `banc` ⇒ `@banc.…`.
+   Sur un **poste de développement** (Codespace, machine locale), ces champs
+   partent déjà remplis avec les coordonnées des serveurs de test qui tournent
+   là — voir « Le formulaire part déjà rempli », plus bas.
 2. **Tester** — le serveur ouvre le lien et referme, puis renvoie le résultat
    en clair (« connexion établie », « hôte introuvable », « pas de réponse
    (délai dépassé) »…). À faire avant de saisir des points : cela sépare un
@@ -883,6 +886,34 @@ rien connaître du pilote : chacun sert donc de contre-épreuve à l'autre.
 Il ne sert aujourd'hui que Modbus TCP ; SNMP, OPC UA et IEC 61850 viendront
 comme autant de **façades** sur les mêmes signaux. Configuration, table des
 registres et détails : `docs/SIMULATEUR.md`.
+
+### Le formulaire part déjà rempli
+
+Un lien **neuf** porte d'emblée les coordonnées du serveur de test local, quand
+la page vient d'un poste de développement — `localhost`, un Codespace, ou un
+fichier ouvert directement :
+
+| Protocole | Pré-rempli | Servi par |
+|---|---|---|
+| Modbus TCP | `127.0.0.1:5020`, unité 1 | `diagweb-simulator` |
+| IEC 60870-5-104 | `127.0.0.1:12404`, ASDU 1 | `tools/bench.mjs` |
+| SNMP | `127.0.0.1:11161`, v2c, communauté `public` | `tools/bench.mjs` |
+| IEC 61850 | `127.0.0.1:10102`, lecture MMS, IED `IED1` | `tools/bench.mjs` |
+| OPC UA | `opc.tcp://127.0.0.1:14840` | `tools/bench.mjs` |
+
+C'est exactement ce qu'on aurait tapé à la main, et une adresse tapée à la main
+se trompe. Une mention sous les champs annonce le pré-remplissage et
+**disparaît dès qu'un champ s'écarte** du banc : elle ne peut donc pas finir
+par désigner une adresse qui n'est plus la sienne.
+
+**Ailleurs, rien n'est pré-rempli** — contrôleur en exploitation, page publique,
+Artifact. Un `127.0.0.1` proposé par défaut sur une installation ferait chercher
+la panne au mauvais endroit. Les protocoles sans serveur de test local (Modbus
+RTU, CAN, J1939, CANopen) ne proposent rien nulle part.
+
+Les ports vivent dans `web/js/protocols.js` et sont tenus en phase avec ceux que
+le banc ouvre réellement par `tools/check-drivers.mjs` : un port qui dérive d'un
+côté donnerait un lien pré-rempli qui ne se connecte pas, sans dire pourquoi.
 
 ## Bibliothèques externes et licences
 

@@ -337,6 +337,16 @@ await p2.waitForSelector('.modal[aria-label="Liens réseau"]', { timeout: 5000 }
 await p2.locator('.m-actions .btn', { hasText: '+ Nouveau lien' }).click();
 await p2.waitForTimeout(200);
 const protos = await p2.locator('#pxProto option').count();
+// Poste de développement (ici file://) : un lien neuf part avec les
+// coordonnées des serveurs de test locaux, et le dit. Sur un contrôleur, ces
+// champs restent vides — c'est le même code, décidé par l'origine de la page.
+const preHost = await p2.inputValue('#pf_host');
+const prePort = await p2.inputValue('#pf_port');
+const preNote = await p2.locator('.modal[aria-label="Liens réseau"] .m-note')
+  .filter({ hasText: 'Pré-rempli' }).count();
+check('lien neuf pré-rempli pour les serveurs de test locaux, et signalé',
+  preHost === '127.0.0.1' && prePort === '5020' && preNote === 1,
+  preHost + ':' + prePort + ' · ' + preNote + ' mention(s)');
 await p2.fill('#px_Identifiant', 'banc');
 await p2.fill('#px_Nom', 'Banc d’essai');
 await p2.fill('#pf_host', '10.0.0.5');

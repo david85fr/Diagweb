@@ -2534,6 +2534,7 @@
             ['Point', 'Une variable lue sur un lien (registre, IOA, SPN, objet…), avec son unité et sa période. Elle s’adresse ensuite <b>@lien.point</b> comme n’importe quelle variable.'],
             ['Horodatage', 'Réglable <b>point par point</b> : la date attachée par l’équipement quand le protocole en transporte une (IEC-104 horodaté, IEC 61850, OPC UA en abonnement, SNMP par un OID d’horodatage de la MIB), ou celle du serveur, forcée, quand l’horloge de l’équipement n’est pas de confiance.'],
             ['Sans serveur', 'La configuration reste dans le navigateur et les valeurs des points sont simulées — l’interface est démontrable sans matériel.'],
+            ['Poste de développement', 'Sur une machine locale ou un Codespace, un lien <b>neuf</b> part pré-rempli avec les coordonnées des serveurs de test qui tournent là (simulateur d’équipements pour Modbus, banc d’essai pour les autres) : plus d’adresse à retaper. La mention sous les champs le dit, et disparaît dès qu’un champ est modifié. Sur un contrôleur, rien n’est pré-rempli.'],
           ]) +
           S('Courbes') +
           L([

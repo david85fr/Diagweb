@@ -82,6 +82,41 @@ for (const p of PROTOCOLS) {
   }
 }
 
+/**
+ * Banc local : les ports que la fenêtre « Liens réseau » pré-remplit sur un
+ * poste de développement doivent être ceux que tools/bench.mjs ouvre pour de
+ * bon. Un port qui dérive d'un côté donnerait un lien pré-rempli qui ne se
+ * connecte pas, sans dire pourquoi — le pire des deux mondes.
+ *
+ * Modbus fait exception : son pré-remplissage vise le simulateur
+ * d'équipements (docs/SIMULATEUR.md), pas le banc, et n'a rien à comparer ici.
+ */
+const BANC_CLES = { iec104: 'iec104', snmp: 'snmp', iec61850: 'mms', opcua: 'opcua' };
+
+const bench = fs.readFileSync(path.join(ROOT, 'tools/bench.mjs'), 'utf8');
+const blocPorts = bench.slice(bench.indexOf('const PORTS'), bench.indexOf('};', bench.indexOf('const PORTS')));
+const portsBanc = {};
+for (const [, cle, val] of blocPorts.matchAll(/(\w+):\s*(\d+)/g)) portsBanc[cle] = Number(val);
+
+const preremplissage = (globalThis.window.DW.protocols || {}).localBench || {};
+for (const [id, cle] of Object.entries(BANC_CLES)) {
+  const params = (preremplissage[id] || {}).params;
+  if (!params) {
+    fautes.push(`aucun pré-remplissage pour « ${id} » dans BANC_LOCAL de web/js/protocols.js`);
+    continue;
+  }
+  // Le port d'OPC UA est dans son point de terminaison, pas dans un champ.
+  const port = params.port != null ? Number(params.port)
+                                   : Number(String(params.endpoint || '').split(':').pop());
+  if (portsBanc[cle] == null) {
+    fautes.push(`tools/bench.mjs n'ouvre plus de port « ${cle} » : ` +
+                `mettre à jour BANC_LOCAL de web/js/protocols.js`);
+  } else if (port !== portsBanc[cle]) {
+    fautes.push(`« ${id} » : pré-remplissage sur le port ${port}, mais tools/bench.mjs ` +
+                `ouvre ${portsBanc[cle]} — les deux doivent concorder`);
+  }
+}
+
 for (const e of fs.readdirSync(DRIVERS, { withFileTypes: true })) {
   if (e.isFile() && e.name.endsWith('.hpp')) {
     fautes.push(`server/src/drivers/${e.name} est à la racine : le déplacer dans ` +

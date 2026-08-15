@@ -246,13 +246,24 @@
   }
 
   // ---- édition d'un lien -------------------------------------------
+  /** Le lien porte-t-il encore, à l'identique, le pré-remplissage du banc ? */
+  function presetIntact(link) {
+    const pre = P.localPreset(link.protocol);
+    if (!pre) return null;
+    const params = link.params || {};
+    for (const k in pre.params) {
+      if (String(params[k]) !== String(pre.params[k])) return null;
+    }
+    return pre;
+  }
+
   function newLink() {
     const proto = DW.PROTOCOLS[0];
     let n = 1;
     while (P.link('lien' + n)) n++;
     return {
       id: 'lien' + n, label: 'Lien ' + n, protocol: proto.id, enabled: true,
-      params: P.defaults(proto.linkFields), points: [], _new: true,
+      params: P.linkDefaults(proto), points: [], _new: true,
     };
   }
 
@@ -293,7 +304,7 @@
     sel.addEventListener('change', () => {
       link.protocol = sel.value;
       const np = P.descriptor(link.protocol);
-      link.params = P.defaults(np.linkFields);
+      link.params = P.linkDefaults(np);
       for (const pt of link.points || []) pt.params = P.defaults(np.pointFields);
       render();
     });
@@ -301,7 +312,31 @@
     protoRow.appendChild(sel);
     b.appendChild(protoRow);
 
-    b.appendChild(fieldsForm(proto.linkFields, link.params));
+    const form = fieldsForm(proto.linkFields, link.params);
+    b.appendChild(form);
+
+    // Pré-remplissage : le dire, et seulement tant que c'est vrai. La mention
+    // s'efface dès qu'un champ s'écarte du banc — sans quoi elle finirait par
+    // désigner une adresse qui n'est plus la sienne, ce qui est pire que de
+    // n'avoir rien dit.
+    const preNote = document.createElement('p');
+    preNote.className = 'm-note';
+    preNote.title = 'Poste de développement (Codespace ou machine locale) : les champs de ' +
+                    'connexion d’un lien neuf partent avec les coordonnées des serveurs de ' +
+                    'test qui tournent ici. Sur un contrôleur en exploitation, rien n’est ' +
+                    'pré-rempli.';
+    const majPreNote = () => {
+      const pre = presetIntact(link);
+      preNote.textContent = pre
+        ? 'Pré-rempli pour le ' + pre.via + ' de cette machine — à remplacer par ' +
+          'l’adresse de l’équipement réel.'
+        : '';
+      preNote.hidden = !pre;
+    };
+    majPreNote();
+    form.addEventListener('input', majPreNote);
+    form.addEventListener('change', majPreNote);
+    b.appendChild(preNote);
 
     const acts = document.createElement('div');
     acts.className = 'm-actions';
