@@ -887,6 +887,18 @@ L'arrêt se fait par `SIGINT` : tcpdump ferme proprement son fichier, là où un
 `SIGKILL` le laisserait tronqué, donc illisible. L'interface est vérifiée avant
 le lancement — une faute de frappe se dit tout de suite, pas dans un journal.
 
+**Le privilège est dit avant l'essai.** Ouvrir une interface demande
+`CAP_NET_RAW`, et son absence remonte sous la forme la moins parlante qui soit
+— « socket: Operation not permitted » — qu'on prend pour un défaut de
+l'interface choisie. La page annonce donc l'empêchement **avant** le premier
+démarrage, avec la commande qui débloque, et le refus le répète. Deux pièges y
+sont distingués, parce qu'ils ne se règlent pas pareil : un service sans la
+capacité (elle doit être **ambiante** pour survivre à l'`exec`, ou portée par
+`tcpdump` lui-même — `setcap cap_net_raw+ep`), et des capacités fichier hors du
+jeu limite d'un conteneur, qui font échouer l'`exec` sans que tcpdump ait pu
+écrire une ligne. Voir `docs/PROTOCOLES.md` § « Éprouver les liens en
+conteneur ».
+
 ### Voisinage réseau (LLDP)
 
 Ce qu'il y a **en face** de chaque interface : produit, port, description,

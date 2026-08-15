@@ -1102,10 +1102,32 @@ Les protocoles IP n'exigent **aucun privilège** : rien n'écoute sous le port
 
 Le jeu de capacités par défaut d'un conteneur comprend `CAP_NET_RAW` mais pas
 `CAP_NET_ADMIN` ; un devcontainer les demande par `runArgs` (voir
-`.devcontainer/devcontainer.json`). Pour une capture, la subtilité tient à
-`tcpdump` lui-même : ses capacités fichier incluent `cap_net_admin`, et un
-`execve` les refusant échoue **avant** d'ouvrir la moindre socket, y compris
-sous `sudo`. `sudo setcap -r /usr/bin/tcpdump` lève le blocage.
+`.devcontainer/devcontainer.json`).
+
+**La capture demande une manipulation de plus, et c'est celle qu'on oublie.**
+Le conteneur a beau avoir `CAP_NET_RAW`, le serveur de diagnostic y tourne sous
+l'utilisateur du conteneur (`vscode`), qui ne l'a pas — et il ne pourrait pas
+la transmettre même s'il l'avait : un `exec` **jette** les capacités du
+processus, sauf si elles sont **ambiantes** (`AmbientCapabilities=`, la voie
+retenue sur le contrôleur) ou portées par le binaire lancé. Ubuntu ne pose
+aucune capacité fichier sur `tcpdump` : chaque capture échoue donc sur
+« *You don't have permission…* / *(socket: Operation not permitted)* ». La
+capacité se donne **au binaire**, une fois :
+
+```bash
+sudo setcap cap_net_raw+ep "$(command -v tcpdump)"   # la capture repart aussitôt
+```
+
+`.devcontainer/cap-tcpdump.sh` le fait à la création du Codespace (et le
+réaffirme à `postCreate`, un prebuild pouvant ne pas avoir gardé l'attribut
+étendu). `cap_net_raw` **seule** : une capacité fichier hors du jeu limite du
+conteneur — `cap_net_admin`, typiquement — ferait échouer l'`execve` **avant**
+d'ouvrir la moindre socket, y compris sous `sudo`, et sans un mot
+d'explication ; `sudo setcap -r /usr/bin/tcpdump` lève alors le blocage.
+
+Ces deux impasses sont diagnostiquées par le serveur lui-même : la page
+« Capture d'interfaces réseau » affiche la raison **et** la commande qui
+débloque, avant même le premier essai (`privilege` de `/api/capture`).
 
 La capacité ne suffit pas pour `vcan` : le module doit exister dans le noyau
 de l'**hôte**, ce qu'aucun privilège ne remplace. La sonde tient en une ligne,

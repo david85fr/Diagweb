@@ -155,6 +155,9 @@
     return {
       simule: true,
       tool: '/usr/bin/tcpdump (simulé)',
+      // Aucun privilège en jeu hors serveur : la simulation ne prétend pas
+      // ouvrir d'interface, elle ne peut donc pas s'en voir refuser une.
+      privilege: '',
       quotaBytes: etat.quotaBytes,
       usedBytes: occupe(),
       message: etat.message,

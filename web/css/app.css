@@ -1077,6 +1077,11 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
 .net-sim { margin: 0 0 4px; padding: 8px 10px; font-size: 12.5px; line-height: 1.45;
   border: 1px solid var(--warn); border-left-width: 4px; border-radius: 6px;
   background: color-mix(in srgb, var(--warn) 12%, transparent); }
+/* Privilège manquant pour la capture : un refus qui se règle en une commande
+   mérite d'être vu tout de suite, pas d'être découvert après l'échec. */
+.cap-priv { color: var(--ink); padding: 8px 10px; line-height: 1.45;
+  border: 1px solid var(--warn); border-left-width: 4px; border-radius: 6px;
+  background: color-mix(in srgb, var(--warn) 12%, transparent); }
 .net-sec { padding: 12px 0; border-top: 1px solid var(--line); }
 .net-sec:first-child { border-top: 0; }
 .net-sec h4 { margin: 0 0 8px; font-size: 12.5px; text-transform: uppercase;

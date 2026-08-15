@@ -263,7 +263,16 @@ check('arrêt de la campagne', stop.status === 200 && stop.json.ok === true && !
     inconnue.status === 400 && /inconnue/.test(inconnue.json.error || ''),
     inconnue.json && inconnue.json.error);
 
-  if (c.json.tool) {
+  // Le privilège est annoncé AVANT le premier essai : un refus de capacité
+  // arrive sinon sous la forme « socket: Operation not permitted », qu'on
+  // prend pour un défaut de l'interface choisie. Chaîne vide = rien ne s'y
+  // oppose ; sinon elle porte la raison ET la commande qui débloque.
+  check('capture : privilège annoncé avant toute tentative',
+    typeof c.json.privilege === 'string' &&
+    (c.json.privilege === '' || /setcap|CAP_NET_RAW|cap-add/.test(c.json.privilege)),
+    c.json.privilege || 'rien ne s’y oppose');
+
+  if (c.json.tool && !c.json.privilege) {
     const dep = await api('/api/capture/start', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ iface: 'lo', durationS: 2 }),
@@ -293,6 +302,11 @@ check('arrêt de la campagne', stop.status === 200 && stop.json.ok === true && !
     });
     check('capture : fichier supprimé (quota libéré)',
       sup.status === 200 && !(sup.json.state.runs || []).some((r) => r.id === run.id));
+  } else if (c.json.tool) {
+    // Machine sans la capacité : une vraie capture y échouerait forcément, et
+    // faire échouer le test pour cela dirait le contraire de ce qu'il vérifie.
+    check('capture : capacité absente de cette machine — vérifications sautées', true,
+      c.json.privilege);
   } else {
     check('capture : tcpdump absent de cette machine — vérifications sautées', true,
       'installer tcpdump pour les jouer');

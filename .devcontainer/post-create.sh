@@ -23,6 +23,11 @@ echo "→ Vérification de l'outillage"
 python3 --version
 node --version
 
+# Capacité de capture : posée par on-create.sh, réaffirmée ici parce qu'un
+# conteneur né d'une image de prebuild peut ne pas avoir gardé l'attribut
+# étendu qui la porte. Idempotent, et sans effet si elle est déjà là.
+bash .devcontainer/cap-tcpdump.sh
+
 echo
 echo "→ Vérification de la syntaxe des sources"
 for f in web/js/*.js; do node --check "$f"; done

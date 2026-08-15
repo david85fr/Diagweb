@@ -22,5 +22,12 @@
     'liens réseau simulés': 'simulated network links',
     "D'où viennent les données et de quelle nature elles sont : les variables internes du controller peuvent être simulées pendant que les liens réseau acquièrent réellement. État détaillé de chaque lien : ☰ → Liens réseau.":
       'Where the data comes from and what kind it is: the controller internal variables may be simulated while the network links acquire for real. Per-link state: ☰ → Network links.',
+
+    // Capture d'interfaces : privilège manquant. Le motif lui-même vient du
+    // serveur et reste dans sa langue ; l'étiquette qui le porte, elle, se
+    // traduit — c'est elle qui dit d'un coup d'œil que rien ne sera capturé.
+    'Capture impossible en l’état :': 'Capture cannot run as things stand:',
+    'Ouvrir une interface en capture demande la capacité CAP_NET_RAW. Elle manque ici ; le message dit à qui la donner et comment.':
+      'Opening an interface for capture requires the CAP_NET_RAW capability. It is missing here; the message says who needs it and how to grant it.',
   };
 })();

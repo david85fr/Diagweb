@@ -235,6 +235,15 @@
       '<h4>Nouvelle capture</h4>' +
       (d.tool ? '' : '<p class="page-vide">tcpdump n’est pas installé sur le contrôleur : ' +
         'la capture est impossible tant qu’il n’y est pas.</p>') +
+      // Le privilège manque plus souvent que l'outil, et son refus est illisible
+      // (« socket : Operation not permitted ») : il se dit AVANT l'essai, avec
+      // la commande qui débloque — sinon on croit s'être trompé d'interface.
+      (d.tool && d.privilege
+        ? '<p class="page-vide cap-priv" title="Ouvrir une interface en capture ' +
+          'demande la capacité CAP_NET_RAW. Elle manque ici ; le message dit à qui ' +
+          'la donner et comment.">' +
+          '<b>Capture impossible en l’état :</b> ' + DW.escapeHtml(d.privilege) + '</p>'
+        : '') +
       '<div class="cap-row">' +
         '<label>Interface<select class="cap-if" title="Interface à capturer. Les ' +
           'interfaces CAN se capturent comme les autres, avec leur propre type de lien.">' +

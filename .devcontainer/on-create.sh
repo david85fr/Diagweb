@@ -107,6 +107,11 @@ else
   echo "     sudo apt-get install -y libsnmp-dev snmpd socat tcpdump can-utils iproute2"
 fi
 
+# Capture réseau : la capacité, sans laquelle tcpdump est installé pour rien
+# sous un utilisateur non root. Script à part, car post-create.sh la réaffirme
+# quand le conteneur naît d'une image de prebuild.
+bash "$(dirname "$0")/cap-tcpdump.sh"
+
 # ------------------------------------------------------------------- OPC UA
 # open62541 n'est pas empaqueté par Ubuntu : il faut le construire. C'est
 # l'étape la plus chère de la préparation, et la première raison d'être de ce

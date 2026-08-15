@@ -27,9 +27,13 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <sys/xattr.h>
+
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -97,6 +101,61 @@ class CaptureManager {
       if (fs::exists(c, ec)) return c;
     }
     return {};
+  }
+
+  /**
+   * Ce qui empêche la capture AVANT même de lancer tcpdump : le PRIVILÈGE.
+   * Retourne une explication assortie du remède, ou une chaîne vide si rien ne
+   * s'y oppose.
+   *
+   * Ouvrir une interface en capture demande `CAP_NET_RAW`. Le refus du noyau
+   * arrive alors sous la forme la moins parlante qui soit — « socket:
+   * Operation not permitted » — et laisse croire à un défaut de l'interface
+   * choisie alors que rien, dans le choix de l'utilisateur, n'est en cause.
+   * Cette page le dit donc AVANT le premier essai, et le refus lui-même le
+   * répète avec la commande qui débloque.
+   *
+   * Deux subtilités que l'on paie cher à ignorer :
+   *
+   *   1. Les capacités du service ne sont PAS héritées par tcpdump. Un exec
+   *      les jette, sauf si elles sont AMBIANTES (`AmbientCapabilities=` d'une
+   *      unité systemd) ou portées par le binaire lui-même. C'est donc `CapAmb`
+   *      qui est lu, jamais `CapEff` : un service qui a la capacité pour ses
+   *      propres sockets AF_PACKET (LLDP, GOOSE) peut très bien ne pas pouvoir
+   *      la transmettre à tcpdump.
+   *   2. Des capacités FICHIER hors du jeu limite du conteneur font échouer
+   *      l'exec lui-même, avant toute socket et y compris sous sudo — tcpdump
+   *      n'a alors pas l'occasion d'écrire une seule ligne d'explication.
+   */
+  static std::string privilege_manquant() {
+    const std::string bin = outil();
+    if (bin.empty()) return {};          // absence de tcpdump : dite ailleurs
+    const uint64_t limite = caps_proc("CapBnd");
+    const FileCaps f = caps_fichier(bin);
+
+    if (f.present && f.effective && (f.permitted & ~limite) != 0) {
+      return "tcpdump porte des capacités fichier que ce conteneur n'accorde "
+             "pas : son lancement est refusé par le noyau avant même l'ouverture "
+             "d'une socket, y compris sous sudo. Remède : sudo setcap "
+             "cap_net_raw+ep " + bin;
+    }
+    if ((limite & kCapNetRaw) == 0) {
+      return "ce conteneur n'accorde pas CAP_NET_RAW : aucune capture n'y est "
+             "possible, quel que soit l'utilisateur. Il faut le démarrer avec "
+             "--cap-add=NET_RAW (devcontainer : « runArgs »).";
+    }
+    if (::geteuid() == 0) return {};                          // root : le noyau la donne
+    if ((caps_proc("CapAmb") & kCapNetRaw) != 0) return {};    // ambiante : survit à l'exec
+    if (f.present && (f.permitted & kCapNetRaw) != 0) return {};  // portée par tcpdump
+
+    const passwd* moi = ::getpwuid(::geteuid());
+    const std::string qui = moi && moi->pw_name ? moi->pw_name : "cet utilisateur";
+    return "le serveur de diagnostic tourne sous « " + qui + " », sans CAP_NET_RAW "
+           "ambiante, et tcpdump ne porte pas cette capacité : aucune interface "
+           "ne peut être ouverte en capture. En conteneur ou en Codespace : "
+           "« sudo setcap cap_net_raw+ep " + bin + " » suffit, et la capture "
+           "repart sans redémarrer le serveur. Sur le contrôleur : "
+           "AmbientCapabilities=CAP_NET_RAW dans l'unité systemd du service.";
   }
 
   void set_quota(uintmax_t octets) {
@@ -189,7 +248,12 @@ class CaptureManager {
     pid_t pid = 0;
     const int rc = ::posix_spawn(&pid, bin.c_str(), &fa, nullptr, argv.data(), environ);
     posix_spawn_file_actions_destroy(&fa);
-    if (rc != 0) return std::string("lancement de tcpdump impossible : ") + std::strerror(rc);
+    // Un exec refusé remonte ici, par le code de retour de posix_spawn : c'est
+    // le cas des capacités fichier hors du jeu limite, où tcpdump n'écrit rien.
+    if (rc != 0) {
+      return avec_privilege(std::string("lancement de tcpdump impossible : ") +
+                            std::strerror(rc));
+    }
 
     r.pid = pid;
     r.state = "en cours";
@@ -210,7 +274,7 @@ class CaptureManager {
     for (int i = 0; i < 15; i++) {                    // 150 ms, par pas de 10
       int etat = 0;
       if (::waitpid(pid, &etat, WNOHANG) == pid) {
-        const std::string motif = motif_journal(r);
+        const std::string motif = avec_privilege(motif_journal(r));
         std::error_code ec;
         fs::remove(dir_ / (r.id + ".pcap"), ec);
         fs::remove(dir_ / (r.id + ".log"), ec);
@@ -300,7 +364,7 @@ class CaptureManager {
         // tcpdump s'est arrêté seul : plafond de taille atteint, ou refus.
         const bool ok = WIFEXITED(etat) && WEXITSTATUS(etat) == 0;
         terminer_sans_signal(r, ok ? "terminée" : "échec",
-                             ok ? "tcpdump a terminé" : motif_journal(r));
+                             ok ? "tcpdump a terminé" : avec_privilege(motif_journal(r)));
         continue;
       }
       if (r.duration_s > 0 && maintenant - r.start_t >= r.duration_s) {
@@ -340,6 +404,48 @@ class CaptureManager {
   }
 
  private:
+  static constexpr uint64_t kCapNetRaw = 1ull << 13;   // CAP_NET_RAW
+
+  /** Capacités FICHIER d'un binaire (xattr « security.capability »). */
+  struct FileCaps {
+    bool present = false;
+    bool effective = false;    // fanion « e » : le noyau les active à l'exec
+    uint64_t permitted = 0;
+  };
+
+  /** Un jeu de capacités du processus, lu dans /proc/self/status. */
+  static uint64_t caps_proc(const char* champ) {
+    std::ifstream f("/proc/self/status");
+    const std::string cle = std::string(champ) + ':';
+    std::string ligne;
+    while (std::getline(f, ligne)) {
+      if (ligne.rfind(cle, 0) != 0) continue;
+      const size_t d = ligne.find_first_not_of(" \t", cle.size());
+      if (d == std::string::npos) return 0;
+      // strtoull, pas std::stoull : ni exception ni abort sur une ligne
+      // inattendue, et le champ n'est de toute façon pas une entrée réseau.
+      return std::strtoull(ligne.c_str() + d, nullptr, 16);
+    }
+    return 0;                  // noyau sans CapAmb (< 4.3), champ absent
+  }
+
+  static FileCaps caps_fichier(const std::string& bin) {
+    FileCaps c;
+    unsigned char buf[24] = {0};
+    const ssize_t n = ::getxattr(bin.c_str(), "security.capability", buf, sizeof buf);
+    if (n < 12) return c;      // attribut absent (le cas courant), ou tronqué
+    const auto mot = [&buf](int i) {
+      return static_cast<uint64_t>(buf[i]) | (static_cast<uint64_t>(buf[i + 1]) << 8) |
+             (static_cast<uint64_t>(buf[i + 2]) << 16) |
+             (static_cast<uint64_t>(buf[i + 3]) << 24);
+    };
+    c.present = true;
+    c.effective = (mot(0) & 1) != 0;             // VFS_CAP_FLAGS_EFFECTIVE
+    c.permitted = mot(4);                        // révision 1 : un seul mot
+    if (n >= 20) c.permitted |= mot(12) << 32;   // révisions 2 et 3
+    return c;
+  }
+
   /** Fichier de réglages : quota et déclencheur, à côté des captures. */
   fs::path reglages() const { return dir_ / "reglages.json"; }
 
@@ -400,15 +506,47 @@ class CaptureManager {
     return ec ? r.bytes : n;
   }
 
-  /** Dernière ligne du journal de tcpdump : le motif d'un refus. */
+  /**
+   * Ce que tcpdump a écrit : TOUTES ses lignes utiles, pas seulement la
+   * dernière. Son refus le plus courant en tient deux —
+   *
+   *   tcpdump: eth0: You don't have permission to perform this capture...
+   *   (socket: Operation not permitted)
+   *
+   * — et n'en garder que la dernière ne laissait à l'écran que la parenthèse,
+   * c'est-à-dire la moitié la moins parlante : « socket », un mot qui ne dit
+   * rien de ce qu'il faut faire.
+   */
   std::string motif_journal(const CaptureRun& r) const {
     std::ifstream f(dir_ / (r.id + ".log"));
-    std::string ligne, derniere;
-    while (std::getline(f, ligne)) {
-      if (!ligne.empty()) derniere = ligne;
+    std::string ligne, tout;
+    while (std::getline(f, ligne) && tout.size() < 400) {
+      while (!ligne.empty() && (ligne.back() == '\r' || ligne.back() == ' ')) ligne.pop_back();
+      if (ligne.empty()) continue;
+      if (!tout.empty()) tout += ' ';
+      tout += ligne;
     }
-    if (derniere.empty()) return "tcpdump s'est arrêté sans message";
-    return derniere;
+    if (tout.empty()) return "tcpdump s'est arrêté sans rien écrire";
+    return tout;
+  }
+
+  /**
+   * Un refus de privilège dit en clair. Le message brut de tcpdump reste — il
+   * nomme l'interface et fait foi — mais il est suivi de la raison et du
+   * remède, sans quoi la page renvoie l'utilisateur à un mot de code (« socket
+   * : Operation not permitted ») dont rien n'indique qu'il parle de capacités.
+   */
+  std::string avec_privilege(const std::string& motif) const {
+    std::string bas = motif;
+    for (char& c : bas) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    const bool droits = bas.find("permission") != std::string::npos ||
+                        bas.find("not permitted") != std::string::npos ||
+                        bas.find("rien écrire") != std::string::npos;
+    if (!droits) return motif;
+    const std::string aide = privilege_manquant();
+    if (!aide.empty()) return motif + " — " + aide;
+    return motif + " — la capture demande la capacité CAP_NET_RAW, au service "
+                   "(ambiante) ou à tcpdump lui-même.";
   }
 
   void terminer(CaptureRun& r, const char* etat, const std::string& motif) {
@@ -495,6 +633,7 @@ inline std::string capture_json(const CaptureManager& m, double maintenant) {
   const auto runs = m.etat();
   const CaptureTrigger t = m.trigger();
   o << "{\"tool\":\"" << jesc(CaptureManager::outil())
+    << "\",\"privilege\":\"" << jesc(CaptureManager::privilege_manquant())
     << "\",\"quotaBytes\":" << m.quota() << ",\"usedBytes\":" << m.occupe()
     << ",\"trigger\":{\"enabled\":" << (t.enabled ? "true" : "false")
     << ",\"addr\":\"" << jesc(t.addr) << "\",\"mode\":\"" << jesc(t.mode)
