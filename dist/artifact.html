@@ -934,8 +934,21 @@ body.dnd-over-pane #panes {
 .px-state.st-up   { color: var(--good); }
 .px-state.st-down { color: var(--crit); }
 .px-state.st-sim  { color: var(--warn); }
+.px-state.st-todo { color: var(--warn); }
+.px-state.st-off  { color: var(--faint); }
 .px-sub { font-size: 11.5px; color: var(--faint); margin-top: 3px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Ligne de diagnostic : le motif se LIT, il n'est pas caché en infobulle —
+   sur écran tactile il n'y a pas de survol, et c'est là qu'on diagnostique. */
+.px-diag {
+  font-size: 11.5px; line-height: 1.35; margin-top: 5px;
+  color: var(--muted);
+  border-left: 2px solid var(--line);
+  padding-left: 7px;
+}
+.px-diag.st-up   { border-left-color: var(--good); }
+.px-diag.st-down { border-left-color: var(--crit); color: color-mix(in srgb, var(--crit) 72%, var(--ink)); }
+.px-diag.st-sim, .px-diag.st-todo { border-left-color: var(--warn); }
 .px-acts { margin-top: 8px; }
 .px-acts .btn { font-size: 12px; padding: 5px 9px; }
 .btn.danger { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 45%, var(--line)); }
@@ -1167,7 +1180,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     <div class="topIcons">
       <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" aria-label="Figer ou reprendre tout l’onglet" title="Figer d’un coup tout l’onglet actif : les courbes ET les valeurs numériques s’arrêtent sur l’instant courant">⏸</button>
       <button id="stopBtn" class="iconbtn pausebtn" type="button" aria-label="Arrêter ou relancer l’acquisition" title="Arrêter l’acquisition : plus aucun échantillon n’est enregistré et l’horloge se fige. L’historique déjà acquis reste consultable et mesurable.">⏹</button>
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">3f0a916 · #163</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">320ba7d · #165</span>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
@@ -2558,11 +2571,36 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       return { ok: !!j.ok, detail: j.detail || (j.ok ? 'connexion établie' : 'échec') };
     },
 
+    /**
+     * État d'un lien, TOUJOURS sous la même forme — c'est `key` que
+     * l'interface lit. Le serveur, lui, envoie le champ `state` : rendre son
+     * objet tel quel laissait `key` indéfini, et tout lien réellement servi
+     * s'affichait « ○ désactivé », y compris quand il communiquait. Le motif,
+     * lui, était bien là mais caché dans une infobulle.
+     */
     linkState(id) {
+      if (this.mode !== 'server') {
+        return { key: 'sim', state: 'sim', label: 'simulé',
+                 detail: 'Valeurs simulées (pas de serveur de diagnostic).' };
+      }
       const st = this.status[id];
-      if (this.mode !== 'server') return { key: 'sim', label: 'simulé', detail: 'Valeurs simulées (pas de serveur de diagnostic).' };
-      if (!st) return { key: 'off', label: 'inconnu', detail: 'État non communiqué par le serveur.' };
-      return st;
+      if (!st) {
+        return { key: 'off', state: 'off', label: 'inconnu',
+                 detail: 'État pas encore communiqué par le serveur de diagnostic.' };
+      }
+      return Object.assign({ key: st.state }, st);
+    },
+
+    /**
+     * Ce qu'un point a réellement produit : nombre d'échantillons et âge du
+     * dernier. `null` quand le serveur ne le dit pas (page hors serveur, ou
+     * état pas encore reçu) — on n'invente pas un « 0 » qui se lirait comme
+     * « le serveur affirme que ce point est muet ».
+     */
+    pointState(linkId, pointId) {
+      const st = this.mode === 'server' ? this.status[linkId] : null;
+      if (!st || !Array.isArray(st.points)) return null;
+      return st.points.find((p) => p.id === pointId) || null;
     },
 
     addrOf, pointSummary, kindOf, defaults, fieldApplies, linkDefaults, localPreset,
@@ -6943,6 +6981,13 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
   "use strict";
   const DW = (window.DW = window.DW || {});
 
+  // L'état d'un lien est un mot de CODE côté serveur (« up », « down »…) : il
+  // se traduit avant d'être montré, sans quoi la seule vue qui affichait la
+  // cause la donnait sous la forme « down · Connection refused ».
+  const ETAT_LIEN = { up: 'connecté', down: 'en défaut', off: 'désactivé',
+                      todo: 'non branché', sim: 'simulé' };
+  const etatLien = (s) => (ETAT_LIEN[s.state] || s.state) + (s.detail ? ' · ' + s.detail : '');
+
   const $ = (id) => document.getElementById(id);
   const surServeur = () => DW.sourceMode === 'ws';
 
@@ -7058,7 +7103,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
               DW.escapeHtml(l.id), DW.escapeHtml(l.protocol), DW.escapeHtml(l.target || '—'),
               String(l.points),
               l.secretRef ? 'référence « ' + DW.escapeHtml(l.secretRef) + ' »' : '—',
-              st[l.id] ? DW.escapeHtml(st[l.id].state + ' · ' + st[l.id].detail) : '—',
+              st[l.id] ? DW.escapeHtml(etatLien(st[l.id])) : '—',
             ]),
             'Aucun lien réseau configuré.') + '</div>' +
 
@@ -7117,6 +7162,10 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     for (const k of d.links || []) {
       l.push('  ' + k.id + '  ' + k.protocol + '  ' + (k.target || '—') + '  ' +
              k.points + ' point(s)' + (k.secretRef ? '  secrets: ' + k.secretRef : ''));
+      // L'état et son motif dans le rapport : c'est ce texte qu'on copie dans
+      // un compte rendu, et il omettait justement la panne dont on parle.
+      const e = (DW.protocols && DW.protocols.status) ? DW.protocols.status[k.id] : null;
+      if (e) l.push('      état : ' + etatLien(e));
     }
     l.push('');
     l.push('INTERFACES');
@@ -7418,7 +7467,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     todo: ['⋯', 'non branché', 'Protocole configurable, lecture pas encore implémentée (voir docs/PROTOCOLES.md).'],
   };
 
-  let root = null, view = null, editing = null, noteEl = null;
+  let root = null, view = null, editing = null, noteEl = null, veille = null;
 
   // ---------------------------------------------------------------- champs
   function fieldRow(f, params, onInput) {
@@ -7522,12 +7571,24 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     noteEl = back.querySelector('#pxNote');
     view = 'links';
     render();
-    if (P.mode === 'server') P.refreshStatus().then(() => { if (view === 'links') render(); });
+    // Écran de diagnostic : il se rafraîchit tout seul. On regarde un lien
+    // repartir sans avoir à refermer et rouvrir la fenêtre — et seules les
+    // vues de LISTE sont redessinées, jamais un formulaire en cours de saisie.
+    if (P.mode === 'server') {
+      const majuscule = async () => {
+        if (!root) return;
+        await P.refreshStatus();
+        if (root && (view === 'links' || view === 'points')) render();
+      };
+      majuscule();
+      veille = setInterval(majuscule, 2000);
+    }
   }
 
   function close() {
     const r = document.getElementById('modalRoot');
     if (r) r.innerHTML = '';
+    if (veille) { clearInterval(veille); veille = null; }
     root = null; view = null; editing = null;
   }
 
@@ -7543,6 +7604,78 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     else if (view === 'link') renderLink(b);
     else if (view === 'points') renderPoints(b);
     else if (view === 'point') renderPoint(b);
+  }
+
+  // ------------------------------------------------------- diagnostic
+  /**
+   * Âge en clair. Le serveur publie des SECONDES ÉCOULÉES et non des dates :
+   * son horloge compte depuis son démarrage, et la page n'a pas à connaître
+   * cette origine pour écrire « il y a 3 s ».
+   */
+  function age(s) {
+    if (s == null || s < 0) return null;
+    if (s < 1.5) return 'à l’instant';
+    if (s < 90) return 'il y a ' + Math.round(s) + ' s';
+    if (s < 5400) return 'il y a ' + Math.round(s / 60) + ' min';
+    return 'il y a ' + Math.round(s / 3600) + ' h';
+  }
+
+  const pluriel = (n, mot) => n + ' ' + mot + (n > 1 ? 's' : '');
+
+  /**
+   * La phrase de diagnostic d'un lien — celle qui doit suffire à savoir quoi
+   * faire. Elle est AFFICHÉE, pas seulement mise en infobulle : sur écran
+   * tactile il n'y a pas de survol, et c'est justement là qu'on diagnostique.
+   */
+  function linkDiag(link, st) {
+    if (P.mode !== 'server') {
+      return 'Page ouverte hors du serveur de diagnostic : aucun lien n’est ouvert, ' +
+             'les valeurs affichées sont simulées.';
+    }
+    if (link.enabled === false) return 'Lien désactivé : aucun échange réseau.';
+    const bouts = [];
+    if (st.detail) bouts.push(st.detail);
+    if (st.state === 'down' && st.attempts > 1) {
+      bouts.push(pluriel(st.attempts, 'tentative') + ' de connexion');
+    }
+    if (st.state === 'up' || st.state === 'sim') {
+      const muets = (st.points || []).filter((p) => !p.samples).length;
+      const total = (st.points || []).length;
+      bouts.push(st.samples ? pluriel(st.samples, 'échantillon') + ' reçu' + (st.samples > 1 ? 's' : '')
+                            : 'aucun échantillon reçu');
+      const quand = age(st.lastS);
+      if (quand) bouts.push('dernier ' + quand);
+      if (muets && total) {
+        bouts.push(muets === total
+          ? 'AUCUN point ne remonte de valeur : vérifier l’adressage des points'
+          : muets + ' point' + (muets > 1 ? 's' : '') + ' sur ' + total + ' sans aucune valeur');
+      }
+    }
+    // L'avertissement est daté, et affiché À PART de l'état : une exception sur
+    // une requête n'abat pas le lien, mais elle explique un point muet.
+    if (st.warn) {
+      bouts.push('⚠ ' + st.warn + (age(st.warnS) ? ' (' + age(st.warnS) + ')' : ''));
+    }
+    if (st.sinceS >= 0 && st.state !== 'sim') {
+      const d = age(st.sinceS);
+      if (d) bouts.push('dans cet état ' + d);
+    }
+    // Cible locale injoignable : la cause la plus fréquente est que le serveur
+    // de test n'est pas démarré. Le dire vaut mieux que laisser chercher.
+    if (st.state === 'down' && presetIntact(link)) {
+      bouts.push('→ ce lien vise un serveur de test local : le démarrer par ' +
+                 '« bash tools/share.sh --server --local »');
+    }
+    return bouts.join(' · ');
+  }
+
+  /** Le diagnostic d'un point : ce qu'il a réellement produit. */
+  function pointDiag(link, pt) {
+    const ps = P.pointState(link.id, pt.id);
+    if (!ps) return null;
+    if (!ps.samples) return 'aucune valeur reçue depuis la configuration de ce lien';
+    return pluriel(ps.samples, 'valeur') + ' reçue' + (ps.samples > 1 ? 's' : '') +
+           (age(ps.lastS) ? ' · dernière ' + age(ps.lastS) : '');
   }
 
   // ---- liste des liens ---------------------------------------------
@@ -7598,6 +7731,15 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       row.querySelector('.px-sub').textContent =
         target(link) + ' · ' + (link.points || []).length + ' point(s)';
       row.querySelector('.px-sub').title = 'Cible du lien et nombre de points configurés';
+
+      // Le motif en clair, sous la ligne — pas seulement dans l'infobulle de
+      // l'état : c'est la phrase qu'on vient chercher quand rien n'arrive.
+      const diag = document.createElement('div');
+      diag.className = 'px-diag st-' + st.key;
+      diag.textContent = linkDiag(link, st);
+      diag.title = 'Ce que le serveur de diagnostic constate sur ce lien : motif, ' +
+                   'compteurs et ancienneté. « Tester » rejoue une connexion à la demande.';
+      if (diag.textContent) row.appendChild(diag);
 
       const acts = document.createElement('div');
       acts.className = 'm-actions px-acts';
@@ -7808,6 +7950,19 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
       const sub = row.querySelector('.px-sub');
       sub.textContent = (pt.label || pt.id) + ' · ' + P.pointSummary(link, pt) + ' · ' + pt.periodMs + ' ms';
       sub.title = 'Libellé, adressage protocole et période de lecture';
+
+      // Un lien « connecté » dont un point reste muet est le cas le plus
+      // trompeur : la ligne ci-dessous répond point par point.
+      const dg = pointDiag(link, pt);
+      if (dg) {
+        const d = document.createElement('div');
+        const ps = P.pointState(link.id, pt.id);
+        d.className = 'px-diag' + (ps && ps.samples ? ' st-up' : ' st-down');
+        d.textContent = dg;
+        d.title = 'Ce que CE point a produit depuis que le lien est configuré. ' +
+                  'Zéro valeur sur un lien connecté désigne son adressage, pas la connexion.';
+        row.appendChild(d);
+      }
 
       const acts = document.createElement('div');
       acts.className = 'm-actions px-acts';
@@ -10583,6 +10738,8 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
             ['Point', 'Une variable lue sur un lien (registre, IOA, SPN, objet…), avec son unité et sa période. Elle s’adresse ensuite <b>@lien.point</b> comme n’importe quelle variable.'],
             ['Horodatage', 'Réglable <b>point par point</b> : la date attachée par l’équipement quand le protocole en transporte une (IEC-104 horodaté, IEC 61850, OPC UA en abonnement, SNMP par un OID d’horodatage de la MIB), ou celle du serveur, forcée, quand l’horloge de l’équipement n’est pas de confiance.'],
             ['Sans serveur', 'La configuration reste dans le navigateur et les valeurs des points sont simulées — l’interface est démontrable sans matériel.'],
+            ['État d’un lien', 'Cinq états, et un seul se lit « tout va bien » : <b>● connecté</b> (le serveur échange avec l’équipement), <b>⚠ en défaut</b> (avec la cause), <b>○ désactivé</b> (mis en pause, configuration conservée), <b>⋯ non branché</b> (protocole configurable, pilote pas encore implémenté), <b>~ simulé</b> (page ouverte sans serveur de diagnostic : rien n’est ouvert). Le bouton <b>Tester</b> rejoue une connexion à la demande et répond en clair.'],
+            ['Diagnostic', 'Sous chaque lien, une ligne dit ce que le serveur constate : <b>motif en clair</b> (avec l’adresse visée), échantillons reçus, âge du dernier, tentatives de connexion, et combien de points restent muets. Elle est <b>affichée</b>, pas cachée en infobulle, et se rafraîchit toute seule. Grille de lecture : lien <b>en défaut</b> ⇒ c’est la liaison (adresse, port, équipement éteint) ; lien <b>connecté</b> mais point sans aucune valeur ⇒ c’est l’adressage de ce point (registre, type, unité), pas le réseau.'],
             ['Poste de développement', 'Sur une machine locale ou un Codespace, un lien <b>neuf</b> part pré-rempli avec les coordonnées des serveurs de test qui tournent là (simulateur d’équipements pour Modbus, banc d’essai pour les autres) : plus d’adresse à retaper. La mention sous les champs le dit, et disparaît dès qu’un champ est modifié. Sur un contrôleur, rien n’est pré-rempli.'],
           ]) +
           S('Courbes') +
