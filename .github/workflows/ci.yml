@@ -76,12 +76,20 @@ jobs:
           sudo systemctl stop snmpd 2> /dev/null || true
           sudo aa-disable /usr/sbin/snmpd 2> /dev/null || true
 
+      # tests/served.mjs charge la page RÉELLE (celle que sert le serveur) dans
+      # un navigateur : sans Chromium il se déclare ignoré, et le défaut qu'il
+      # garde — l'origine de capture datée sur la mauvaise horloge — passerait.
+      - name: Installer Chromium (page servie)
+        run: |
+          npm install --no-save --no-audit --no-fund playwright
+          npx playwright install --with-deps chromium
+
       - name: Configurer et compiler (C++23, avertissements = erreurs)
         run: |
           meson setup build
           meson compile -C build
 
-      - name: Tests du serveur (décodage, simulateur, liens réseau, forçage, journalisation)
+      - name: Tests du serveur (décodage, simulateur, liens réseau, forçage, journalisation, page servie)
         # Les phrases secrètes de l'agent SNMPv3 de test passent par
         # l'environnement du serveur : le pilote refuse de les lire ailleurs.
         # meson test lance le serveur, joue les vérifications et l'arrête.

@@ -76,7 +76,7 @@ if [ "$CIBLE" = tout ] || [ "$CIBLE" = serveur ]; then
   # meson test enchaîne le décodage et le simulateur d'équipements, puis les
   # vérifications qui demandent le serveur en fonctionnement (liens réseau —
   # simulateur compris —, forçage, journalisation).
-  etape "tests du serveur (décodage, simulateur, liens réseau, forçage, journalisation)" \
+  etape "tests du serveur (décodage, simulateur, liens réseau, forçage, journalisation, page servie)" \
     meson test -C "$BUILD" --suite serveur --print-errorlogs
 fi
 

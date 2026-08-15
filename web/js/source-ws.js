@@ -70,9 +70,13 @@
       try { m = JSON.parse(ev.data); } catch (e) { return; }
 
       if (m.e === 'hello') {
-        // Le flux commence ici : c'est l'origine de la capture. Le tampon est
-        // vide, contrairement à la simulation qui pré-remplit.
-        captureT0 = brut();
+        // Recalage d'horloge D'ABORD : tout ce qui suit se date dans le temps
+        // du serveur. L'inverse donnait une origine de capture prise sur
+        // l'horloge locale (≈ 0 au chargement) puis relue sur celle du serveur
+        // (son temps de fonctionnement) : une page fraîchement ouverte
+        // annonçait une capture aussi vieille que le serveur.
+        skew = m.now - localSec();
+        haveSkew = true;
         horizonS = m.horizonS || horizonS;
         srcName = m.source || srcName;
         api.name = srcName;
@@ -92,8 +96,13 @@
           for (const ch of chans.values()) { ch.ts.length = 0; ch.vs.length = 0; }
           setStatus('Serveur redémarré — historique réinitialisé.');
         }
-        skew = m.now - localSec();
-        haveSkew = true;
+        // Origine de la capture = le plus ancien échantillon encore détenu, à
+        // défaut l'instant présent (tampon vide : première connexion, ou purge
+        // ci-dessus). Une reconnexion garde ainsi l'origine de ce qui est déjà
+        // à l'écran, au lieu de remettre les temps affichés à zéro.
+        let minT = Infinity;
+        for (const ch of chans.values()) if (ch.ts.length) minT = Math.min(minT, ch.ts[0]);
+        captureT0 = isFinite(minT) ? minT : brut();
         if (onHello) { const f = onHello; onHello = null; f(); }
         return;
       }

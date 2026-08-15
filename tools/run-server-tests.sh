@@ -51,6 +51,10 @@ ECHECS=0
 node tests/protocols.mjs "http://localhost:$PORT" || ECHECS=$((ECHECS + 1))
 node tests/simulator.mjs "http://localhost:$PORT" || ECHECS=$((ECHECS + 1))
 node tests/server.mjs "http://localhost:$PORT" || ECHECS=$((ECHECS + 1))
+# La page telle que le serveur la sert (source WebSocket, horloge du serveur) :
+# les tests d'interface, eux, ouvrent le livrable en simulation navigateur.
+# Placé en dernier : il veut un serveur qui tourne depuis un moment.
+node tests/served.mjs "http://localhost:$PORT" || ECHECS=$((ECHECS + 1))
 
 kill "$SRV" 2>/dev/null; wait "$SRV" 2>/dev/null; SRV=""
 echo ""

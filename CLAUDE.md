@@ -169,6 +169,9 @@ tests/mms_ied.mjs    IED IEC 61850 simulé (pile ISO, MMS, rapports)
 tests/server.mjs     forçage, journalisation autonome, apparence, audit,
                 LLDP, capture (serveur requis ; second passage --apres-redemarrage
                 pour la persistance des réglages de capture)
+tests/served.mjs la page RÉELLE servie par le serveur, dans un navigateur
+                (source WebSocket, horloge du serveur) — les tests d'interface,
+                eux, ouvrent dist/ en simulation
 dist/           livrables générés (commités) : index.html autonome + artifact.html
 docs/           PROJET.md, SPECS.md, PROTOCOLES.md, SIMULATEUR.md
 .devcontainer/  configuration GitHub Codespaces (Python + Node + aperçu 8080)

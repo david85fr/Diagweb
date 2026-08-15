@@ -358,7 +358,13 @@ courante, et « (arrêtée) » le cas échéant.
 L'origine de la première capture est le **début des données disponibles**, pas
 l'instant du chargement : la simulation pré-remplit un horizon complet à
 l'abonnement, et le curseur afficherait sinon des temps négatifs sur les trois
-quarts du tracé.
+quarts du tracé. Sur la page servie par le contrôleur, c'est le plus ancien
+échantillon reçu qui fait origine — le tampon est vide à la connexion, et une
+**reconnexion** garde donc l'origine de ce qui est déjà à l'écran. Elle se date
+sur l'**horloge du serveur**, recalée avant toute autre chose à l'arrivée du
+message `hello` : datée sur l'horloge locale puis relue sur celle du serveur,
+elle annonçait une capture aussi vieille que le serveur sur une page à peine
+ouverte.
 
 **Curseur de mesure** : l'encart donne le temps **depuis le début de la
 capture** (`t = 5 min 08 s`) — un relevé se note et se compare, là où « il y a
