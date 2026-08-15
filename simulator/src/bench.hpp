@@ -32,8 +32,11 @@ namespace sim {
 // ------------------------------------------------------------------- motion
 /**
  * Law of motion of a signal: the generators shared with the diagnostic
- * server, plus two laws that only make sense for a device image — a constant
- * and a ramp (an energy meter index climbs, it does not oscillate).
+ * server, plus three laws that only make sense for a device image — a
+ * constant, a ramp (an energy meter index climbs, it does not oscillate) and
+ * a sawtooth. The sawtooth is the test signal: it sweeps a known interval at
+ * a known pace, so a glance at the curve tells whether the whole chain — the
+ * device, the driver, the WebSocket, the plot — is alive and honest.
  */
 class Motion {
  public:
@@ -54,6 +57,13 @@ class Motion {
       m.value_ = j.num("base", 0);
       m.rate_ = j.num("rate", 1);
       m.modulo_ = std::max(0.0, j.num("modulo", 0));
+      return m;
+    }
+    if (kind_name == "saw") {
+      m.law_ = Law::Saw;
+      m.value_ = j.num("min", 0);
+      m.rate_ = j.num("max", 1) - m.value_;      // amplitude of the sweep
+      m.modulo_ = period;
       return m;
     }
 
@@ -97,13 +107,18 @@ class Motion {
         const double v = value_ + rate_ * t;
         return modulo_ > 0 ? std::fmod(std::fmod(v, modulo_) + modulo_, modulo_) : v;
       }
+      case Law::Saw: {
+        // min at t = 0, max reached just before the period elapses, then back.
+        const double phase = std::fmod(std::fmod(t, modulo_) + modulo_, modulo_) / modulo_;
+        return value_ + rate_ * phase;
+      }
       case Law::Gen: return gen_ ? (*gen_)(t) : 0;
     }
     return 0;
   }
 
  private:
-  enum class Law { Const, Ramp, Gen };
+  enum class Law { Const, Ramp, Saw, Gen };
   Law law_ = Law::Const;
   double value_ = 0, rate_ = 0, modulo_ = 0;
   std::optional<Generator> gen_;
@@ -530,9 +545,15 @@ inline Bench Bench::from_json(const JValue& root, std::vector<std::string>& warn
  * `--print-config` writes out, so there is a single source of truth: edit a
  * copy of this text rather than a second file kept in sync by hand.
  *
- * The values follow the example of docs/PROTOCOLES.md — a pressure read at
- * register 40 with a gain of 0.1 — so that the documented walkthrough can be
- * played against this simulator without changing a single field.
+ * Every register sweeps a SAWTOOTH from 1 to 10 over ten seconds, and that is
+ * deliberate: the first question asked of a new link is « does anything come
+ * through, and is it the right thing? ». A signal whose bounds and pace are
+ * known answers it at a glance — a value outside 1…10, a flat line or a curve
+ * with the wrong period says where to look. Integer registers climb in ten
+ * visible steps, floating-point ones climb smoothly: the type shows up in the
+ * shape of the curve, without reading a single configuration field.
+ *
+ * The bits keep laws of their own — a sawtooth has no meaning on a coil.
  */
 inline const char* default_config() {
   return R"JSON({
@@ -544,28 +565,28 @@ inline const char* default_config() {
       "modbus": { "unitId": 1, "coils": 16, "discrete": 16, "holding": 100, "input": 32 },
       "signals": [
         { "id": "pression", "label": "Pression circuit A", "unit": "bar",
-          "gen": { "kind": "sine", "base": 3.5, "amp": 0.4, "periodS": 30, "noise": 0.02 },
-          "modbus": { "area": "holding", "addr": 40, "type": "uint16", "gain": 0.1 } },
+          "gen": { "kind": "saw", "min": 1, "max": 10, "periodS": 10 },
+          "modbus": { "area": "holding", "addr": 40, "type": "uint16" } },
         { "id": "temperature", "label": "Température d'huile", "unit": "°C",
-          "gen": { "kind": "walk", "base": 62, "step": 0.15, "min": 20, "max": 95 },
-          "modbus": { "area": "holding", "addr": 41, "type": "int16", "gain": 0.1 } },
+          "gen": { "kind": "saw", "min": 1, "max": 10, "periodS": 10 },
+          "modbus": { "area": "holding", "addr": 41, "type": "int16" } },
         { "id": "debit", "label": "Débit refoulement", "unit": "m3/h",
-          "gen": { "kind": "sine", "base": 12.5, "amp": 3, "periodS": 45, "noise": 0.05 },
+          "gen": { "kind": "saw", "min": 1, "max": 10, "periodS": 10 },
           "modbus": { "area": "holding", "addr": 10, "type": "float32" } },
         { "id": "energie", "label": "Énergie consommée", "unit": "kWh",
-          "gen": { "kind": "ramp", "base": 120000, "rate": 0.4 },
+          "gen": { "kind": "saw", "min": 1, "max": 10, "periodS": 10 },
           "modbus": { "area": "holding", "addr": 20, "type": "uint32" } },
         { "id": "consigne", "label": "Consigne de pression", "unit": "bar",
-          "gen": { "kind": "const", "value": 3.5 },
-          "modbus": { "area": "holding", "addr": 50, "type": "uint16", "gain": 0.1 } },
+          "gen": { "kind": "saw", "min": 1, "max": 10, "periodS": 10 },
+          "modbus": { "area": "holding", "addr": 50, "type": "uint16" } },
         { "id": "vitesse", "label": "Vitesse pompe", "unit": "tr/min",
-          "gen": { "kind": "sine", "base": 1450, "amp": 120, "periodS": 20, "noise": 4 },
+          "gen": { "kind": "saw", "min": 1, "max": 10, "periodS": 10 },
           "modbus": { "area": "input", "addr": 0, "type": "uint16" } },
         { "id": "couple", "label": "Couple moteur", "unit": "N.m",
-          "gen": { "kind": "jitter", "base": 48, "noise": 2, "spikeP": 0.02, "spikeAmp": 12 },
-          "modbus": { "area": "input", "addr": 1, "type": "int16", "gain": 0.1 } },
+          "gen": { "kind": "saw", "min": 1, "max": 10, "periodS": 10 },
+          "modbus": { "area": "input", "addr": 1, "type": "int16" } },
         { "id": "cycles", "label": "Compteur de cycles", "unit": "",
-          "gen": { "kind": "counter", "rate": 3 },
+          "gen": { "kind": "saw", "min": 1, "max": 10, "periodS": 10 },
           "modbus": { "area": "input", "addr": 2, "type": "uint16" } },
         { "id": "pompe", "label": "Pompe en marche",
           "gen": { "kind": "bits", "onS": 12, "offS": 8 },
@@ -593,13 +614,13 @@ inline const char* default_config() {
       "modbus": { "unitId": 2, "input": 8 },
       "signals": [
         { "id": "tension", "label": "Tension composée", "unit": "V",
-          "gen": { "kind": "sine", "base": 400, "amp": 3, "periodS": 60, "noise": 0.5 },
+          "gen": { "kind": "saw", "min": 1, "max": 10, "periodS": 10 },
           "modbus": { "area": "input", "addr": 0, "type": "float32" } },
         { "id": "courant", "label": "Courant de ligne", "unit": "A",
-          "gen": { "kind": "walk", "base": 18, "step": 0.4, "min": 0, "max": 63 },
+          "gen": { "kind": "saw", "min": 1, "max": 10, "periodS": 10 },
           "modbus": { "area": "input", "addr": 2, "type": "float32" } },
         { "id": "index", "label": "Index d'énergie", "unit": "Wh",
-          "gen": { "kind": "ramp", "base": 4200000, "rate": 12 },
+          "gen": { "kind": "saw", "min": 1, "max": 10, "periodS": 10 },
           "modbus": { "area": "input", "addr": 4, "type": "uint32" } }
       ]
     }

@@ -121,15 +121,17 @@ const put = await api('/api/protocols', {
     version: 1,
     links: [
       lien('banc', 'Groupe hydraulique simulé', 1, [
-        // Exactement l'exemple de docs/PROTOCOLES.md : registre 40, gain 0,1.
+        // Tous les registres du simulateur balaient 1 → 10 en dent de scie ;
+        // les vérifications portent donc sur ces bornes, quels que soient le
+        // type et la fonction — un décodage faux en sortirait aussitôt.
         POINT('pression', 'Pression circuit A', 'bar', 'float',
-              { fn: 3, reg: 40, type: 'uint16', gain: 0.1 }),
+              { fn: 3, reg: 40, type: 'uint16' }),
         POINT('debit', 'Débit refoulement', 'm3/h', 'float',
               { fn: 3, reg: 10, type: 'float32', wordOrder: 'big' }),
         POINT('energie', 'Énergie consommée', 'kWh', 'float',
               { fn: 3, reg: 20, type: 'uint32', wordOrder: 'big' }),
         POINT('consigne', 'Consigne de pression', 'bar', 'float',
-              { fn: 3, reg: 50, type: 'uint16', gain: 0.1 }),
+              { fn: 3, reg: 50, type: 'uint16' }),
         POINT('vitesse', 'Vitesse pompe', 'tr/min', 'word',
               { fn: 4, reg: 0, type: 'uint16' }),
         POINT('pompe', 'Pompe en marche', '', 'bit', { fn: 1, reg: 0, type: 'bool' }),
@@ -181,25 +183,33 @@ const got = await collect(
 const last = (a) => (got.get(a).length ? got.get(a)[got.get(a).length - 1] : null);
 const dans = (a, lo, hi) => last(a) !== null && last(a) >= lo && last(a) <= hi;
 
-check('registre de maintien lu et mis à l’échelle (fn 03, gain 0,1)',
-  dans('@banc.pression', 2.5, 4.5), 'valeur ' + last('@banc.pression') + ' bar');
-check('flottant 32 bits sur deux registres', dans('@banc.debit', 8, 17),
+check('registre de maintien lu (fn 03)', dans('@banc.pression', 1, 10),
+  'valeur ' + last('@banc.pression') + ' bar');
+check('flottant 32 bits sur deux registres', dans('@banc.debit', 1, 10),
   'valeur ' + last('@banc.debit') + ' m3/h');
-check('entier 32 bits non signé sur deux registres',
-  dans('@banc.energie', 120000, 130000), 'valeur ' + last('@banc.energie') + ' kWh');
-check('constante lue à sa valeur',
-  last('@banc.consigne') !== null && Math.abs(last('@banc.consigne') - 3.5) < 0.05,
+check('entier 32 bits non signé sur deux registres', dans('@banc.energie', 1, 10),
+  'valeur ' + last('@banc.energie') + ' kWh');
+check('second registre de maintien lu', dans('@banc.consigne', 1, 10),
   'valeur ' + last('@banc.consigne') + ' bar');
-check('registre d’entrée lu (fn 04)', dans('@banc.vitesse', 1300, 1600),
+check('registre d’entrée lu (fn 04)', dans('@banc.vitesse', 1, 10),
   'valeur ' + last('@banc.vitesse') + ' tr/min');
 check('bobine lue (fn 01)', last('@banc.pompe') === 0 || last('@banc.pompe') === 1,
   'valeur ' + last('@banc.pompe'));
 check('entrée TOR lue (fn 02)', last('@banc.presence') === 1,
   'valeur ' + last('@banc.presence'));
-check('flottant du second équipement', dans('@compteur.tension', 390, 410),
+check('flottant du second équipement', dans('@compteur.tension', 1, 10),
   'valeur ' + last('@compteur.tension') + ' V');
-check('index 32 bits du second équipement', dans('@compteur.index', 4200000, 4300000),
+check('index 32 bits du second équipement', dans('@compteur.index', 1, 10),
   'valeur ' + last('@compteur.index') + ' Wh');
+
+// La dent de scie a une pente connue : sur une seconde et demie, un point lu
+// toutes les 100 ms doit BOUGER. Une valeur juste mais figée passerait toutes
+// les vérifications ci-dessus sans rien prouver du flux.
+const etendue = (a) => { const v = got.get(a); return v.length ? Math.max(...v) - Math.min(...v) : 0; };
+check('la dent de scie progresse (flottant)',
+  got.get('@banc.debit').length >= 5 && etendue('@banc.debit') > 0.2,
+  got.get('@banc.debit').length + ' échantillon(s), amplitude ' +
+  etendue('@banc.debit').toFixed(2));
 
 // Adresse hors table : rien ne doit être publié — une valeur inventée serait
 // pire que l'absence — et le lien doit rester ouvert pour les autres points.

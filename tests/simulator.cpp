@@ -108,27 +108,50 @@ int main() {
           bench.by_unit(0) == bench.by_unit(1) && bench.by_unit(255) == bench.by_unit(1));
   }
 
-  // ---- image des registres ---------------------------------------------
+  // ---- dent de scie de la configuration interne -------------------------
+  // Tous les registres balaient 1 → 10 en dix secondes. Des bornes et une
+  // cadence connues, c'est ce qui permet de juger un lien tout neuf d'un coup
+  // d'œil : hors de 1…10, plat, ou de mauvaise période — on sait où chercher.
   {
-    bench.tick(0);
     const Device& d = *bench.by_unit(1);
-    const Signal* pression = nullptr;
-    const Signal* debit = nullptr;
-    const Signal* consigne = nullptr;
+    const Signal* debit = nullptr;      // float32 : la rampe est lisse
     for (const Signal& s : d.signals) {
-      if (s.id == "pression") pression = &s;
       if (s.id == "debit") debit = &s;
-      if (s.id == "consigne") consigne = &s;
     }
-    check("signaux de l'exemple présents", pression && debit && consigne);
-    // Gain 0,1 : la configuration est en bar, le registre porte la valeur brute
-    // — exactement ce que lirait un équipement réel.
-    near("pression : brut = valeur / gain", d.reg_at(Area::Holding, 40),
-         std::round(pression->value / 0.1), 1.5);
-    near("relecture de l'image en unités physiques", d.value_of(pression->modbus),
-         std::round(pression->value / 0.1) * 0.1, 0.06);
-    near("float32 sur deux registres", d.value_of(debit->modbus), debit->value, 1e-3);
-    near("constante lue à sa valeur", d.value_of(consigne->modbus), 3.5, 1e-6);
+    check("signal flottant présent", debit != nullptr);
+
+    bench.tick(0);
+    near("minimum à l'origine (registre entier)", d.reg_at(Area::Holding, 40), 1);
+    near("minimum à l'origine (flottant)", d.value_of(debit->modbus), 1, 1e-6);
+    bench.tick(5);
+    near("mi-parcours en flottant", d.value_of(debit->modbus), 5.5, 1e-6);
+    // Un registre entier ne peut pas porter 5,5 : il monte par marches d'un pas.
+    near("mi-parcours arrondi en entier", d.reg_at(Area::Holding, 40), 6);
+    bench.tick(9.99);
+    near("sommet atteint en fin de période", d.reg_at(Area::Holding, 40), 10);
+    bench.tick(10);
+    near("retour au minimum à la période suivante", d.reg_at(Area::Holding, 40), 1);
+
+    // Montée franche sur toute la période, et jamais hors des bornes — c'est
+    // la promesse faite à qui regarde la courbe.
+    bool croissante = true, dans_bornes = true;
+    double avant = -1;
+    for (int i = 0; i <= 100; ++i) {
+      const double t = i * 0.099;                 // une période, sans l'atteindre
+      bench.tick(t);
+      const double v = d.value_of(debit->modbus);
+      if (v <= avant) croissante = false;
+      avant = v;
+      for (const Device& dev : bench.devices) {
+        for (const Signal& s : dev.signals) {
+          if (!s.modbus.exposed || area_is_bit(s.modbus.area)) continue;
+          const double x = dev.value_of(s.modbus);
+          if (x < 1 - 1e-9 || x > 10 + 1e-9) dans_bornes = false;
+        }
+      }
+    }
+    check("montée strictement croissante sur la période", croissante);
+    check("tous les registres restent entre 1 et 10", dans_bornes);
   }
 
   // ---- lectures ---------------------------------------------------------

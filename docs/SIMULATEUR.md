@@ -103,8 +103,8 @@ Diagweb ?* :
 ```
 Groupe hydraulique — unité 1 (banc)
   fn  adresse  type       gain  unité       valeur  signal
-  03  40       uint16      0.1  bar            3.5  pression — Pression circuit A
-  03  10       float32       1  m3/h          12.6  debit — Débit refoulement
+  03  40       uint16        1  bar              4  pression — Pression circuit A
+  03  10       float32       1  m3/h         4.312  debit — Débit refoulement
   01  0        bit           1                   1  pompe — Pompe en marche
 ```
 
@@ -129,13 +129,31 @@ même port — comme derrière une passerelle. Pour partir de là :
       "modbus": { "unitId": 1, "coils": 16, "discrete": 16, "holding": 100, "input": 32 },
       "signals": [
         { "id": "pression", "label": "Pression circuit A", "unit": "bar",
-          "gen": { "kind": "sine", "base": 3.5, "amp": 0.4, "periodS": 30, "noise": 0.02 },
-          "modbus": { "area": "holding", "addr": 40, "type": "uint16", "gain": 0.1 } }
+          "gen": { "kind": "saw", "min": 1, "max": 10, "periodS": 10 },
+          "modbus": { "area": "holding", "addr": 40, "type": "uint16" } }
       ]
     }
   ]
 }
 ```
+
+### Le signal par défaut : une dent de scie de 1 à 10
+
+**Tous les registres** de la configuration interne balaient **1 → 10 en dix
+secondes**, puis retombent. C'est délibéré : la première question posée à un
+lien tout neuf est « est-ce que quelque chose arrive, et est-ce la bonne
+chose ? ». Des bornes et une cadence connues y répondent d'un coup d'œil —
+une valeur hors de 1…10 trahit un décodage faux, une courbe plate un lien
+muet, une période fausse une erreur de gain ou de type.
+
+Le type se lit dans la **forme** de la courbe, sans ouvrir la configuration :
+un registre entier monte par dix marches d'une seconde, un `float32` monte
+tout droit. Les bits gardent des lois à eux — une dent de scie n'a pas de sens
+sur une bobine.
+
+Pour retrouver des signaux d'allure physique (sinusoïde bruitée, marche
+aléatoire, rampe d'index), partir de `--print-config` et remplacer les lois :
+la mécanique n'a pas changé, seule la configuration par défaut.
 
 ### Lois de mouvement (`gen`)
 
@@ -148,6 +166,7 @@ même port — comme derrière une passerelle. Pour partir de là :
 | `steps` | `values`, `periodS`, `noise` | des paliers tirés d'une liste |
 | `square` | `periodS`, `duty` | un créneau |
 | `bits` | `onS`, `offS` | un état booléen qui bascule |
+| `saw` | `min`, `max`, `periodS` | une **dent de scie** : montée linéaire de `min` à `max`, puis chute |
 | `counter` | `rate` | un compteur 16 bits qui reboucle |
 | `jitter` | `base`, `noise`, `spikeP`, `spikeAmp` | du bruit avec des pointes |
 
@@ -167,8 +186,10 @@ configuration.
 | `gain`, `offset` | ceux que **le maître** appliquera : `valeur = brut × gain + offset` | `1`, `0` |
 
 La configuration est donc écrite en **unités physiques** et le registre porte la
-valeur **brute** : `3,5 bar` avec un gain de `0,1` se lit `35` sur le fil, ce que
-donnerait un équipement réel. Le simulateur sature aux bornes du type plutôt que
+valeur **brute** : `3,5 bar` avec un gain de `0,1` se lirait `35` sur le fil, ce
+que donnerait un équipement réel. La configuration interne, elle, laisse le gain
+à 1 — ce qu'on lit à l'écran est alors exactement ce que porte le registre, ce
+qui est la moindre des choses pour un signal d'essai. Le simulateur sature aux bornes du type plutôt que
 de replier la valeur — un dépassement se voit à l'écran au lieu de fabriquer une
 mesure absurde.
 
@@ -214,9 +235,10 @@ entrées TOR, **03** registres de maintien, **04** registres d'entrée.
 
 Puis, dans la page (**☰ → Liens réseau…**) : nouveau lien **Modbus TCP**,
 identifiant `banc`, hôte `127.0.0.1`, port `5020`, unité `1` ; **Tester** ; puis
-un point `pression` — fonction 03, registre 40, `uint16`, gain 0,1, unité `bar`.
-L'adresse Diagweb est alors `@banc.pression`. C'est l'exemple complet de
-`docs/PROTOCOLES.md`, jouable sans matériel.
+un point `pression` — fonction 03, registre 40, `uint16`, gain 1, unité `bar`.
+L'adresse Diagweb est alors `@banc.pression`, et la courbe doit monter de 1 à 10
+en dix secondes puis retomber. Si elle ne le fait pas, le défaut est en amont du
+graphique.
 
 ## Tests
 
