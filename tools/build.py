@@ -24,15 +24,34 @@ DIST = ROOT / "dist"
 
 
 def git_version() -> str:
-    """« hash court · #n » du HEAD courant (identifie le commit des sources)."""
+    """« hash court · #n » du HEAD courant (identifie le commit des sources).
+
+    Le numéro compte les commits de l'historique — il n'a donc de sens que sur
+    un clone COMPLET. Sur un clone superficiel (`git clone --depth`, ce que
+    font plusieurs environnements d'exécution par défaut), `rev-list --count`
+    s'arrête à la troncature et rend un nombre plus petit : deux sessions
+    construisant le MÊME commit affichaient des numéros différents, et `dist/`
+    changeait d'une session à l'autre sans qu'aucune source ne bouge.
+
+    On ne devine pas : le numéro n'est émis que s'il est exact, et l'absence
+    est dite. Le hash, lui, reste juste dans tous les cas.
+    """
     try:
         h = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, text=True).strip()
+    except Exception:
+        return "dev"
+    try:
+        superficiel = subprocess.check_output(
+            ["git", "rev-parse", "--is-shallow-repository"],
+            cwd=ROOT, text=True).strip() == "true"
+        if superficiel:
+            return f"{h} · clone superficiel"
         n = subprocess.check_output(
             ["git", "rev-list", "--count", "HEAD"], cwd=ROOT, text=True).strip()
         return f"{h} · #{n}"
     except Exception:
-        return "dev"
+        return h
 
 
 def stamp_version(html: str) -> str:
