@@ -17,9 +17,13 @@ export DEBIAN_FRONTEND=noninteractive
 O62=/src/.o62-arm64
 
 apt-get update -qq
+# ca-certificates : sans lui, l'image de base n'a AUCUNE autorité de
+# certification et le clone HTTPS d'open62541 échoue sur la vérification du
+# certificat. C'est ce qui a fait sortir le premier paquet arm64 sans le pilote
+# OPC UA — l'erreur était avalée, elle ne l'est plus (voir plus bas).
 apt-get install -y -qq --no-install-recommends \
   build-essential meson ninja-build pkg-config python3 git dpkg-dev cmake \
-  libsnmp-dev
+  ca-certificates libsnmp-dev
 
 # Le dépôt est monté depuis l'hôte : git refuse d'y travailler sans cela.
 git config --global --add safe.directory /src
@@ -32,8 +36,10 @@ git config --global --add safe.directory /src
 if [ ! -f "$O62/lib/pkgconfig/open62541.pc" ] &&
    [ ! -f "$O62/lib64/pkgconfig/open62541.pc" ]; then
   echo "== open62541 absent du cache : construction (longue sous émulation)"
+  # Sortie d'erreur CONSERVÉE : un échec doit se lire dans le journal de
+  # l'exécution, pas se deviner à la taille du paquet.
   if git clone --depth 1 --branch v1.5.6 \
-       https://github.com/open62541/open62541.git /tmp/o62 > /dev/null 2>&1; then
+       https://github.com/open62541/open62541.git /tmp/o62 > /dev/null; then
     cmake -S /tmp/o62 -B /tmp/o62/build \
       -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$O62" \
       -DUA_NAMESPACE_ZERO=REDUCED -DUA_ENABLE_AMALGAMATION=OFF \
@@ -49,6 +55,12 @@ if [ ! -f "$O62/lib/pkgconfig/open62541.pc" ] &&
 fi
 
 export PKG_CONFIG_PATH="$O62/lib/pkgconfig:$O62/lib64/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+
+# Dit noir sur blanc ce que la construction va trouver : c'est la ligne qu'on
+# relit quand un paquet sort plus léger que prévu.
+echo "== pilotes optionnels disponibles pour cette construction"
+echo "   open62541 (OPC UA) : $(pkg-config --modversion open62541 2> /dev/null || echo ABSENT)"
+echo "   net-snmp (SNMP v3) : $(pkg-config --modversion netsnmp 2> /dev/null || echo ABSENT)"
 
 # Le dossier de construction peut rester de l'étape amd64, avec des objets
 # d'une autre architecture : on repart à neuf.

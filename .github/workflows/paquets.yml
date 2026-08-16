@@ -151,11 +151,27 @@ jobs:
           # ne s'ouvrirait pas hors ligne.
           python3 tools/check-dist.py
           # Pilote OPC UA : un avertissement, pas une erreur — un paquet sans
-          # OPC UA reste installable et utile, mais cela doit se voir.
+          # OPC UA reste installable et utile, mais cela doit se voir. Le
+          # résumé de l'exécution le porte aussi : c'est là qu'on regarde.
+          {
+            echo "### Livrables — $PKGVER"
+            echo ""
+            echo "| Fichier | Taille | OPC UA | SNMP v3 |"
+            echo "|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
           for p in dist/packages/*.deb; do
-            dpkg-deb --info "$p" | grep -q 'OPC UA oui' ||
+            info=$(dpkg-deb --info "$p")
+            opcua=non; snmp=non
+            echo "$info" | grep -q 'OPC UA oui' && opcua=oui
+            echo "$info" | grep -q 'SNMP v3 oui' && snmp=oui
+            printf '| `%s` | %s | %s | %s |\n' "$(basename "$p")" \
+              "$(du -h "$p" | cut -f1)" "$opcua" "$snmp" >> "$GITHUB_STEP_SUMMARY"
+            [ "$opcua" = oui ] ||
               echo "::warning::$(basename "$p") est construit sans le pilote OPC UA"
           done
+          h=$(ls dist/packages/*_page-autonome.html)
+          printf '| `%s` | %s | — | — |\n' "$(basename "$h")" "$(du -h "$h" | cut -f1)" \
+            >> "$GITHUB_STEP_SUMMARY"
 
       # Trois dépôts séparés : on télécharge celui dont on a besoin, sans tirer
       # les autres. Ils restent disponibles même quand la release est refaite.
