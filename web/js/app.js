@@ -2609,6 +2609,12 @@
 
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
+      // Une fenêtre ouverte se ferme d'abord, et elle seule : Escape ferme ce
+      // qui est au-dessus, comme partout ailleurs. On passe par son bouton ✕
+      // plutôt que par un vidage direct, pour que le rangement propre à chaque
+      // fenêtre ait lieu.
+      const fermer = $('modalRoot').querySelector('.m-close');
+      if (fermer) { fermer.click(); return; }
       for (const tab of state.tabs) {
         for (const t of tab.tables) if (t.fullscreen) setTableFullscreen(t, false);
       }

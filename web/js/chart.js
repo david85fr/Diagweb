@@ -406,7 +406,14 @@
           () => this.app.removeChart(this));
       });
 
-      this._escHandler = (e) => { if (e.key === 'Escape' && this.fullscreen) this.setFullscreen(false); };
+      // Une fenêtre ouverte prend Escape pour elle (voir app.js) : sans cette
+      // garde, fermer une fenêtre depuis un graphique en plein écran ferait
+      // les deux d'un coup.
+      this._escHandler = (e) => {
+        if (e.key !== 'Escape' || !this.fullscreen) return;
+        if (document.querySelector('#modalRoot .m-close')) return;
+        this.setFullscreen(false);
+      };
       document.addEventListener('keydown', this._escHandler);
 
       this.bindCanvasGestures();

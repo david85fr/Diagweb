@@ -415,7 +415,10 @@ await p2.keyboard.press('Escape');
 await p2.waitForTimeout(200);
 
 // Suggestions : le point réseau est proposé et filtrable
-await p2.fill('#searchInput', '@banc');
+// Adresse complète : les liens livrés d'avance apportent leurs propres points,
+// et la liste des suggestions est bornée — un préfixe seul ne garantit plus
+// que le point déclaré ici y figure.
+await p2.fill('#searchInput', '@banc.pression');
 await p2.waitForTimeout(300);
 const sugNet = await p2.locator('#suggestBox .sug').filter({ hasText: '@banc.pression' }).count();
 await p2.locator('#suggestBox .fbtn', { hasText: 'Réseau' }).click();
@@ -425,10 +428,13 @@ await p2.keyboard.press('Escape');
 await p2.fill('#searchInput', '');
 // L'étiquette dit d'où vient la valeur, pas la lettre de l'adresse : un point
 // lu à l'extérieur par le client Modbus s'annonce « ext.MB », à distinguer du
-// « MB » d'un registre vu par le canal interne du contrôleur.
+// « MB » d'un registre vu par le canal interne du contrôleur. Le filtre ne
+// retient que des points de liens — chacun avec l'étiquette de SON protocole,
+// les liens livrés d'avance en apportant de plusieurs sortes.
 check('le point réseau apparaît dans les suggestions (filtre « Réseau »)',
-  sugNet === 1 && netOnly.length > 0 && netOnly.every((t) => t === 'ext.MB'),
-  netOnly.join(', ') || 'aucune suggestion');
+  sugNet === 1 && netOnly.length > 0 && netOnly.every((t) => t.startsWith('ext.')) &&
+  netOnly.includes('ext.MB'),
+  sugNet + ' × @banc.pression · ' + (netOnly.join(', ') || 'aucune suggestion'));
 const badgesTable = await p2.locator(PANE + '.vrow .badge').allTextContents();
 check('étiquettes de famille : PLC, MB, Matlab, ext.<protocole>, largeur commune',
   badgesTable.includes('ext.MB') &&
