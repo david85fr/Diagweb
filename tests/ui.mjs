@@ -86,6 +86,32 @@ await p1.click('#addBtn');
 await p1.waitForTimeout(300);
 check('ajout au tableau numérique', await p1.locator(PANE + '.vrow').count() === 7);
 
+// Une adresse longue ne doit jamais passer PAR-DESSUS sa valeur : c'est la
+// valeur qu'on vient lire. Le défaut est resté invisible longtemps —
+// « Supervision.temps_cycle » recouvrait « 837.7 µs » de 57 px sur 390 px de
+// large — parce qu'aucune vérification fonctionnelle ne regarde des
+// rectangles : tout était présent, correct, sans erreur console, et illisible.
+// Il a fallu ouvrir une capture d'écran pour le voir. Cette mesure remplace
+// désormais l'œil, et couvrira les adresses longues à venir.
+{
+  const recouvrements = await p1.evaluate(() => {
+    const out = [];
+    for (const ligne of document.querySelectorAll('.tabpane.on .vrow')) {
+      const a = ligne.querySelector('.v-addr');
+      const v = ligne.querySelector('.v-val');
+      if (!a || !v) continue;
+      const ra = a.getBoundingClientRect();
+      const rv = v.getBoundingClientRect();
+      if (ra.right > rv.left + 0.5) {
+        out.push(a.textContent.trim() + ' (+' + Math.round(ra.right - rv.left) + ' px)');
+      }
+    }
+    return out;
+  });
+  check('aucune adresse ne recouvre sa valeur (troncature à l’ellipse)',
+    recouvrements.length === 0, recouvrements.join(' · ') || 'aucun recouvrement');
+}
+
 await p1.fill('#searchInput', 'Elec.frequence');
 await p1.selectOption('#targetSel', 'new');
 await p1.click('#addBtn');
