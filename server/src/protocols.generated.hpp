@@ -244,6 +244,15 @@ inline const ProtocolDesc* find_protocol(const std::string& id) {
   return nullptr;
 }
 
+/**
+ * Configuration de démonstration : un lien par protocole ayant un serveur de
+ * test local, deux points chacun. Servie par --sim-links quand aucune
+ * configuration n'existe encore. Générée depuis web/js/protocols.js.
+ */
+inline const char* local_links_json() {
+  return R"JSONLIENS({"version":1,"links":[{"id":"banc-modbus","label":"Simulateur — Modbus TCP","protocol":"modbus-tcp","points":[{"id":"pression","label":"Pression circuit A","unit":"bar","kind":"float","periodMs":200,"params":{"fn":3,"reg":40,"type":"uint16"}},{"id":"debit","label":"Débit refoulement","unit":"m3/h","kind":"float","periodMs":200,"params":{"fn":3,"reg":10,"type":"float32"}}],"enabled":true,"params":{"host":"127.0.0.1","port":5020,"unitId":1}},{"id":"banc-iec104","label":"Banc — IEC 60870-5-104","protocol":"iec104","points":[{"id":"tension","label":"Mesure flottante","unit":"kV","kind":"float","periodMs":200,"params":{"ioa":100,"type":"auto"}},{"id":"etat","label":"État simple","unit":"","kind":"bit","periodMs":200,"params":{"ioa":200,"type":"auto"}}],"enabled":true,"params":{"host":"127.0.0.1","port":12404,"asdu":1}},{"id":"banc-snmp","label":"Banc — SNMP v2c","protocol":"snmp","points":[{"id":"uptime","label":"Temps depuis démarrage","unit":"s","kind":"float","periodMs":500,"params":{"oid":"1.3.6.1.2.1.1.3.0","gain":0.01}},{"id":"octets","label":"Octets reçus (Counter32)","unit":"o","kind":"float","periodMs":500,"params":{"oid":"1.3.6.1.2.1.2.2.1.10.2"}}],"enabled":true,"params":{"host":"127.0.0.1","port":11161,"version":"v2c","community":"public"}},{"id":"banc-61850","label":"Banc — IEC 61850 (MMS)","protocol":"iec61850","points":[{"id":"courant","label":"Courant phase A","unit":"A","kind":"float","periodMs":300,"params":{"ref":"LD0/MMXU1.A.phsA.cVal.mag.f","fc":"MX"}},{"id":"position","label":"Position disjoncteur","unit":"","kind":"word","periodMs":300,"params":{"ref":"LD0/XCBR1.Pos.stVal","fc":"ST"}}],"enabled":true,"params":{"host":"127.0.0.1","port":10102,"mode":"mms","iedName":"IED1"}},{"id":"banc-opcua","label":"Banc — OPC UA","protocol":"opcua","points":[{"id":"pression","label":"Pression","unit":"bar","kind":"float","periodMs":300,"params":{"nodeId":"ns=1;s=pression","samplingMs":100}},{"id":"compteur","label":"Compteur signé","unit":"","kind":"float","periodMs":300,"params":{"nodeId":"ns=1;s=compteur","samplingMs":100}}],"enabled":true,"params":{"endpoint":"opc.tcp://127.0.0.1:14840"}}]})JSONLIENS";
+}
+
 /** Description des protocoles au format JSON, pour l'interface web. */
 inline std::string protocols_descriptors_json() {
   std::string o = "[";

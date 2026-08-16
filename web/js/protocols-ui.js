@@ -218,9 +218,10 @@
     }
     // Cible locale injoignable : la cause la plus fréquente est que le serveur
     // de test n'est pas démarré. Le dire vaut mieux que laisser chercher.
-    if (st.state === 'down' && presetIntact(link)) {
-      bouts.push('→ ce lien vise un serveur de test local : le démarrer par ' +
-                 '« bash tools/share.sh --server --local »');
+    const pre = st.state === 'down' ? presetIntact(link) : null;
+    if (pre) {
+      bouts.push('→ ce lien vise le ' + pre.via + ' de cette machine : le démarrer par ' +
+                 '« ' + pre.cmd + ' »');
     }
     return bouts.join(' · ');
   }

@@ -80,6 +80,7 @@ struct Options {
   size_t max_points = 1500;   // points max par variable et par envoi
   int flush_ms = 60;          // cadence d'émission des lots
   bool sim_protocols = false; // liens réseau simulés (démonstration sans matériel)
+  bool sim_links = false;     // poser des liens vers les serveurs de test locaux
 };
 
 /** Liens réseau : instance unique, partagée par les requêtes HTTP. */
@@ -123,7 +124,20 @@ void save_protocols(const Options& opt, const ProtocolConfig& cfg) {
 
 ProtocolConfig load_protocols(const Options& opt) {
   std::ifstream f(protocols_file(opt), std::ios::binary);
-  if (!f) return {};
+  // Aucune configuration encore : --sim-links en pose une, tournée vers les
+  // serveurs de test qui vivent sur cette machine (voir docs/PROTOCOLES.md).
+  // Uniquement à l'ABSENCE de fichier : une configuration existante, même
+  // vidée volontairement, n'est jamais réécrite.
+  if (!f) {
+    if (!opt.sim_links) return {};
+    bool ok = false;
+    const ProtocolConfig cfg = ProtocolConfig::from_json(jparse(local_links_json(), &ok));
+    if (!ok) return {};
+    save_protocols(opt, cfg);
+    std::cout << "  liens de demonstration poses (" << cfg.links.size()
+              << " liens vers les serveurs de test locaux)" << std::endl;
+    return cfg;
+  }
   std::ostringstream body;
   body << f.rdbuf();
   bool ok = false;
@@ -877,10 +891,13 @@ int main(int argc, char** argv) {
     else if (a == "--root") opt.root = next();
     else if (a == "--data-dir") opt.data_dir = next();
     else if (a == "--sim-protocols") opt.sim_protocols = true;
+    else if (a == "--sim-links") opt.sim_links = true;
     else if (a == "--help") {
       std::cout << "diagweb-server [--port 8080] [--root .] [--data-dir .diag-data]"
-                   " [--sim-protocols]\n"
-                   "  --sim-protocols : liens reseau simules (demonstration sans materiel)\n";
+                   " [--sim-protocols] [--sim-links]\n"
+                   "  --sim-protocols : liens reseau simules (demonstration sans materiel)\n"
+                   "  --sim-links     : sans configuration existante, poser des liens vers\n"
+                   "                    les serveurs de test locaux (2 points par protocole)\n";
       return 0;
     }
   }

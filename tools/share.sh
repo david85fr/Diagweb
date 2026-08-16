@@ -286,7 +286,10 @@ if [ "$MODE" = "serveur" ]; then
     # le serveur n'a pas pu être compilé.
     liberer_port || exit 1
     echo "→ Démarrage du serveur de diagnostic (port $PORT)"
-    nohup ./build/diagweb-server --port "$PORT" --root . --data-dir .diag-data \
+    # --sim-links : sans configuration existante, le serveur pose des liens vers
+    # les serveurs de test de cette machine (deux points par protocole). Une
+    # configuration déjà écrite n'est jamais touchée.
+    nohup ./build/diagweb-server --port "$PORT" --root . --data-dir .diag-data --sim-links \
       > /tmp/diagweb-server.log 2>&1 &
     sleep 1.2
     if ! serveur_deja_la; then

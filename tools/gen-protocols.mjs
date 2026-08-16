@@ -22,6 +22,10 @@ globalThis.localStorage = { getItem: () => null, setItem: () => {} };
 const src = fs.readFileSync(path.join(ROOT, 'web/js/protocols.js'), 'utf8');
 new Function(src)();
 const { PROTOCOLS } = globalThis.window.DW;
+// Configuration de démonstration (liens vers les serveurs de test locaux) :
+// « true » force son rendu hors navigateur, où aucun « poste de développement »
+// ne peut être détecté.
+const LIENS_LOCAUX_JSON = globalThis.window.DW.protocols.localLinks(true);
 
 const cstr = (s) => '"' + String(s)
   .replace(/\\/g, '\\\\')
@@ -89,6 +93,15 @@ inline const ProtocolDesc* find_protocol(const std::string& id) {
     if (id == p.id) return &p;
   }
   return nullptr;
+}
+
+/**
+ * Configuration de démonstration : un lien par protocole ayant un serveur de
+ * test local, deux points chacun. Servie par --sim-links quand aucune
+ * configuration n'existe encore. Générée depuis web/js/protocols.js.
+ */
+inline const char* local_links_json() {
+  return R"JSONLIENS(${JSON.stringify(LIENS_LOCAUX_JSON)})JSONLIENS";
 }
 
 /** Description des protocoles au format JSON, pour l'interface web. */

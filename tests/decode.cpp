@@ -26,6 +26,7 @@
 #include "lldp.hpp"
 #include "drivers/iec61850/time61850.hpp"
 #include "protocol.hpp"
+#include "protocols.generated.hpp"
 
 using namespace diagweb;
 
@@ -930,6 +931,46 @@ int main() {
           ok && again.links.size() == 1 && again.links[0].points.size() == 1 &&
           again.links[0].str("host") == "10.0.0.5" &&
           again.links[0].points[0].num("reg") == 40);
+  }
+
+  // ---- configuration livrée par défaut ---------------------------------
+  // Ce que --sim-links pose quand rien n'est configuré : un lien par protocole
+  // ayant un serveur de test local, DEUX points chacun. Générée depuis
+  // web/js/protocols.js, donc à vérifier ici — une faute de frappe dans un
+  // identifiant de protocole ne donnerait pas d'erreur, seulement un lien
+  // silencieusement absent.
+  {
+    bool ok = false;
+    const ProtocolConfig cfg = ProtocolConfig::from_json(jparse(local_links_json(), &ok));
+    check("configuration de démonstration analysable", ok);
+    check("un lien par protocole ayant un serveur de test", cfg.links.size() == 5,
+          std::to_string(cfg.links.size()) + " lien(s)");
+    bool deux_points = true, adressee = true, active = true;
+    for (const LinkConfig& l : cfg.links) {
+      if (l.points.size() != 2) deux_points = false;
+      if (!l.enabled) active = false;
+      // Une cible, sinon le lien ne mène nulle part : hôte pour les protocoles
+      // à socket, point de terminaison pour OPC UA.
+      if (l.str("host").empty() && l.str("endpoint").empty()) adressee = false;
+    }
+    check("deux points par lien", deux_points);
+    check("liens actifs", active);
+    check("chaque lien porte une cible", adressee);
+    // Le lien Modbus vise le simulateur d'équipements, seul serveur de test
+    // démarré avec le serveur de diagnostic (tools/share.sh).
+    const auto mb = std::find_if(cfg.links.begin(), cfg.links.end(),
+                                 [](const LinkConfig& l) { return l.protocol == "modbus-tcp"; });
+    check("le lien Modbus vise le simulateur (127.0.0.1:5020)",
+          mb != cfg.links.end() && mb->str("host") == "127.0.0.1" && mb->num("port") == 5020,
+          mb != cfg.links.end() ? mb->str("host") + ":" + std::to_string(static_cast<int>(mb->num("port")))
+                                : "absent");
+    // Un protocole inconnu passerait la lecture JSON sans bruit : c'est
+    // exactement ce qu'on veut attraper ici.
+    bool connus = true;
+    for (const LinkConfig& l : cfg.links) {
+      if (!find_protocol(l.protocol)) connus = false;
+    }
+    check("protocoles connus du serveur", connus);
   }
 
   std::printf("\n%d/%d vérifications réussies\n", total - failed, total);

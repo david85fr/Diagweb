@@ -609,17 +609,19 @@
    * `tools/check-drivers.mjs` vérifie qu'ils n'ont pas dérivé de ceux que le
    * banc ouvre réellement.
    */
+  const BANC = 'node tools/bench.mjs';
   const BANC_LOCAL = {
     'modbus-tcp': { via: 'simulateur d’équipements',
+                    cmd: 'bash tools/share.sh --server --local',
                     params: { host: '127.0.0.1', port: 5020, unitId: 1 } },
-    'iec104':     { via: 'banc d’essai',
+    'iec104':     { via: 'banc d’essai', cmd: BANC,
                     params: { host: '127.0.0.1', port: 12404, asdu: 1 } },
-    'snmp':       { via: 'banc d’essai',
+    'snmp':       { via: 'banc d’essai', cmd: BANC,
                     params: { host: '127.0.0.1', port: 11161, version: 'v2c',
                               community: 'public' } },
-    'iec61850':   { via: 'banc d’essai',
+    'iec61850':   { via: 'banc d’essai', cmd: BANC,
                     params: { host: '127.0.0.1', port: 10102, mode: 'mms', iedName: 'IED1' } },
-    'opcua':      { via: 'banc d’essai',
+    'opcua':      { via: 'banc d’essai', cmd: BANC,
                     params: { endpoint: 'opc.tcp://127.0.0.1:14840' } },
   };
 
@@ -639,6 +641,85 @@
   /** Pré-remplissage applicable à ce protocole, ou null. */
   function localPreset(protoId) {
     return posteDeDev ? BANC_LOCAL[protoId] || null : null;
+  }
+
+  /**
+   * Configuration livrée par défaut sur un poste de développement : un lien
+   * par protocole ayant un serveur de test local, DEUX points chacun, prêts à
+   * remonter des valeurs.
+   *
+   * Pourquoi deux et pas un : une seule variable ne dit pas si c'est le lien
+   * ou l'adressage qui va de travers. Deux, de types différents, se
+   * contredisent utilement — un flottant sur deux registres et un entier ne
+   * tombent pas faux ensemble par hasard.
+   *
+   * Le préfixe « banc- » est celui de tools/bench.mjs, délibérément : le banc
+   * remplace ces liens par les siens, plus riches, au lieu de les doubler.
+   * Seul le lien Modbus vise le simulateur d'équipements (démarré, lui, avec
+   * le serveur de diagnostic) ; les quatre autres attendent le banc, et leur
+   * état le dit en clair tant qu'il n'est pas lancé.
+   *
+   * Les adresses sont celles que ces serveurs exposent réellement — registre
+   * 40 du simulateur, IOA 100 de la station 104, sysUpTime de l'agent SNMP…
+   * Une adresse inventée ferait un point muet, c'est-à-dire l'inverse du
+   * service rendu.
+   */
+  const LIENS_LOCAUX = [
+    { id: 'banc-modbus', label: 'Simulateur — Modbus TCP', protocol: 'modbus-tcp',
+      points: [
+        { id: 'pression', label: 'Pression circuit A', unit: 'bar', kind: 'float',
+          periodMs: 200, params: { fn: 3, reg: 40, type: 'uint16' } },
+        { id: 'debit', label: 'Débit refoulement', unit: 'm3/h', kind: 'float',
+          periodMs: 200, params: { fn: 3, reg: 10, type: 'float32' } },
+      ] },
+    { id: 'banc-iec104', label: 'Banc — IEC 60870-5-104', protocol: 'iec104',
+      points: [
+        { id: 'tension', label: 'Mesure flottante', unit: 'kV', kind: 'float',
+          periodMs: 200, params: { ioa: 100, type: 'auto' } },
+        { id: 'etat', label: 'État simple', unit: '', kind: 'bit',
+          periodMs: 200, params: { ioa: 200, type: 'auto' } },
+      ] },
+    { id: 'banc-snmp', label: 'Banc — SNMP v2c', protocol: 'snmp',
+      points: [
+        { id: 'uptime', label: 'Temps depuis démarrage', unit: 's', kind: 'float',
+          periodMs: 500, params: { oid: '1.3.6.1.2.1.1.3.0', gain: 0.01 } },
+        { id: 'octets', label: 'Octets reçus (Counter32)', unit: 'o', kind: 'float',
+          periodMs: 500, params: { oid: '1.3.6.1.2.1.2.2.1.10.2' } },
+      ] },
+    { id: 'banc-61850', label: 'Banc — IEC 61850 (MMS)', protocol: 'iec61850',
+      points: [
+        { id: 'courant', label: 'Courant phase A', unit: 'A', kind: 'float',
+          periodMs: 300, params: { ref: 'LD0/MMXU1.A.phsA.cVal.mag.f', fc: 'MX' } },
+        { id: 'position', label: 'Position disjoncteur', unit: '', kind: 'word',
+          periodMs: 300, params: { ref: 'LD0/XCBR1.Pos.stVal', fc: 'ST' } },
+      ] },
+    { id: 'banc-opcua', label: 'Banc — OPC UA', protocol: 'opcua',
+      points: [
+        { id: 'pression', label: 'Pression', unit: 'bar', kind: 'float',
+          periodMs: 300, params: { nodeId: 'ns=1;s=pression', samplingMs: 100 } },
+        { id: 'compteur', label: 'Compteur signé', unit: '', kind: 'float',
+          periodMs: 300, params: { nodeId: 'ns=1;s=compteur', samplingMs: 100 } },
+      ] },
+  ];
+
+  /**
+   * Cette configuration, complétée des paramètres de connexion du serveur de
+   * test correspondant. Rendue seulement sur un poste de développement : sur
+   * un contrôleur en exploitation, livrer cinq liens vers 127.0.0.1 donnerait
+   * cinq liens en défaut permanent — exactement ce qu'on cherche à éviter.
+   */
+  function localLinks(force) {
+    if (!force && !posteDeDev) return { version: 1, links: [] };
+    return {
+      version: 1,
+      links: LIENS_LOCAUX.map((l) => {
+        const pre = BANC_LOCAL[l.protocol];
+        return Object.assign({}, l, {
+          enabled: true,
+          params: Object.assign({}, pre ? pre.params : {}),
+        });
+      }),
+    };
   }
 
   /** Paramètres d'un lien NEUF : les défauts, complétés du serveur de test. */
@@ -775,6 +856,12 @@
         const raw = typeof localStorage === 'undefined' ? null : localStorage.getItem(STORE_KEY);
         if (raw) this.config = normalize(JSON.parse(raw));
       } catch (e) { /* stockage indisponible */ }
+      // Rien de configuré, et une machine de développement : on part avec les
+      // liens vers les serveurs de test locaux plutôt qu'avec une liste vide.
+      // Ce n'est PAS enregistré tant que rien n'est modifié — une valeur par
+      // défaut ne doit pas devenir une configuration à laquelle on tient sans
+      // l'avoir voulu.
+      if (!this.config.links.length) this.config = normalize(localLinks());
       return this.config;
     },
 
@@ -862,6 +949,7 @@
     // Exposée pour tools/check-drivers.mjs, qui compare ces ports à ceux que
     // tools/bench.mjs ouvre réellement.
     localBench: BANC_LOCAL,
+    localLinks,
   };
 
   function indexStatus(list) {

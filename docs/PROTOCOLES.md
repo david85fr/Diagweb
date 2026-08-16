@@ -939,6 +939,42 @@ Il ne sert aujourd'hui que Modbus TCP ; SNMP, OPC UA et IEC 61850 viendront
 comme autant de **façades** sur les mêmes signaux. Configuration, table des
 registres et détails : `docs/SIMULATEUR.md`.
 
+### La configuration livrée : deux points par protocole
+
+Sur un poste de développement, **rien à configurer pour commencer** : quand
+aucune configuration n'existe encore, un lien par protocole ayant un serveur de
+test local est posé d'office, avec **deux points chacun** — assez pour que la
+question « est-ce que ça remonte ? » ait une réponse immédiate, et pour qu'un
+décodage faux se trahisse (deux types différents ne tombent pas faux ensemble
+par hasard).
+
+| Lien | Cible | Points |
+|---|---|---|
+| `banc-modbus` | simulateur, `127.0.0.1:5020` | `pression` (registre 40, `uint16`), `debit` (registre 10, `float32`) |
+| `banc-iec104` | banc, `127.0.0.1:12404` | `tension` (IOA 100), `etat` (IOA 200) |
+| `banc-snmp` | banc, `127.0.0.1:11161` | `uptime` (`1.3.6.1.2.1.1.3.0`), `octets` (`…2.2.1.10.2`) |
+| `banc-61850` | banc, `127.0.0.1:10102` | `courant` (`LD0/MMXU1.A.phsA.cVal.mag.f`), `position` (`LD0/XCBR1.Pos.stVal`) |
+| `banc-opcua` | banc, `opc.tcp://127.0.0.1:14840` | `pression`, `compteur` (`ns=1;s=…`) |
+
+Les adresses sont celles que ces serveurs exposent **réellement** : une adresse
+inventée ferait un point muet, c'est-à-dire l'inverse du service rendu.
+
+Deux règles, mêmes que pour le pré-remplissage :
+
+- **Seulement à l'absence de configuration**, jamais par-dessus une existante,
+  même vidée volontairement. Côté serveur, l'option `--sim-links` (posée par
+  `tools/share.sh --server`) ; côté navigateur hors serveur, la même
+  configuration sert de point de départ tant que rien n'est enregistré.
+- **Seulement sur un poste de développement** — sur un contrôleur en
+  exploitation, livrer cinq liens vers `127.0.0.1` donnerait cinq liens en
+  défaut permanent.
+
+Le préfixe `banc-` est celui de `tools/bench.mjs`, délibérément : le banc
+**remplace** ces liens par les siens, plus riches, au lieu de les doubler. Seul
+le lien Modbus vise le simulateur d'équipements, démarré avec le serveur de
+diagnostic ; les quatre autres attendent `node tools/bench.mjs`, et leur ligne
+de diagnostic donne la commande tant qu'il n'est pas lancé.
+
 ### Le formulaire part déjà rempli
 
 Un lien **neuf** porte d'emblée les coordonnées du serveur de test local, quand

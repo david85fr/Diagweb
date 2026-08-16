@@ -343,10 +343,12 @@ class ProtocolSource : public IVariableSource {
       if (std::fabs(ecart) > ecart_max_) {
         if (!derive_signalee_) {
           derive_signalee_ = true;
-          src_.set_status(id_, "up",
-                          "horloge de l'équipement décalée de " +
-                          std::to_string(static_cast<long long>(ecart)) +
-                          " s : horodatage du serveur utilisé");
+          // Un décalage d'horloge est un AVERTISSEMENT, pas un état de lien :
+          // le forcer dans « detail » écrasait « lien établi » et laissait ce
+          // motif en place bien après la reconnexion suivante.
+          src_.set_warning(id_, "horloge de l'équipement décalée de " +
+                                std::to_string(static_cast<long long>(ecart)) +
+                                " s : horodatage du serveur utilisé");
         }
         return t_serveur;
       }
