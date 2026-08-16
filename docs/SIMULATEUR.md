@@ -103,10 +103,14 @@ Diagweb ?* :
 ```
 Groupe hydraulique — unité 1 (banc)
   fn  adresse  type       gain  unité       valeur  signal
-  03  40       uint16        1  bar              4  pression — Pression circuit A
-  03  10       float32       1  m3/h         4.312  debit — Débit refoulement
+  03  40       uint16        1  bar              0  pression — Pression circuit A
+  03  41       int16         1  °C               1  temperature — Température d'huile
+  03  10       float32       1  m3/h             2  debit — Débit refoulement
   01  0        bit           1                   1  pompe — Pompe en marche
 ```
+
+La colonne « valeur » est prise à l'instant zéro : l'escalier 0, 1, 2… n'est
+pas un hasard, c'est le décalage d'une seconde entre registres (ci-dessous).
 
 **En Codespace, il démarre tout seul** : `tools/share.sh --server` (rejoué à
 chaque attachement) le lance sur `127.0.0.1:5020` si rien n'y écoute déjà, et
@@ -134,7 +138,7 @@ même port — comme derrière une passerelle. Pour partir de là :
       "modbus": { "unitId": 1, "coils": 16, "discrete": 16, "holding": 100, "input": 32 },
       "signals": [
         { "id": "pression", "label": "Pression circuit A", "unit": "bar",
-          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10 },
+          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10, "phaseS": 0 },
           "modbus": { "area": "holding", "addr": 40, "type": "uint16" } }
       ]
     }
@@ -156,6 +160,37 @@ un registre entier monte par marches d'une seconde, un `float32` monte tout
 droit. Les bits gardent des lois à eux — une dent de scie n'a pas de sens
 sur une bobine.
 
+### Une seconde d'avance par registre
+
+Une dent de scie identique partout aurait un défaut : dix registres tracés
+ensemble ne feraient **qu'une seule courbe**, et une erreur d'adressage — deux
+points visant la même case — passerait inaperçue. Chaque registre porte donc
+une **seconde d'avance** sur le précédent (`phaseS`), dans l'ordre de la table :
+
+| Avance | Unité 1 | Avance | Unité 2 |
+|---|---|---|---|
+| 0 s | `pression` (03/40) | 8 s | `tension` (04/0) |
+| 1 s | `temperature` (03/41) | 9 s | `courant` (04/2) |
+| 2 s | `debit` (03/10) | 10 s | `index` (04/4) |
+| 3 s | `energie` (03/20) | | |
+| 4 s | `consigne` (03/50) | | |
+| 5 s | `vitesse` (04/0) | | |
+| 6 s | `couple` (04/1) | | |
+| 7 s | `cycles` (04/2) | | |
+
+Trois conséquences utiles : à l'instant zéro la table `--list` se lit comme un
+**escalier** 0, 1, 2… ; sur un graphique les onze courbes forment un éventail
+régulier ; et l'écart entre deux points est **constant et connu** — quatre
+unités entre `pression` et `consigne`, quelle que soit l'heure. Deux courbes
+superposées signent alors une lecture qui ne distingue pas les adresses.
+
+Onze registres au pas d'une seconde sur une période de dix : le onzième
+reboucle. `index` (10 s d'avance) est donc en phase avec `pression` — c'est la
+seule paire confondue, et elle est sur deux **unités** différentes.
+
+Les bits, eux, n'ont pas de phase : leurs lois booléennes basculent déjà à des
+rythmes distincts.
+
 Pour retrouver des signaux d'allure physique (sinusoïde bruitée, marche
 aléatoire, rampe d'index), partir de `--print-config` et remplacer les lois :
 la mécanique n'a pas changé, seule la configuration par défaut.
@@ -171,7 +206,7 @@ la mécanique n'a pas changé, seule la configuration par défaut.
 | `steps` | `values`, `periodS`, `noise` | des paliers tirés d'une liste |
 | `square` | `periodS`, `duty` | un créneau |
 | `bits` | `onS`, `offS` | un état booléen qui bascule |
-| `saw` | `min`, `max`, `periodS` | une **dent de scie** : montée linéaire de `min` à `max`, puis chute |
+| `saw` | `min`, `max`, `periodS`, `phaseS` | une **dent de scie** : montée linéaire de `min` à `max`, puis chute ; `phaseS` avance le motif de N secondes (à t = 0 le signal vaut déjà N) |
 | `counter` | `rate` | un compteur 16 bits qui reboucle |
 | `jitter` | `base`, `noise`, `spikeP`, `spikeAmp` | du bruit avec des pointes |
 

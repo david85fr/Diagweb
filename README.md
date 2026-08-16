@@ -96,7 +96,8 @@ pareil, simplement sans le gain.
 - **Le simulateur d'équipements démarre avec lui**, sur `127.0.0.1:5020` et
   sans jamais être publié : c'est l'adresse que la fenêtre « Liens réseau »
   pré-remplit pour Modbus TCP, elle mène donc à un équipement qui répond
-  (registres en dent de scie de 0 à 10).
+  (registres en dent de scie de 0 à 10, décalés d'une seconde l'un de
+  l'autre).
 - **Et il se met à jour tout seul** : `post-attach.sh` lance aussi
   `tools/sync.sh --watch`, qui surveille `origin/main`. À chaque commit
   poussé, le Codespace arrête proprement les enregistrements, récupère,

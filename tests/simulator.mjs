@@ -121,9 +121,10 @@ const put = await api('/api/protocols', {
     version: 1,
     links: [
       lien('banc', 'Groupe hydraulique simulé', 1, [
-        // Tous les registres du simulateur balaient 0 → 10 en dent de scie ;
-        // les vérifications portent donc sur ces bornes, quels que soient le
-        // type et la fonction — un décodage faux en sortirait aussitôt.
+        // Tous les registres du simulateur balaient 0 → 10 en dent de scie,
+        // décalés d'une seconde l'un de l'autre ; les vérifications portent
+        // donc sur ces bornes, quels que soient le type et la fonction — un
+        // décodage faux en sortirait aussitôt.
         POINT('pression', 'Pression circuit A', 'bar', 'float',
               { fn: 3, reg: 40, type: 'uint16' }),
         POINT('debit', 'Débit refoulement', 'm3/h', 'float',
@@ -211,6 +212,16 @@ check('la dent de scie progresse (flottant)',
   got.get('@banc.debit').length >= 5 && etendue('@banc.debit') > 0.2,
   got.get('@banc.debit').length + ' échantillon(s), amplitude ' +
   etendue('@banc.debit').toFixed(2));
+
+// Chaque registre porte une seconde d'avance sur le précédent : « consigne »
+// (4 s d'avance) doit donc lire quatre unités de plus que « pression » (aucune),
+// modulo la période. Deux points superposés signeraient une lecture qui ne
+// distingue pas les adresses.
+const ecart = (a, b) => (((last(b) - last(a)) % 10) + 10) % 10;
+check('les registres sont décalés d’une seconde',
+  last('@banc.pression') !== null && last('@banc.consigne') !== null &&
+  Math.abs(ecart('@banc.pression', '@banc.consigne') - 4) < 1.5,
+  'écart ' + ecart('@banc.pression', '@banc.consigne').toFixed(2) + ' pour 4 attendu');
 
 // Adresse hors table : rien ne doit être publié — une valeur inventée serait
 // pire que l'absence — et le lien doit rester ouvert pour les autres points.

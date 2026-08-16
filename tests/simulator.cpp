@@ -120,11 +120,11 @@ int main() {
     }
     check("signal flottant présent", debit != nullptr);
 
+    // « pression » ouvre la table : c'est le registre sans avance, donc celui
+    // qui donne la dent de scie de référence.
     bench.tick(0);
     near("minimum à l'origine (registre entier)", d.reg_at(Area::Holding, 40), 0);
-    near("minimum à l'origine (flottant)", d.value_of(debit->modbus), 0, 1e-6);
     bench.tick(5);
-    near("mi-parcours en flottant", d.value_of(debit->modbus), 5, 1e-6);
     near("mi-parcours en entier", d.reg_at(Area::Holding, 40), 5);
     bench.tick(2.5);
     // Un registre entier ne peut pas porter 2,5 : il monte par marches d'un pas.
@@ -134,12 +134,20 @@ int main() {
     bench.tick(10);
     near("retour au minimum à la période suivante", d.reg_at(Area::Holding, 40), 0);
 
+    // « debit » a deux secondes d'avance : son minimum tombe donc huit
+    // secondes après celui de « pression », et sa rampe reste la même.
+    const double origine = 8;
+    bench.tick(origine);
+    near("minimum à l'origine du signal décalé (flottant)", d.value_of(debit->modbus), 0, 1e-6);
+    bench.tick(origine + 5);
+    near("mi-parcours en flottant", d.value_of(debit->modbus), 5, 1e-6);
+
     // Montée franche sur toute la période, et jamais hors des bornes — c'est
     // la promesse faite à qui regarde la courbe.
     bool croissante = true, dans_bornes = true;
     double avant = -1;
     for (int i = 0; i <= 100; ++i) {
-      const double t = i * 0.099;                 // une période, sans l'atteindre
+      const double t = origine + i * 0.099;       // une période, sans l'atteindre
       bench.tick(t);
       const double v = d.value_of(debit->modbus);
       if (v <= avant) croissante = false;
@@ -154,6 +162,50 @@ int main() {
     }
     check("montée strictement croissante sur la période", croissante);
     check("tous les registres restent entre 0 et 10", dans_bornes);
+  }
+
+  // ---- décalage d'une seconde entre registres ---------------------------
+  // Sans décalage, dix registres tracés ensemble ne font qu'une courbe et une
+  // erreur d'adressage passe inaperçue. Une seconde d'avance par registre, et
+  // la table se lit comme un escalier : chacun s'identifie à sa valeur.
+  {
+    const struct { int unit; const char* id; double attendu; } escalier[] = {
+      {1, "pression", 0},  {1, "temperature", 1}, {1, "debit", 2},   {1, "energie", 3},
+      {1, "consigne", 4},  {1, "vitesse", 5},     {1, "couple", 6},  {1, "cycles", 7},
+      {2, "tension", 8},   {2, "courant", 9},     {2, "index", 0},
+      // « index » porte dix secondes d'avance : sur une période de dix
+      // secondes, cela le ramène en phase avec « pression ». Onze registres
+      // au pas d'une seconde ne peuvent pas tous être distincts.
+    };
+    auto lire = [&bench](int unit, const std::string& id) {
+      const Device* d = bench.by_unit(unit);
+      if (!d) return -1.0;
+      for (const Signal& s : d->signals) {
+        if (s.id == id) return d->value_of(s.modbus);
+      }
+      return -1.0;
+    };
+
+    bench.tick(0);
+    bool marche = true;
+    std::string vus;
+    for (const auto& e : escalier) {
+      const double v = lire(e.unit, e.id);
+      if (std::fabs(v - e.attendu) > 0.5) marche = false;
+      vus += (vus.empty() ? "" : " ") + std::to_string(static_cast<int>(std::lround(v)));
+    }
+    check("à l'origine, un escalier d'une seconde par registre", marche, vus);
+
+    // Le décalage ne dépend pas de l'instant : quatre secondes plus tard,
+    // l'écart entre deux registres voisins est toujours d'une seconde.
+    bench.tick(3.4);
+    near("sans avance : la valeur suit l'horloge (entier arrondi)",
+         lire(1, "pression"), 3.4, 0.5);
+    near("deux secondes d'avance, à la seconde près", lire(1, "debit"), 5.4, 1e-6);
+    near("quatre secondes d'avance (entier arrondi)", lire(1, "consigne"), 7.4, 0.5);
+    // Neuf secondes d'avance sur 3,4 s font 12,4 s : la dent de scie a déjà
+    // rebouclé, la valeur est retombée à 2,4 et non montée à 12,4.
+    near("l'avance reboucle avec la période", lire(2, "courant"), 2.4, 1e-6);
   }
 
   // ---- lectures ---------------------------------------------------------

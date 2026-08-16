@@ -37,6 +37,11 @@ namespace sim {
  * a sawtooth. The sawtooth is the test signal: it sweeps a known interval at
  * a known pace, so a glance at the curve tells whether the whole chain — the
  * device, the driver, the WebSocket, the plot — is alive and honest.
+ *
+ * A sawtooth also takes a phase (`phaseS`), an advance in seconds: without it
+ * every register would carry the very same value at the very same instant,
+ * and a plot of ten of them would show one curve. Staggering them keeps each
+ * one readable and, at t = 0, turns the register map into a staircase.
  */
 class Motion {
  public:
@@ -64,6 +69,7 @@ class Motion {
       m.value_ = j.num("min", 0);
       m.rate_ = j.num("max", 1) - m.value_;      // amplitude of the sweep
       m.modulo_ = period;
+      m.phase_ = j.num("phaseS", 0);             // advance, in seconds
       return m;
     }
 
@@ -108,8 +114,11 @@ class Motion {
         return modulo_ > 0 ? std::fmod(std::fmod(v, modulo_) + modulo_, modulo_) : v;
       }
       case Law::Saw: {
-        // min at t = 0, max reached just before the period elapses, then back.
-        const double phase = std::fmod(std::fmod(t, modulo_) + modulo_, modulo_) / modulo_;
+        // min at t = 0, max reached just before the period elapses, then back;
+        // phase_ moves that origin earlier, so the signal is that many seconds
+        // ahead of a signal declared without a phase.
+        const double u = t + phase_;
+        const double phase = std::fmod(std::fmod(u, modulo_) + modulo_, modulo_) / modulo_;
         return value_ + rate_ * phase;
       }
       case Law::Gen: return gen_ ? (*gen_)(t) : 0;
@@ -120,7 +129,7 @@ class Motion {
  private:
   enum class Law { Const, Ramp, Saw, Gen };
   Law law_ = Law::Const;
-  double value_ = 0, rate_ = 0, modulo_ = 0;
+  double value_ = 0, rate_ = 0, modulo_ = 0, phase_ = 0;
   std::optional<Generator> gen_;
 };
 
@@ -565,28 +574,28 @@ inline const char* default_config() {
       "modbus": { "unitId": 1, "coils": 16, "discrete": 16, "holding": 100, "input": 32 },
       "signals": [
         { "id": "pression", "label": "Pression circuit A", "unit": "bar",
-          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10 },
+          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10, "phaseS": 0 },
           "modbus": { "area": "holding", "addr": 40, "type": "uint16" } },
         { "id": "temperature", "label": "Température d'huile", "unit": "°C",
-          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10 },
+          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10, "phaseS": 1 },
           "modbus": { "area": "holding", "addr": 41, "type": "int16" } },
         { "id": "debit", "label": "Débit refoulement", "unit": "m3/h",
-          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10 },
+          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10, "phaseS": 2 },
           "modbus": { "area": "holding", "addr": 10, "type": "float32" } },
         { "id": "energie", "label": "Énergie consommée", "unit": "kWh",
-          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10 },
+          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10, "phaseS": 3 },
           "modbus": { "area": "holding", "addr": 20, "type": "uint32" } },
         { "id": "consigne", "label": "Consigne de pression", "unit": "bar",
-          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10 },
+          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10, "phaseS": 4 },
           "modbus": { "area": "holding", "addr": 50, "type": "uint16" } },
         { "id": "vitesse", "label": "Vitesse pompe", "unit": "tr/min",
-          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10 },
+          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10, "phaseS": 5 },
           "modbus": { "area": "input", "addr": 0, "type": "uint16" } },
         { "id": "couple", "label": "Couple moteur", "unit": "N.m",
-          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10 },
+          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10, "phaseS": 6 },
           "modbus": { "area": "input", "addr": 1, "type": "int16" } },
         { "id": "cycles", "label": "Compteur de cycles", "unit": "",
-          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10 },
+          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10, "phaseS": 7 },
           "modbus": { "area": "input", "addr": 2, "type": "uint16" } },
         { "id": "pompe", "label": "Pompe en marche",
           "gen": { "kind": "bits", "onS": 12, "offS": 8 },
@@ -614,13 +623,13 @@ inline const char* default_config() {
       "modbus": { "unitId": 2, "input": 8 },
       "signals": [
         { "id": "tension", "label": "Tension composée", "unit": "V",
-          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10 },
+          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10, "phaseS": 8 },
           "modbus": { "area": "input", "addr": 0, "type": "float32" } },
         { "id": "courant", "label": "Courant de ligne", "unit": "A",
-          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10 },
+          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10, "phaseS": 9 },
           "modbus": { "area": "input", "addr": 2, "type": "float32" } },
         { "id": "index", "label": "Index d'énergie", "unit": "Wh",
-          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10 },
+          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10, "phaseS": 10 },
           "modbus": { "area": "input", "addr": 4, "type": "uint32" } }
       ]
     }

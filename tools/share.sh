@@ -158,7 +158,7 @@ demarrer_simulateur() {
     > /tmp/diagweb-simulator.log 2>&1 &
   sleep 0.6
   if port_ouvert "$SIM_PORT"; then
-    echo "→ Simulateur d'équipements sur 127.0.0.1:$SIM_PORT (registres en dent de scie 0 → 10)"
+    echo "→ Simulateur d'équipements sur 127.0.0.1:$SIM_PORT (dent de scie 0 → 10, un registre par seconde de décalage)"
   else
     echo "→ Simulateur d'équipements : démarrage impossible"
     sed 's/^/     /' /tmp/diagweb-simulator.log
