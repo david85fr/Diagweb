@@ -43,7 +43,7 @@ aujourd'hui, OID SNMP ou nœud OPC UA demain) est déclarée **à côté** de lu
 ne change jamais la manière dont la valeur est produite.
 
 ```
-signal « pression » : dent de scie 1 → 10 en dix secondes
+signal « pression » : dent de scie 0 → 10 en dix secondes
       │
       ├── modbus : registre de maintien 40, uint16
       ├── snmp   : (à venir)
@@ -134,7 +134,7 @@ même port — comme derrière une passerelle. Pour partir de là :
       "modbus": { "unitId": 1, "coils": 16, "discrete": 16, "holding": 100, "input": 32 },
       "signals": [
         { "id": "pression", "label": "Pression circuit A", "unit": "bar",
-          "gen": { "kind": "saw", "min": 1, "max": 10, "periodS": 10 },
+          "gen": { "kind": "saw", "min": 0, "max": 10, "periodS": 10 },
           "modbus": { "area": "holding", "addr": 40, "type": "uint16" } }
       ]
     }
@@ -142,18 +142,18 @@ même port — comme derrière une passerelle. Pour partir de là :
 }
 ```
 
-### Le signal par défaut : une dent de scie de 1 à 10
+### Le signal par défaut : une dent de scie de 0 à 10
 
-**Tous les registres** de la configuration interne balaient **1 → 10 en dix
+**Tous les registres** de la configuration interne balaient **0 → 10 en dix
 secondes**, puis retombent. C'est délibéré : la première question posée à un
 lien tout neuf est « est-ce que quelque chose arrive, et est-ce la bonne
 chose ? ». Des bornes et une cadence connues y répondent d'un coup d'œil —
-une valeur hors de 1…10 trahit un décodage faux, une courbe plate un lien
+une valeur hors de 0…10 trahit un décodage faux, une courbe plate un lien
 muet, une période fausse une erreur de gain ou de type.
 
 Le type se lit dans la **forme** de la courbe, sans ouvrir la configuration :
-un registre entier monte par dix marches d'une seconde, un `float32` monte
-tout droit. Les bits gardent des lois à eux — une dent de scie n'a pas de sens
+un registre entier monte par marches d'une seconde, un `float32` monte tout
+droit. Les bits gardent des lois à eux — une dent de scie n'a pas de sens
 sur une bobine.
 
 Pour retrouver des signaux d'allure physique (sinusoïde bruitée, marche
@@ -243,7 +243,7 @@ un poste de développement, hôte `127.0.0.1`, port `5020` et unité `1` sont d�
 là — c'est le pré-remplissage décrit dans `docs/PROTOCOLES.md`, et c'est
 précisément ce port-là qu'il vise. Reste l'identifiant `banc`, **Tester**, puis
 un point `pression` — fonction 03, registre 40, `uint16`, gain 1, unité `bar`.
-L'adresse Diagweb est alors `@banc.pression`, et la courbe doit monter de 1 à 10
+L'adresse Diagweb est alors `@banc.pression`, et la courbe doit monter de 0 à 10
 en dix secondes puis retomber. Si elle ne le fait pas, le défaut est en amont du
 graphique.
 

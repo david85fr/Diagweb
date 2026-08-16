@@ -121,7 +121,7 @@ const put = await api('/api/protocols', {
     version: 1,
     links: [
       lien('banc', 'Groupe hydraulique simulé', 1, [
-        // Tous les registres du simulateur balaient 1 → 10 en dent de scie ;
+        // Tous les registres du simulateur balaient 0 → 10 en dent de scie ;
         // les vérifications portent donc sur ces bornes, quels que soient le
         // type et la fonction — un décodage faux en sortirait aussitôt.
         POINT('pression', 'Pression circuit A', 'bar', 'float',
@@ -184,23 +184,23 @@ const got = await collect(
 const last = (a) => (got.get(a).length ? got.get(a)[got.get(a).length - 1] : null);
 const dans = (a, lo, hi) => last(a) !== null && last(a) >= lo && last(a) <= hi;
 
-check('registre de maintien lu (fn 03)', dans('@banc.pression', 1, 10),
+check('registre de maintien lu (fn 03)', dans('@banc.pression', 0, 10),
   'valeur ' + last('@banc.pression') + ' bar');
-check('flottant 32 bits sur deux registres', dans('@banc.debit', 1, 10),
+check('flottant 32 bits sur deux registres', dans('@banc.debit', 0, 10),
   'valeur ' + last('@banc.debit') + ' m3/h');
-check('entier 32 bits non signé sur deux registres', dans('@banc.energie', 1, 10),
+check('entier 32 bits non signé sur deux registres', dans('@banc.energie', 0, 10),
   'valeur ' + last('@banc.energie') + ' kWh');
-check('second registre de maintien lu', dans('@banc.consigne', 1, 10),
+check('second registre de maintien lu', dans('@banc.consigne', 0, 10),
   'valeur ' + last('@banc.consigne') + ' bar');
-check('registre d’entrée lu (fn 04)', dans('@banc.vitesse', 1, 10),
+check('registre d’entrée lu (fn 04)', dans('@banc.vitesse', 0, 10),
   'valeur ' + last('@banc.vitesse') + ' tr/min');
 check('bobine lue (fn 01)', last('@banc.pompe') === 0 || last('@banc.pompe') === 1,
   'valeur ' + last('@banc.pompe'));
 check('entrée TOR lue (fn 02)', last('@banc.presence') === 1,
   'valeur ' + last('@banc.presence'));
-check('flottant du second équipement', dans('@compteur.tension', 1, 10),
+check('flottant du second équipement', dans('@compteur.tension', 0, 10),
   'valeur ' + last('@compteur.tension') + ' V');
-check('index 32 bits du second équipement', dans('@compteur.index', 1, 10),
+check('index 32 bits du second équipement', dans('@compteur.index', 0, 10),
   'valeur ' + last('@compteur.index') + ' Wh');
 
 // La dent de scie a une pente connue : sur une seconde et demie, un point lu
