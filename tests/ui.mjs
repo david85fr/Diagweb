@@ -1226,6 +1226,32 @@ check('☰ → tout remettre par défaut : le navigateur repart à neuf',
   rstAvant.configs + ' configuration et un logo avant · après : ' + rstApres.onglets +
   ' onglet « ' + rstApres.premier + ' », langue ' + rstApres.langue + ', ' +
   rstApres.restes.length + ' clé « diagweb. » restante');
+
+// Seconde entrée du menu : même effacement, autre arrivée — une page nue, sans
+// même la démonstration. C'est toute la différence entre les deux, et elle se
+// voit ici : un onglet, aucune tuile, aucune variable abonnée.
+await p2.evaluate(() => { window.__avantReset = true; });
+if (await p2.locator('#menuPanel.hide').count()) await p2.click('#menuBtn');
+await p2.waitForTimeout(150);
+await p2.click('#blankBtn');
+await p2.waitForSelector('#rstGo');
+const blkLibelle = await p2.locator('#rstGo').textContent();
+await p2.click('#rstGo');
+await p2.click('#rstGo');
+await p2.waitForFunction(() => !window.__avantReset && window.DW && window.DW.store,
+  null, { timeout: 15000 });
+await p2.waitForTimeout(600);
+const blk = await p2.evaluate(() => ({
+  onglets: document.querySelectorAll('.tab').length,
+  tuiles: document.querySelectorAll('.tabpane.on .card').length,
+  variables: DW.source.count(),
+  vide: !document.getElementById('emptyState').classList.contains('hide'),
+}));
+check('☰ → configuration vierge : un onglet, aucune tuile, aucune variable',
+  /vierge/i.test(blkLibelle) && blk.onglets === 1 && blk.tuiles === 0 &&
+  blk.variables === 0 && blk.vide,
+  blk.onglets + ' onglet, ' + blk.tuiles + ' tuile, ' + blk.variables +
+  ' variable abonnée · état vide affiché : ' + (blk.vide ? 'oui' : 'non'));
 await desk.close();
 await browser.close();
 

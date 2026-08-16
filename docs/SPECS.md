@@ -525,10 +525,20 @@ configuration à la racine) est acceptée et convertie en un onglet.
   journalisation navigateur redémarre au rechargement si elle était active ;
   la journalisation serveur, elle, n'a jamais cessé).
 
-## 6 ter. Retour à la configuration d'origine (☰ → Tout remettre par défaut)
+## 6 ter. Repartir de zéro (☰ → deux entrées)
 
-Une entrée du menu général ramène Diagweb à l'état de sa première ouverture.
-Deux portées, parce que les réglages ne vivent pas au même endroit :
+Le menu général porte **deux** entrées, qui effacent la même chose et ne
+diffèrent que par le point d'arrivée :
+
+- **⟲ Tout remettre par défaut** — l'état de sortie d'usine, c'est-à-dire
+  l'onglet de **démonstration**, celui qu'affiche une première ouverture ;
+- **⌫ Repartir d'une configuration vierge** — une page **nue** : un seul
+  onglet, sans aucune variable ni graphique, pas même la démonstration. Une
+  session d'un onglet vide est semée avant le rechargement, sans quoi le
+  démarrage retomberait sur la démonstration.
+
+La fenêtre est la même, les cases aussi. Deux portées, parce que les réglages
+ne vivent pas au même endroit :
 
 - **Ce navigateur** (coché d'avance) : tout ce que Diagweb y a mémorisé —
   onglets et dispositions de la fenêtre, configurations nommées, chargement
@@ -550,8 +560,7 @@ Le contrôleur est traité **avant** le navigateur : un appel refusé laisse la
 page debout pour le dire, au lieu de recharger sur un demi-effacement
 silencieux. Confirmation en deux temps (le premier appui arme le bouton) ;
 rien n'est récupérable ensuite, la fenêtre renvoie donc vers le téléchargement
-préalable d'une configuration. L'état retrouvé n'est pas un onglet vide mais
-l'onglet de **démonstration** — c'est ce qu'affiche une première ouverture.
+préalable d'une configuration.
 
 ## 7. Contrat DataSource (frontière front/back)
 

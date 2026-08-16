@@ -2307,7 +2307,14 @@
    * est encore debout pour le dire, au lieu de recharger sur un demi-effacement
    * silencieux.
    */
-  function openResetModal() {
+  function openResetModal(mode) {
+    // Deux arrivées pour un même effacement : « par défaut » rend l'état de
+    // sortie d'usine — l'onglet de démonstration, celui qu'on voit à la
+    // première ouverture — et « vierge » rend une page nue, un onglet sans
+    // rien. Les deux effacent la même chose ; c'est le point d'arrivée qui
+    // diffère, et c'est bien ce qu'on choisit dans le menu.
+    const vierge = mode === 'vierge';
+    const titre = vierge ? 'Repartir d’une configuration vierge' : 'Tout remettre par défaut';
     const surServeur = DW.sourceMode === 'ws';
     const root = $('modalRoot');
     root.innerHTML = '';
@@ -2319,12 +2326,18 @@
           ' title="' + aide.replace(/"/g, '&quot;') + '">' +
         '<span><b>' + titre + '</b><i>' + aide + '</i></span></label>';
     back.innerHTML =
-      '<div class="modal" role="dialog" aria-label="Tout remettre par défaut">' +
-        '<header class="m-head"><h3>Tout remettre par défaut</h3>' +
+      '<div class="modal" role="dialog" aria-label="' + titre + '">' +
+        '<header class="m-head"><h3>' + titre + '</h3>' +
         '<button class="iconbtn m-close" type="button" title="Fermer sans rien effacer">✕</button></header>' +
-        '<p class="m-note">Diagweb repart de son état d’origine : aucun onglet, ' +
-          'aucune variable, aucun réglage mémorisé. <b>Rien ne se récupère ensuite</b> — ' +
-          'si vous tenez à une disposition, téléchargez-la d’abord (☰ → Configurations → Télécharger).</p>' +
+        (vierge
+          ? '<p class="m-note">Diagweb rouvre sur une page nue : <b>un seul onglet, ' +
+            'sans aucune variable ni graphique</b> — pas même la démonstration. Ce qui est ' +
+            'coché ci-dessous est effacé au passage. <b>Rien ne se récupère ensuite</b> — ' +
+            'si vous tenez à une disposition, téléchargez-la d’abord ' +
+            '(☰ → Configurations → Télécharger).</p>'
+          : '<p class="m-note">Diagweb repart de son état d’origine : aucun onglet, ' +
+            'aucune variable, aucun réglage mémorisé. <b>Rien ne se récupère ensuite</b> — ' +
+            'si vous tenez à une disposition, téléchargez-la d’abord (☰ → Configurations → Télécharger).</p>') +
         '<div class="m-section">' +
           '<span class="m-label">Ce navigateur</span>' +
           opt('rstNav', true, 'Onglets, configurations, langue et apparence',
@@ -2350,8 +2363,13 @@
         '<p class="m-note" id="rstNote">Ne sont touchés ni les forçages en cours, ' +
           'ni les fichiers déjà capturés, ni les journaux déjà enregistrés.</p>' +
         '<div class="m-actions">' +
-          '<button class="btn danger" id="rstGo" type="button" ' +
-            'title="Effacer ce qui est coché ci-dessus, puis recharger la page">Tout remettre par défaut</button>' +
+          (vierge
+            ? '<button class="btn danger" id="rstGo" type="button" ' +
+              'title="Effacer ce qui est coché ci-dessus, puis rouvrir sur un onglet vide">' +
+              'Ouvrir une page vierge</button>'
+            : '<button class="btn danger" id="rstGo" type="button" ' +
+              'title="Effacer ce qui est coché ci-dessus, puis recharger la page">' +
+              'Tout remettre par défaut</button>') +
           '<button class="btn" id="rstCancel" type="button" ' +
             'title="Fermer sans rien effacer">Annuler</button>' +
         '</div>' +
@@ -2366,7 +2384,7 @@
     const coche = (id) => { const el = back.querySelector('#' + id); return !!(el && el.checked); };
     const note = back.querySelector('#rstNote');
     const bouton = back.querySelector('#rstGo');
-    let arme = false;
+    let arme = false, libelle = bouton.textContent;
 
     bouton.addEventListener('click', async () => {
       // Confirmation en deux temps : un effacement irréversible ne doit pas
@@ -2378,6 +2396,7 @@
           return;
         }
         arme = true;
+        libelle = bouton.textContent;
         bouton.textContent = 'Confirmer — c’est irréversible';
         bouton.title = 'Second appui : l’effacement a lieu et la page se recharge';
         note.textContent = 'Second appui pour effacer. Tout autre bouton annule.';
@@ -2431,10 +2450,21 @@
           '. Rien n’a été effacé dans ce navigateur — réessayez ou décochez.';
         bouton.disabled = false;
         arme = false;
-        bouton.textContent = 'Tout remettre par défaut';
+        bouton.textContent = libelle;
         return;
       }
-      if (coche('rstNav')) DW.store.resetBrowser();
+      if (coche('rstNav')) {
+        DW.store.resetBrowser();
+        // Page vierge : sans cette session semée, le démarrage retomberait sur
+        // l'onglet de démonstration — c'est LA différence entre les deux
+        // entrées du menu, et elle se joue ici, en une session d'un onglet vide.
+        if (vierge) {
+          DW.store.saveSession({
+            version: 2, active: 0,
+            tabs: [{ name: 'Onglet 1', log: null, data: { version: 3, tables: [], charts: [] } }],
+          });
+        }
+      }
       location.reload();
     });
   }
@@ -2603,7 +2633,8 @@
     lang.addEventListener('click', () => DW.i18n.setLang(DW.i18n.autre()));
 
     $('layoutsBtn').addEventListener('click', openLayoutsModal);
-    $('resetBtn').addEventListener('click', openResetModal);
+    $('resetBtn').addEventListener('click', () => openResetModal('defaut'));
+    $('blankBtn').addEventListener('click', () => openResetModal('vierge'));
     $('logBtn').addEventListener('click', openLogModal);
     $('tabAdd').addEventListener('click', () => { createTab(); });
 
@@ -2744,9 +2775,10 @@
             ['Couleurs', 'Six réglages : accent, fond, cartes, fond secondaire, texte, traits. L’aperçu est immédiat. Les gris et les nuances d’accent en sont déduits. <b>Chaque thème garde les siennes</b> : basculez le thème pour régler l’autre.'],
             ['Portée', 'Page servie par le contrôleur : l’apparence est enregistrée sur lui et <b>tous les postes</b> la voient. Page ouverte hors serveur : elle reste dans ce navigateur.'],
           ]) +
-          S('Tout remettre par défaut (☰)') +
+          S('Repartir de zéro (☰)') +
           L([
-            ['Ce navigateur', 'Efface <b>tout</b> ce que Diagweb y a mémorisé : onglets et dispositions, configurations enregistrées, chargement automatique, langue, apparence locale, réglages simulés. La page se recharge sur l’état d’origine — l’onglet de démonstration, comme à la première ouverture. Les autres fenêtres ouvertes gardent leurs onglets jusqu’à leur prochain chargement.'],
+            ['Deux entrées', '<b>⟲ Tout remettre par défaut</b> rend l’état de sortie d’usine : la page rouvre sur l’onglet de <b>démonstration</b>, comme à la première ouverture. <b>⌫ Repartir d’une configuration vierge</b> efface la même chose mais rouvre sur <b>un seul onglet vide</b>, sans aucune variable ni graphique. Même fenêtre, mêmes cases : seule l’arrivée change.'],
+            ['Ce navigateur', 'Efface <b>tout</b> ce que Diagweb y a mémorisé : onglets et dispositions, configurations enregistrées, chargement automatique, langue, apparence locale, réglages simulés. Les autres fenêtres ouvertes gardent leurs onglets jusqu’à leur prochain chargement.'],
             ['Le contrôleur', 'Sur la page servie, quatre cases <b>séparées et décochées d’avance</b> : apparence partagée, liens réseau déclarés, configurations rangées dans le contrôleur, réglages de capture. Elles portent au-delà de ce poste — ce que voient tous les autres change aussi.'],
             ['Ce qui survit', 'Les forçages en cours, les fichiers déjà capturés et les journaux déjà enregistrés. Un forçage se relâche depuis la ligne de la variable, une capture se supprime depuis sa page.'],
             ['Prudence', 'Confirmation en deux temps, et <b>rien ne se récupère</b> ensuite : téléchargez d’abord ce que vous voulez garder (☰ → Configurations → Télécharger). Si le contrôleur refuse une des demandes, rien n’est effacé dans le navigateur et la fenêtre le dit.'],

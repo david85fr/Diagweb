@@ -99,13 +99,27 @@
       'Press again to erase. Any other button cancels.',
     'Rien n’est coché : il n’y a rien à effacer.': 'Nothing is ticked: there is nothing to erase.',
 
-    // Aide (☰ → Aide), section « Tout remettre par défaut »
-    'Tout remettre par défaut (☰)': 'Reset everything to defaults (☰)',
+    // Seconde entrée : même effacement, arrivée sur une page nue.
+    '⌫ Repartir d’une configuration vierge…': '⌫ Start from a blank configuration…',
+    'Même effacement, autre arrivée : la page rouvre sur un seul onglet vide, sans aucune variable ni graphique — pas même la démonstration':
+      'Same erasure, different destination: the page reopens on a single empty tab, with no variable and no chart — not even the demonstration',
+    'Repartir d’une configuration vierge': 'Start from a blank configuration',
+    'Diagweb rouvre sur une page nue : <b>un seul onglet, sans aucune variable ni graphique</b> — pas même la démonstration. Ce qui est coché ci-dessous est effacé au passage. <b>Rien ne se récupère ensuite</b> — si vous tenez à une disposition, téléchargez-la d’abord (☰ → Configurations → Télécharger).':
+      'Diagweb reopens on a bare page: <b>a single tab, with no variable and no chart</b> — not even the demonstration. Whatever is ticked below is erased along the way. <b>Nothing can be recovered afterwards</b> — if a layout matters to you, download it first (☰ → Configurations → Download).',
+    'Ouvrir une page vierge': 'Open a blank page',
+    'Effacer ce qui est coché ci-dessus, puis rouvrir sur un onglet vide':
+      'Erase what is ticked above, then reopen on an empty tab',
+
+    // Aide (☰ → Aide), section « Repartir de zéro »
+    'Repartir de zéro (☰)': 'Start over (☰)',
+    'Deux entrées': 'Two entries',
+    '<b>⟲ Tout remettre par défaut</b> rend l’état de sortie d’usine : la page rouvre sur l’onglet de <b>démonstration</b>, comme à la première ouverture. <b>⌫ Repartir d’une configuration vierge</b> efface la même chose mais rouvre sur <b>un seul onglet vide</b>, sans aucune variable ni graphique. Même fenêtre, mêmes cases : seule l’arrivée change.':
+      '<b>⟲ Reset everything to defaults</b> restores the factory state: the page reopens on the <b>demonstration</b> tab, as on first opening. <b>⌫ Start from a blank configuration</b> erases the same things but reopens on <b>a single empty tab</b>, with no variable and no chart. Same window, same boxes: only the destination changes.',
     'Le contrôleur': 'The controller',
     'Ce qui survit': 'What survives',
     'Prudence': 'Care',
-    'Efface <b>tout</b> ce que Diagweb y a mémorisé : onglets et dispositions, configurations enregistrées, chargement automatique, langue, apparence locale, réglages simulés. La page se recharge sur l’état d’origine — l’onglet de démonstration, comme à la première ouverture. Les autres fenêtres ouvertes gardent leurs onglets jusqu’à leur prochain chargement.':
-      'Erases <b>everything</b> Diagweb has stored there: tabs and layouts, saved configurations, auto-load, language, local appearance, simulated settings. The page reloads on the original state — the demonstration tab, as on first opening. Other open windows keep their tabs until they next load.',
+    'Efface <b>tout</b> ce que Diagweb y a mémorisé : onglets et dispositions, configurations enregistrées, chargement automatique, langue, apparence locale, réglages simulés. Les autres fenêtres ouvertes gardent leurs onglets jusqu’à leur prochain chargement.':
+      'Erases <b>everything</b> Diagweb has stored there: tabs and layouts, saved configurations, auto-load, language, local appearance, simulated settings. Other open windows keep their tabs until they next load.',
     'Sur la page servie, quatre cases <b>séparées et décochées d’avance</b> : apparence partagée, liens réseau déclarés, configurations rangées dans le contrôleur, réglages de capture. Elles portent au-delà de ce poste — ce que voient tous les autres change aussi.':
       'On the served page, four <b>separate boxes, unticked by default</b>: shared appearance, declared network links, configurations kept in the controller, capture settings. They reach beyond this workstation — what everyone else sees changes too.',
     'Les forçages en cours, les fichiers déjà capturés et les journaux déjà enregistrés. Un forçage se relâche depuis la ligne de la variable, une capture se supprime depuis sa page.':
