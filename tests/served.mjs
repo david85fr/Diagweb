@@ -160,6 +160,10 @@ await page.evaluate(async () => {
   await P.save();
 });
 const avant = await (await fetch(BASE + '/api/protocols', { cache: 'no-store' })).json();
+// Quota relevé AVANT : la case « réglages de capture » restant décochée, il doit
+// être le même après. Comparer à la valeur d'avant plutôt qu'à une constante —
+// sinon le test dépend de ce qu'une autre série a réglé auparavant.
+const capAvant = await (await fetch(BASE + '/api/capture', { cache: 'no-store' })).json();
 const skinAvant = await (await fetch(BASE + '/api/appearance', { cache: 'no-store' })).json();
 const laysAvant = await (await fetch(BASE + '/api/layouts')).json();
 
@@ -182,10 +186,11 @@ const cap = await (await fetch(BASE + '/api/capture', { cache: 'no-store' })).js
 check('☰ → tout remettre par défaut : le contrôleur revient à l’origine',
   liens(avant) > 0 && skinAvant.logo && laysAvant.length > 0 &&
   liens(apres) === 0 && !skinApres.logo && laysApres.length === 0 &&
-  cap.quotaBytes === 50 * 1024 * 1024,
+  cap.quotaBytes === capAvant.quotaBytes,
   liens(avant) + ' lien, ' + laysAvant.length + ' configuration et un logo avant · ' +
   'après : ' + liens(apres) + ', ' + laysApres.length + ', aucun logo — ' +
-  'réglages de capture intacts (case décochée)');
+  'réglages de capture intacts (case décochée, quota ' +
+  Math.round(capAvant.quotaBytes / 1048576) + ' Mo)');
 
 await browser.close();
 

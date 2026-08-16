@@ -7,6 +7,7 @@
 #   bash tools/check.sh            tout
 #   bash tools/check.sh serveur    serveur C++ uniquement
 #   bash tools/check.sh interface  interface web uniquement
+#   bash tools/check.sh paquet     paquet .deb uniquement (long : recompile)
 #
 # Prérequis serveur   : meson + ninja (+ open62541 et Net-SNMP si présents).
 # Prérequis interface : bash tools/setup-tests.sh (Playwright + Chromium).
@@ -14,11 +15,36 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 CIBLE="${1:-tout}"
+case "$CIBLE" in
+  tout|serveur|interface|paquet) ;;
+  *) echo "cible inconnue : $CIBLE (tout | serveur | interface | paquet)" >&2
+     exit 2 ;;
+esac
 ECHECS=0
 PORT="${DIAGWEB_PORT:-8080}"
 BUILD="${DIAGWEB_BUILD:-build}"
 
 titre() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
+
+# Le paquet contient-il ce qu'il annonce ? Un .deb qui s'ouvre mais où le
+# binaire ou le service manque s'installerait sans bruit et ne servirait rien.
+verifier_paquet() {
+  local p
+  # Le paquet doit dater de la construction qui vient d'avoir lieu : sans cette
+  # borne, une construction en échec laissait examiner celui de la fois d'avant
+  # et la vérification s'affichait en vert.
+  p=$(find dist/packages -name '*.deb' -newermt "@${DEBUT_PAQUET:-0}" 2> /dev/null |
+      head -1)
+  [ -n "$p" ] || { echo "aucun paquet neuf dans dist/packages/"; return 1; }
+  dpkg-deb --info "$p" > /dev/null || return 1
+  local liste; liste=$(dpkg-deb --contents "$p")
+  for f in usr/bin/diagweb-server usr/lib/systemd/system/diagweb.service \
+           etc/default/diagweb usr/share/diagweb/web/index.html \
+           usr/share/diagweb/dist/index.html; do
+    echo "$liste" | grep -q " ./$f\$" || { echo "absent du paquet : $f"; return 1; }
+  done
+  echo "$p"
+}
 
 # Sortie masquée tant que tout va bien ; affichée en entier en cas d'échec.
 etape() {
@@ -55,8 +81,10 @@ syntaxe_outillage() {
   local f
   python3 -m py_compile tools/*.py || return 1
   # .devcontainer aussi : une faute de frappe y casse tous les Codespaces neufs,
-  # et le défaut ne se voit qu'à la création suivante.
-  for f in tools/*.sh .devcontainer/*.sh; do bash -n "$f" || return 1; done
+  # et le défaut ne se voit qu'à la création suivante. packaging/ de même : son
+  # script arm64 ne s'exécute que dans un conteneur émulé, en intégration
+  # continue — nulle part où découvrir une coquille plus tôt.
+  for f in tools/*.sh .devcontainer/*.sh packaging/*.sh; do bash -n "$f" || return 1; done
 }
 
 entetes_generes() {
@@ -100,6 +128,17 @@ if [ "$CIBLE" = tout ] || [ "$CIBLE" = interface ]; then
   fi
   kill "$APERCU" 2> /dev/null
   wait "$APERCU" 2> /dev/null
+fi
+
+# ------------------------------------------------------------------- paquet
+# Hors du parcours par défaut : la construction du paquet recompile tout dans
+# son propre dossier, et l'intégration continue s'en charge à chaque poussée.
+# Ici pour l'éprouver avant de toucher au conditionnement lui-même.
+if [ "$CIBLE" = paquet ]; then
+  titre "Paquet d'installation (.deb)"
+  DEBUT_PAQUET=$(date +%s)
+  etape "construction du paquet pour cette machine" bash tools/package-deb.sh
+  etape "paquet lisible par dpkg et complet" verifier_paquet
 fi
 
 printf '\n'

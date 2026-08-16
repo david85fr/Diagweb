@@ -84,6 +84,30 @@ fonctionnelles + état d'avancement) avant toute modification.
    travaillent en parallèle, et l'autre a pu le faire. Comparer le tag de
    version (`id="buildTag"`) plutôt que republier à l'aveugle.
 
+8. **Les paquets d'installation suivent `main`, comme les pages.** Le dépôt ne
+   livre pas qu'une interface : il livre un produit installable. À chaque
+   poussée sur `main`, l'intégration continue construit **deux paquets `.deb`**
+   et les publie dans la release **`paquets`**, dont les fichiers sont
+   remplacés à chaque fois :
+   - `diagweb_<version>_amd64.deb` — PC sous Ubuntu 24.04+ ou Debian 13+ ;
+   - `diagweb_<version>_arm64.deb` — Raspberry Pi OS 64 bits (Debian 13
+     « trixie », le système par défaut des Raspberry Pi).
+
+   Sur la machine cible, un clone du dépôt suffit :
+   `sudo bash tools/install.sh` (dépendances, construction, installation,
+   service démarré) ou `bash tools/package-deb.sh` pour le seul paquet.
+   `bash tools/check.sh paquet` l'éprouve avant de toucher au conditionnement.
+
+   Trois conséquences à tenir :
+   - **Toute modification du conditionnement se vérifie** (`tools/check.sh
+     paquet`) : un `.deb` qui s'installe sans servir la page est pire que pas
+     de paquet du tout.
+   - **Ce que le paquet embarque est écrit dedans** : `/usr/share/diagweb/BUILD-INFO`
+     dit la version, la date et les pilotes optionnels réellement compilés —
+     jamais de fonction annoncée qui ne serait pas là.
+   - **Le service ne tourne pas en root** : compte système dédié, une seule
+     capacité (`CAP_NET_RAW`, pour LLDP et la capture). Ne pas l'élargir.
+
 ## Réglages de session
 
 `.claude/settings.json` est **versionné** : il est donc rechargé à l'identique
@@ -148,6 +172,10 @@ simulator/      simulateur d'équipements C++23 — 2ᵉ processus (docs/SIMULAT
   src/main.cpp       processus : écoute (502 par défaut), config JSON, --list
 meson.build     construction du serveur, du simulateur et des tests (Ninja, C++23)
 tools/build.py  assemble dist/ à partir de web/
+tools/package-deb.sh  paquet .deb pour la machine courante (arch. et dépendances
+                relevées sur place ; sortie dans dist/packages/, non versionnée)
+tools/install.sh  installation en une commande depuis un clone (Raspberry Pi,
+                Ubuntu) : dépendances, paquet, installation, service démarré
 tools/gen-all.py régénère les en-têtes dérivés des sources web
 tools/run-server-tests.sh  serveur lancé + tests qui en dépendent (meson test)
 tools/check.sh  toutes les vérifications de la CI, en local (serveur|interface)
@@ -177,7 +205,9 @@ tests/served.mjs la page RÉELLE servie par le serveur, dans un navigateur
                 (source WebSocket, horloge du serveur) — les tests d'interface,
                 eux, ouvrent dist/ en simulation
 dist/           livrables générés (commités) : index.html autonome + artifact.html
-docs/           PROJET.md, SPECS.md, PROTOCOLES.md, SIMULATEUR.md
+packaging/      conditionnement Debian : unité systemd, réglages /etc/default,
+                scripts dpkg (postinst/prerm/postrm), licence du paquet
+docs/           PROJET.md, SPECS.md, PROTOCOLES.md, SIMULATEUR.md, INSTALL.md
 .devcontainer/  configuration GitHub Codespaces (Python + Node + aperçu 8080)
   on-create.sh    outillage système (apt, open62541) — cuit dans le prebuild
   post-create.sh  ce qui dépend du dépôt (syntaxe, compilation du serveur)

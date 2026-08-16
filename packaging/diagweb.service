@@ -1,0 +1,75 @@
+[Unit]
+# Diagweb — serveur de diagnostic du contrôleur.
+#
+# Il sert les pages et relaie le flux temps réel. Le processus tourne sous son
+# propre compte système, jamais en root : les seules capacités qu'il conserve
+# sont celles sans lesquelles deux fonctions annoncées ne marcheraient pas
+# (voir AmbientCapabilities plus bas).
+Description=Diagweb — serveur de diagnostic du contrôleur
+Documentation=file:///usr/share/doc/diagweb/INSTALL.md
+# network.target suffit : le serveur écoute sur toutes les interfaces et
+# l'inventaire est relu à chaque requête. Attendre network-online retarderait
+# le démarrage de plusieurs dizaines de secondes quand un câble est débranché —
+# c'est-à-dire exactement quand on veut la page de diagnostic.
+After=network.target
+
+# Un démarrage refusé (port occupé, port privilégié) ne doit pas condamner
+# l'unité au bout de cinq essais en dix secondes : sans cela, corriger
+# /etc/default/diagweb ne suffisait plus, il fallait « systemctl reset-failed ».
+StartLimitIntervalSec=0
+
+[Service]
+# exec, pas simple : l'unité n'est réputée démarrée qu'après un execve réussi.
+# Sinon l'installation d'un paquet cassé s'annonçait comme un succès.
+Type=exec
+User=diagweb
+Group=diagweb
+# Réglages de l'exploitant : port et options supplémentaires. Le tiret devant
+# le chemin rend le fichier facultatif — un paquet réinstallé sans lui démarre
+# quand même, sur le port par défaut.
+Environment=DIAGWEB_PORT=8080
+# Persistance de Net-SNMP : sans cette variable, la bibliothèque tente d'écrire
+# dans /var/lib/snmp, en lecture seule sous ProtectSystem=strict — un
+# avertissement à chaque démarrage, pour rien.
+Environment=SNMP_PERSISTENT_DIR=/var/lib/diagweb/snmp
+EnvironmentFile=-/etc/default/diagweb
+# Secrets des liens réseau (phrases SNMPv3, mots de passe OPC UA) : fichier
+# séparé, lisible du seul compte du service (0640 root:diagweb), là où
+# /etc/default/diagweb est lisible par tous. Le tiret le rend facultatif.
+EnvironmentFile=-/etc/diagweb/secrets.env
+ExecStart=/usr/bin/diagweb-server --port ${DIAGWEB_PORT} --root /usr/share/diagweb --data-dir /var/lib/diagweb $DIAGWEB_ARGS
+Restart=on-failure
+RestartSec=5
+
+# /var/lib/diagweb : créé et donné au bon compte par systemd lui-même, à chaque
+# démarrage. Configurations enregistrées, journaux de données et captures y
+# vivent — c'est le seul endroit où le service écrit.
+StateDirectory=diagweb
+StateDirectoryMode=0750
+
+# CAP_NET_RAW : voisinage LLDP (écoute AF_PACKET passive) et capture d'interfaces
+# (tcpdump). Sans elle, ces deux pages s'annoncent indisponibles au lieu de
+# mentir — mais elles sont la raison d'être de l'outil sur un contrôleur, alors
+# la capacité est accordée, et elle seule. Rien d'autre du jeu de capacités ne
+# survit (CapabilityBoundingSet), pas même pour les processus lancés ensuite.
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+NoNewPrivileges=true
+
+# Confinement : le système de fichiers est en lecture seule sauf le répertoire
+# d'état, /tmp est privé, et les appels système de gestion du noyau sont hors
+# de portée. Les mesures qui casseraient une fonction annoncée sont écartées :
+# PrivateNetwork couperait toute acquisition, RestrictAddressFamilies exclurait
+# AF_PACKET (LLDP) et AF_CAN (bus CAN).
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

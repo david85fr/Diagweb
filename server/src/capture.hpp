@@ -466,7 +466,44 @@ class CaptureManager {
       << "\",\"durationS\":" << jnum(trigger_.duration_s, 1) << "}}";
   }
 
+  /**
+   * Fichiers de capture déjà sur le disque, au démarrage du service.
+   *
+   * Sans cette relecture, le quota les comptait (`occupe()` regarde le dossier)
+   * mais l'interface ne les montrait plus (`etat()` ne rend que `runs_`, vide
+   * après un redémarrage) : au bout de quelques redémarrages — et le service
+   * redémarre à chaque mise à jour du paquet — toute nouvelle capture était
+   * refusée pour « quota atteint », sans qu'aucun fichier ne soit listé ni
+   * supprimable depuis la page.
+   *
+   * L'identité d'une capture est son nom de fichier : c'est déjà ce que
+   * manipulent le téléchargement et la suppression. Ce qui n'est pas sur le
+   * disque (interface, filtre, instant de départ) est laissé vide plutôt
+   * qu'inventé ; l'horodatage du fichier donne la seule date sûre.
+   */
+  void relire_fichiers() {
+    std::error_code ec;
+    std::vector<CaptureRun> trouves;
+    for (const auto& e : fs::directory_iterator(dir_, ec)) {
+      if (!e.is_regular_file(ec) || e.path().extension() != ".pcap") continue;
+      CaptureRun r;
+      r.id = e.path().stem().string();
+      // L'identifiant est « <interface>-<horodatage> » (voir demarrer) : le
+      // préfixe redonne l'interface sans avoir à la mémoriser ailleurs.
+      const auto tiret = r.id.rfind('-');
+      if (tiret != std::string::npos) r.iface = r.id.substr(0, tiret);
+      r.state = "terminée";
+      r.detail = "retrouvée sur le disque au démarrage";
+      r.bytes = e.file_size(ec);
+      trouves.push_back(std::move(r));
+    }
+    std::sort(trouves.begin(), trouves.end(),
+              [](const CaptureRun& a, const CaptureRun& b) { return a.id < b.id; });
+    runs_ = std::move(trouves);
+  }
+
   void charger() {
+    relire_fichiers();
     std::ifstream f(reglages(), std::ios::binary);
     if (!f) return;
     std::ostringstream corps;

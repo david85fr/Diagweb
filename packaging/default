@@ -1,0 +1,24 @@
+# Diagweb — réglages du service (lu par systemd au démarrage).
+#
+# Ce fichier est un fichier de configuration Debian : vos modifications sont
+# conservées lors d'une mise à jour du paquet.
+#
+#   sudo nano /etc/default/diagweb
+#   sudo systemctl restart diagweb
+#
+# Port d'écoute de l'interface web (http://<adresse-du-contrôleur>:8080/).
+# Doit valoir 1024 ou plus : le service ne tourne pas en root et n'a pas la
+# capacité d'ouvrir un port privilégié. Vide ou hors bornes, le serveur retient
+# 8080 et le dit dans son journal (journalctl -u diagweb).
+DIAGWEB_PORT=8080
+
+# Options supplémentaires passées au serveur. Deux sont utiles hors matériel :
+#   --sim-protocols   liens réseau simulés (démonstration sans équipement)
+#   --sim-links       pose des liens vers les serveurs de test locaux
+# Exemple :
+#   DIAGWEB_ARGS="--sim-protocols"
+DIAGWEB_ARGS=
+
+# Ce fichier est lisible par tous les utilisateurs de la machine : n'y mettez
+# aucun secret. Les phrases SNMPv3 et les mots de passe OPC UA vont dans
+# /etc/diagweb/secrets.env, que le paquet crée en 0640 root:diagweb.

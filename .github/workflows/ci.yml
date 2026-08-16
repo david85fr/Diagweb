@@ -52,7 +52,7 @@ jobs:
                 -DUA_NAMESPACE_ZERO=REDUCED -DUA_ENABLE_AMALGAMATION=OFF \
                 -DUA_BUILD_EXAMPLES=OFF -DUA_FORCE_WERROR=OFF -DBUILD_SHARED_LIBS=OFF \
                 -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
-          cmake --build "$RUNNER_TEMP/o62/build" -j
+          cmake --build "$RUNNER_TEMP/o62/build" -j "$(nproc)"
           cmake --install "$RUNNER_TEMP/o62/build"
 
       - name: Outillage de construction (Meson + Ninja)
@@ -119,7 +119,7 @@ jobs:
       - name: Syntaxe de l'outillage (Python et shell)
         run: |
           python3 -m py_compile tools/*.py
-          for f in tools/*.sh .devcontainer/*.sh; do bash -n "$f" || exit 1; done
+          for f in tools/*.sh .devcontainer/*.sh packaging/*.sh; do bash -n "$f" || exit 1; done
 
       - name: En-têtes générés à jour (catalogue et protocoles)
         run: |
@@ -163,3 +163,166 @@ jobs:
           path: .test-shots
           if-no-files-found: ignore
           retention-days: 7
+
+  # ------------------------------------------------------------------ paquets
+  # Deux paquets .deb à chaque poussée sur main : l'un pour un PC sous Ubuntu
+  # (amd64), l'autre pour un Raspberry Pi sous son système par défaut (arm64).
+  # Ils sont publiés dans la release « paquets », dont les fichiers sont
+  # remplacés à chaque fois — on y trouve donc toujours le dernier main, et rien
+  # d'autre. La construction sur la machine cible reste possible et documentée
+  # (docs/INSTALL.md) : c'est même la voie prévue pour le Raspberry Pi.
+  paquets:
+    name: Paquets d'installation (.deb amd64 et arm64)
+    needs: [serveur, interface]
+    # Uniquement main (ou un déclenchement manuel) : une branche de travail
+    # n'a pas à payer une heure de runner en émulation arm64 pour un paquet
+    # que personne ne publiera.
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    permissions:
+      contents: write        # publication de la release « paquets »
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # le numéro de version est un compte de commits
+
+      # ---- amd64 : natif, avec les deux dépendances facultatives
+      # Les deux paquets d'une même release doivent porter LE MÊME numéro. Il
+      # est donc figé ici, une fois : le calculer dans chaque construction
+      # donnerait deux valeurs, la seconde partant d'un arbre où build.py a
+      # réécrit dist/.
+      - name: Numéro de version des paquets
+        run: echo "PKGVER=1.0.$(git rev-list --count HEAD)+g$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
+
+      - name: Cache d'open62541 (amd64)
+        id: cache-o62
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/open62541
+          key: open62541-v1.5.6-meson-${{ runner.os }}
+
+      - name: Construire open62541 (si absent du cache)
+        if: steps.cache-o62.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch v1.5.6 \
+            https://github.com/open62541/open62541.git "$RUNNER_TEMP/o62"
+          cmake -S "$RUNNER_TEMP/o62" -B "$RUNNER_TEMP/o62/build" \
+                -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$HOME/.local/open62541" \
+                -DUA_NAMESPACE_ZERO=REDUCED -DUA_ENABLE_AMALGAMATION=OFF \
+                -DUA_BUILD_EXAMPLES=OFF -DUA_FORCE_WERROR=OFF -DBUILD_SHARED_LIBS=OFF \
+                -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+          cmake --build "$RUNNER_TEMP/o62/build" -j "$(nproc)"
+          cmake --install "$RUNNER_TEMP/o62/build"
+
+      - name: Outillage et dépendances (amd64)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            meson ninja-build pkg-config dpkg-dev libsnmp-dev
+          echo "PKG_CONFIG_PATH=$HOME/.local/open62541/lib/pkgconfig:$HOME/.local/open62541/lib64/pkgconfig:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
+
+      - name: Paquet amd64 (Ubuntu)
+        run: bash tools/package-deb.sh --version "$PKGVER"
+
+      # ---- arm64 : dans un conteneur Debian 13, le système des Raspberry Pi
+      # récents, émulé par QEMU. Lent mais fidèle : mêmes bibliothèques, même
+      # éditeur de liens, même architecture que la machine cible.
+      - name: Émulation arm64 (QEMU)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      # Restauration et sauvegarde séparées : avec un cache ordinaire, une
+      # construction ratée d'open62541 (réseau, mémoire sous émulation) serait
+      # enregistrée telle quelle et TOUTES les exécutions suivantes
+      # repartiraient de cet échec — le paquet arm64 sortirait sans OPC UA,
+      # indéfiniment et sans que rien ne le dise.
+      - name: Cache d'open62541 (arm64) — restauration
+        uses: actions/cache/restore@v4
+        with:
+          path: .o62-arm64
+          key: open62541-v1.5.6-arm64-trixie
+
+      - name: Paquet arm64 (Raspberry Pi OS)
+        run: |
+          docker run --rm --platform linux/arm64 \
+            -v "$PWD":/src -w /src -e PKGVER \
+            debian:trixie bash packaging/build-arm64.sh
+      # Tout ce que le conteneur a écrit appartient à root : dist/ (build.py a
+      # réécrit les pages), build-paquet/ et le cache. On rend le tout à
+      # l'utilisateur du runner, sans quoi un runner auto-hébergé échouerait au
+      # nettoyage de l'exécution suivante. `always()` : même si la construction
+      # a échoué, il ne faut pas laisser l'arbre en root.
+      - name: Rendre les fichiers à l'utilisateur du runner
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" dist build-paquet .o62-arm64 2>/dev/null || true
+
+      - name: Cache d'open62541 (arm64) — sauvegarde si la construction a abouti
+        if: hashFiles('.o62-arm64/lib/pkgconfig/open62541.pc', '.o62-arm64/lib64/pkgconfig/open62541.pc') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .o62-arm64
+          key: open62541-v1.5.6-arm64-trixie
+
+      - name: Vérifier les deux paquets
+        run: |
+          ls -l dist/packages
+          for p in dist/packages/*.deb; do
+            echo "== $p"
+            dpkg-deb --info "$p" | sed -n '1,25p'
+            dpkg-deb --contents "$p" | grep -E 'usr/bin/diagweb-server|diagweb.service' || {
+              echo "::error::paquet incomplet : $p"; exit 1; }
+          done
+          test "$(ls dist/packages/*_amd64.deb 2> /dev/null | wc -l)" -eq 1 || {
+            echo "::error::paquet amd64 manquant"; exit 1; }
+          test "$(ls dist/packages/*_arm64.deb 2> /dev/null | wc -l)" -eq 1 || {
+            echo "::error::paquet arm64 manquant"; exit 1; }
+          # Les deux paquets doivent porter le même numéro : sinon le tableau de
+          # la release annoncerait un fichier qui n'existe pas.
+          test "$(ls dist/packages/*.deb | sed 's/_[a-z0-9]*\.deb$//' | sort -u | wc -l)" -eq 1 || {
+            echo "::error::les deux paquets n'ont pas la même version"; exit 1; }
+          # Pilote OPC UA : un avertissement, pas une erreur — un paquet sans
+          # OPC UA reste installable et utile, mais cela doit se voir.
+          for p in dist/packages/*.deb; do
+            dpkg-deb --info "$p" | grep -q 'OPC UA oui' ||
+              echo "::warning::$(basename "$p") est construit sans le pilote OPC UA"
+          done
+
+      - name: Conserver les paquets (téléchargeables depuis l'exécution)
+        uses: actions/upload-artifact@v4
+        with:
+          name: paquets-deb
+          path: dist/packages/*.deb
+          retention-days: 30
+
+      # Release « paquets » : toujours le dernier main, jamais un empilement.
+      # Elle est refaite à chaque fois pour que ses fichiers soient exactement
+      # ceux qu'on vient de construire.
+      - name: Publier la release « paquets »
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="$PKGVER"
+          # Le tag est posé ici, sur le commit qui a produit ces binaires. Le
+          # laisser créer par « gh release create » le placerait sur la tête de
+          # la branche au moment de l'appel — pas forcément le même commit,
+          # l'étape arm64 durant une heure.
+          git tag -f paquets "$GITHUB_SHA"
+          git push -f origin refs/tags/paquets
+          gh release delete paquets --yes || true
+          gh release create paquets dist/packages/*.deb --verify-tag \
+            --title "Paquets d'installation — $VERSION" \
+            --notes "$(printf '%s\n' \
+              "Paquets construits à partir du dernier \`main\` (${GITHUB_SHA:0:7})." \
+              "" \
+              "| Fichier | Pour |" \
+              "|---|---|" \
+              "| \`diagweb_${VERSION}_amd64.deb\` | Ubuntu 24.04+ et Debian 12+ sur PC |" \
+              "| \`diagweb_${VERSION}_arm64.deb\` | Raspberry Pi OS 64 bits (Debian 13) |" \
+              "" \
+              "Installation : \`sudo apt install ./diagweb_${VERSION}_<arch>.deb\`" \
+              "" \
+              "Depuis un clone du dépôt, sur la machine cible :" \
+              "\`sudo bash tools/install.sh\` — voir \`docs/INSTALL.md\`.")"

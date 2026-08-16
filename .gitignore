@@ -4,6 +4,9 @@ package-lock.json
 .pw-browsers/
 .test-shots/
 build/
+build-paquet/
+dist/packages/
+.o62-arm64/
 server/build*/
 .diag-data/
 __pycache__/

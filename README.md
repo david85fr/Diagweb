@@ -25,6 +25,31 @@ journalisation, le lien avec le `controller` viendra en phase 2.
   poignée « ⠿ » vers un autre onglet ou une autre fenêtre du navigateur ;
   chaque fenêtre a son propre espace de travail.
 
+## Installer sur une machine (Ubuntu, Raspberry Pi)
+
+Le serveur de diagnostic s'installe en paquet Debian : un service démarre et
+sert la page sur le réseau, accessible depuis un téléphone comme depuis un
+poste.
+
+- **Paquet prêt à installer** — release
+  [`paquets`](https://github.com/david85fr/Diagweb/releases/tag/paquets),
+  refaite à chaque poussée sur `main` : `..._amd64.deb` (Ubuntu 24.04+),
+  `..._arm64.deb` (Raspberry Pi OS 64 bits).
+
+  ```bash
+  sudo apt install ./diagweb_<version>_arm64.deb
+  ```
+
+- **Depuis ce dépôt, sur la machine cible** — construit le paquet pour elle,
+  puis l'installe :
+
+  ```bash
+  git clone https://github.com/david85fr/Diagweb.git && cd Diagweb
+  sudo bash tools/install.sh
+  ```
+
+Détails, réglages du service et désinstallation : **`docs/INSTALL.md`**.
+
 ## Développement
 
 ```
@@ -35,8 +60,11 @@ tools/build.py      assemble dist/index.html (autonome) + dist/artifact.html
 tools/serve.py      serveur d'aperçu local (port 8080, sans cache)
 tools/gen-catalog.mjs régénère le catalogue C++ depuis web/js/config.js
 tools/setup-tests.sh installe Playwright + Chromium (facultatif)
+tools/package-deb.sh paquet .deb pour la machine courante
+tools/install.sh    installation en une commande depuis un clone
+packaging/          service systemd, réglages, scripts dpkg
 tests/ui.mjs        tests d'interface (mobile + desktop)
-docs/               PROJET.md · SPECS.md · PROTOCOLES.md · SIMULATEUR.md
+docs/               PROJET.md · SPECS.md · PROTOCOLES.md · SIMULATEUR.md · INSTALL.md
 .devcontainer/      configuration GitHub Codespaces
 CLAUDE.md           instructions pour l'IA (conventions, contraintes)
 ```

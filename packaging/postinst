@@ -1,0 +1,88 @@
+#!/bin/sh
+# Diagweb — après installation : compte système, service, démarrage.
+#
+# $1 = configure | abort-upgrade | abort-remove | abort-deconfigure
+# $2 = version précédemment configurée (vide à la PREMIÈRE installation)
+set -e
+
+# Fabrication d'image (dpkg --root=…) : on ne touche pas au système hôte.
+# C'est la garde que pose debhelper, et pour la même raison.
+if [ -n "${DPKG_ROOT:-}" ]; then
+  exit 0
+fi
+
+case "$1" in
+  configure)
+    # Compte système dédié : le serveur ne tourne jamais en root. Pas de shell,
+    # pas de répertoire personnel — il n'a rien à faire ailleurs que dans
+    # /var/lib/diagweb, que systemd crée et lui donne (StateDirectory).
+    #
+    # Les deux tests sont séparés : un compte peut exister sans son groupe
+    # (nettoyage à moitié fait), et l'unité exige les deux — le service
+    # refuserait de démarrer sur un Group= inconnu.
+    if ! getent group diagweb > /dev/null; then
+      addgroup --system diagweb > /dev/null
+    fi
+    if ! getent passwd diagweb > /dev/null; then
+      adduser --system --ingroup diagweb --no-create-home --home /var/lib/diagweb \
+              --gecos "Diagweb serveur de diagnostic" diagweb > /dev/null
+    fi
+
+    # Secrets des liens réseau (phrases SNMPv3, mots de passe OPC UA). Créé
+    # vide, lisible du seul compte du service : /etc/default/diagweb, lui, est
+    # lisible par tous — un mot de passe posé là serait à la vue de n'importe
+    # quel utilisateur de la machine. Créé ici plutôt que livré dans le paquet :
+    # ce n'est pas une configuration à comparer d'une version à l'autre, et une
+    # mise à jour n'a rien à en dire.
+    if [ ! -e /etc/diagweb/secrets.env ]; then
+      mkdir -p /etc/diagweb
+      cat > /etc/diagweb/secrets.env <<'SECRETS'
+# Diagweb — secrets des liens réseau, lus dans l'environnement du serveur.
+#
+# Une ligne par secret, nommée d'après la référence saisie dans la fenêtre
+# « Liens réseau » :
+#   DIAGWEB_SECRET_<REFERENCE>=le-mot-de-passe
+#
+# Fichier lisible du seul compte « diagweb » (0640). Après modification :
+#   sudo systemctl restart diagweb
+SECRETS
+      chmod 0640 /etc/diagweb/secrets.env
+      chown root:diagweb /etc/diagweb/secrets.env 2> /dev/null || true
+    fi
+    ;;
+  abort-upgrade|abort-remove|abort-deconfigure)
+    ;;
+esac
+
+# systemd absent (conteneur, image de construction) : le paquet s'installe quand
+# même, il n'y a simplement pas de service à démarrer.
+if [ -d /run/systemd/system ]; then
+  systemctl daemon-reload || true
+
+  case "$1" in
+    configure|abort-upgrade|abort-remove|abort-deconfigure)
+      # Première installation ($2 vide) : on active et on démarre.
+      # Mise à jour : on ne réactive RIEN. Un administrateur qui a désactivé le
+      # service doit le retrouver désactivé — les outils Debian (deb-systemd-*)
+      # tiennent ce raisonnement, et le reproduire à la main serait le trahir.
+      if [ -z "${2:-}" ]; then
+        if command -v deb-systemd-helper > /dev/null; then
+          deb-systemd-helper enable diagweb.service || true
+        else
+          systemctl enable diagweb.service || true
+        fi
+      fi
+      # restart et non start : à la mise à jour, le binaire qui tourne doit être
+      # le neuf. deb-systemd-invoke respecte policy-rc.d et saute l'action sur
+      # une unité désactivée ; sans lui, on ne relance que ce qui tournait.
+      if command -v deb-systemd-invoke > /dev/null; then
+        deb-systemd-invoke restart diagweb.service || true
+      elif [ -z "${2:-}" ] || systemctl is-enabled diagweb.service > /dev/null 2>&1 \
+           || systemctl is-active diagweb.service > /dev/null 2>&1; then
+        systemctl restart diagweb.service || true
+      fi
+      ;;
+  esac
+fi
+
+exit 0

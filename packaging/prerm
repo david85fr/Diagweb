@@ -1,0 +1,22 @@
+#!/bin/sh
+# Diagweb — avant retrait : arrêter le service. Pas à la mise à jour, où le
+# postinst le relance avec le binaire neuf.
+#
+# L'unité n'est PAS désactivée ici : un retrait qui échoue laisserait sinon le
+# service désactivé alors que le paquet est resté installé. La désactivation
+# appartient au postrm, une fois le retrait acquis.
+set -e
+
+if [ -n "${DPKG_ROOT:-}" ]; then
+  exit 0
+fi
+
+if [ "$1" = remove ] && [ -d /run/systemd/system ]; then
+  if command -v deb-systemd-invoke > /dev/null; then
+    deb-systemd-invoke stop diagweb.service || true
+  else
+    systemctl stop diagweb.service || true
+  fi
+fi
+
+exit 0

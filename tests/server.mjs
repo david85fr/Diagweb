@@ -66,6 +66,29 @@ if (APRES_REDEMARRAGE) {
     t.enabled === true && t.addr === 'S0.7' && t.mode === 'below' &&
     t.threshold === 3 && t.iface === 'lo' && t.durationS === 12,
     t.addr + ' ' + t.mode + ' ' + t.threshold + ' · ' + t.iface + ' · ' + t.durationS + ' s');
+
+  // Les fichiers déjà capturés se retrouvent dans la liste : ils occupent le
+  // quota, ils doivent donc rester visibles et supprimables. Le témoin a été
+  // laissé sur le disque par le premier passage (aucun si la machine n'a pas
+  // la capacité de capturer : la vérification se déclare alors sautée).
+  const gardes = (c.json && c.json.runs) || [];
+  if (c.json && c.json.tool && !c.json.privilege) {
+    const g = gardes[0];
+    check('capture : les fichiers du disque reparaissent après redémarrage',
+      gardes.length >= 1 && g.state === 'terminée' && g.bytes > 0 && g.iface === 'lo',
+      gardes.length + ' fichier(s) · ' + (g ? g.id + ' · ' + g.bytes + ' o' : '—'));
+    if (g) {
+      const sup = await api('/api/capture/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: g.id }),
+      });
+      check('capture : un fichier retrouvé se supprime comme un autre',
+        sup.status === 200 && !(sup.json.state.runs || []).some((r) => r.id === g.id));
+    }
+  } else {
+    check('capture : fichiers du disque — vérification sautée (pas de capture possible ici)',
+      true, (c.json && c.json.privilege) || 'tcpdump absent');
+  }
   console.log('');
   console.log(`${results.length - failed}/${results.length} vérifications réussies`);
   process.exit(failed ? 1 : 0);
@@ -323,6 +346,17 @@ check('arrêt de la campagne', stop.status === 200 && stop.json.ok === true && !
     });
     check('capture : fichier supprimé (quota libéré)',
       sup.status === 200 && !(sup.json.state.runs || []).some((r) => r.id === run.id));
+
+    // Témoin du redémarrage : une seconde capture, celle-là CONSERVÉE. Les
+    // fichiers déjà sur le disque comptent dans le quota ; s'ils ne
+    // reparaissaient pas dans la liste après un redémarrage — et le service
+    // redémarre à chaque mise à jour du paquet — le quota se remplirait sans
+    // que rien ne soit listé ni supprimable depuis la page.
+    await api('/api/capture/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ iface: 'lo', durationS: 1 }),
+    });
+    await sleep(1600);
   } else if (c.json.tool) {
     // Machine sans la capacité : une vraie capture y échouerait forcément, et
     // faire échouer le test pour cela dirait le contraire de ce qu'il vérifie.

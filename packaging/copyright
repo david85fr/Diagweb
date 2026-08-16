@@ -1,0 +1,15 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: Diagweb
+Source: https://github.com/david85fr/Diagweb
+
+Files: *
+Copyright: Diagweb
+License: proprietary
+ Tous droits réservés. Ce paquet est distribué pour l'exploitation et la mise
+ au point du contrôleur ; aucune autorisation de redistribution n'est accordée
+ par le seul fait de le posséder.
+ .
+ Les bibliothèques externes éventuellement liées au serveur de diagnostic
+ restent régies par leurs propres licences (open62541 : MPL-2.0 ; Net-SNMP :
+ BSD). Elles sont facultatives, et le paquet indique celles qui ont été
+ compilées dedans (/usr/share/diagweb/BUILD-INFO).

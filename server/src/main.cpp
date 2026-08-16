@@ -899,7 +899,21 @@ int main(int argc, char** argv) {
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     auto next = [&]() { return i + 1 < argc ? argv[++i] : ""; };
-    if (a == "--port") opt.port = std::atoi(next());
+    if (a == "--port") {
+      // Un port hors bornes ne doit pas passer en silence : atoi("") vaut 0,
+      // et bind(0) réussit sur un port éphémère tiré au hasard — le service
+      // s'annonce alors démarré et la page reste introuvable. Le cas n'est pas
+      // théorique : l'unité systemd passe ${DIAGWEB_PORT}, vide si l'exploitant
+      // efface la ligne de /etc/default/diagweb.
+      const std::string v = next();
+      const long p = std::strtol(v.c_str(), nullptr, 10);
+      if (p < 1 || p > 65535) {
+        std::cerr << "--port " << v << " hors bornes (1-65535) : 8080 retenu\n";
+        opt.port = 8080;
+      } else {
+        opt.port = static_cast<int>(p);
+      }
+    }
     else if (a == "--root") opt.root = next();
     else if (a == "--data-dir") opt.data_dir = next();
     else if (a == "--sim-protocols") opt.sim_protocols = true;

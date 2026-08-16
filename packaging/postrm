@@ -1,0 +1,39 @@
+#!/bin/sh
+# Diagweb — après retrait. La purge seule efface les données : un « remove »
+# ordinaire laisse les configurations enregistrées et les journaux en place,
+# c'est ce qu'on attend en réinstallant.
+set -e
+
+if [ -n "${DPKG_ROOT:-}" ]; then
+  exit 0
+fi
+
+if [ -d /run/systemd/system ]; then
+  systemctl daemon-reload || true
+fi
+
+case "$1" in
+  remove)
+    # Les liens d'activation posés à l'installation sont retirés ici, une fois
+    # le retrait acquis — pas avant (voir prerm).
+    if command -v deb-systemd-helper > /dev/null; then
+      deb-systemd-helper mask diagweb.service > /dev/null || true
+    fi
+    ;;
+  purge)
+    if command -v deb-systemd-helper > /dev/null; then
+      deb-systemd-helper purge diagweb.service > /dev/null || true
+      deb-systemd-helper unmask diagweb.service > /dev/null || true
+    fi
+    rm -rf /var/lib/diagweb
+    rm -f /etc/diagweb/secrets.env
+    rmdir /etc/diagweb 2> /dev/null || true
+    # Le compte ET son groupe : deluser ne touche pas au groupe primaire, qui
+    # resterait sinon indéfiniment. --only-if-empty protège le cas où quelqu'un
+    # y aurait ajouté un utilisateur.
+    deluser --system diagweb > /dev/null 2>&1 || true
+    delgroup --system --only-if-empty diagweb > /dev/null 2>&1 || true
+    ;;
+esac
+
+exit 0
