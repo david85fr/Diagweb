@@ -137,6 +137,56 @@ check('origine de capture : l’ouverture de la page, pas le démarrage du serve
     : 'capture ' + age.toFixed(1) + ' s alors que le serveur tourne depuis ' +
       e.now.toFixed(0) + ' s');
 
+// ☰ → Tout remettre par défaut, portée CONTRÔLEUR : la simulation ne peut pas
+// l'éprouver (tests/ui.mjs couvre la portée navigateur, celle du stockage).
+// La case « réglages de capture » reste volontairement décochée : le quota et
+// le déclencheur servent de témoin de persistance au second passage de
+// tests/server.mjs, après redémarrage du serveur.
+const LAY = 'essai-reinit-servie';
+await fetch(BASE + '/api/layouts/' + LAY, {
+  method: 'PUT', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ name: LAY, data: { version: 3, tables: [], charts: [] } }),
+});
+await fetch(BASE + '/api/appearance', {
+  method: 'PUT', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ version: 1, logo: 'data:image/svg+xml,%3Csvg%2F%3E',
+                         colors: { dark: { accent: '#ff00ff' }, light: {} } }),
+});
+await page.evaluate(async () => {
+  const P = DW.protocols;
+  await P.load();
+  P.config.links.push({ id: 'temoin', label: 'Témoin', protocol: 'modbus-tcp',
+                        params: { host: '127.0.0.1', port: 15020 }, points: [] });
+  await P.save();
+});
+const avant = await (await fetch(BASE + '/api/protocols', { cache: 'no-store' })).json();
+const skinAvant = await (await fetch(BASE + '/api/appearance', { cache: 'no-store' })).json();
+const laysAvant = await (await fetch(BASE + '/api/layouts')).json();
+
+await page.evaluate(() => { window.__avantReset = true; });
+if (await page.locator('#menuPanel.hide').count()) await page.click('#menuBtn');
+await page.waitForTimeout(150);
+await page.click('#resetBtn');
+await page.waitForSelector('#rstGo');
+for (const id of ['#rstSkin', '#rstLinks', '#rstLays']) await page.check(id);
+await page.click('#rstGo');           // arme
+await page.click('#rstGo');           // efface
+await page.waitForFunction(() => !window.__avantReset && window.DW && window.DW.source,
+  null, { timeout: 15000 });
+
+const apres = await (await fetch(BASE + '/api/protocols', { cache: 'no-store' })).json();
+const skinApres = await (await fetch(BASE + '/api/appearance', { cache: 'no-store' })).json();
+const laysApres = await (await fetch(BASE + '/api/layouts')).json();
+const liens = (c) => ((c && c.config ? c.config.links : c.links) || []).length;
+const cap = await (await fetch(BASE + '/api/capture', { cache: 'no-store' })).json();
+check('☰ → tout remettre par défaut : le contrôleur revient à l’origine',
+  liens(avant) > 0 && skinAvant.logo && laysAvant.length > 0 &&
+  liens(apres) === 0 && !skinApres.logo && laysApres.length === 0 &&
+  cap.quotaBytes === 50 * 1024 * 1024,
+  liens(avant) + ' lien, ' + laysAvant.length + ' configuration et un logo avant · ' +
+  'après : ' + liens(apres) + ', ' + laysApres.length + ', aucun logo — ' +
+  'réglages de capture intacts (case décochée)');
+
 await browser.close();
 
 console.log('');

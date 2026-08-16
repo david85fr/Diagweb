@@ -104,7 +104,8 @@ await page.click('#searchInput'); await page.fill('#searchInput', 'e');
 await page.waitForTimeout(400); await relever();
 await page.keyboard.press('Escape'); await page.fill('#searchInput', '');
 await page.click('#menuBtn'); await page.waitForTimeout(200); await relever();
-for (const id of ['#helpBtn', '#aboutBtn', '#layoutsBtn', '#logBtn', '#skinBtn']) {
+for (const id of ['#helpBtn', '#aboutBtn', '#layoutsBtn', '#logBtn', '#skinBtn',
+                  '#resetBtn']) {
   await menu(id); await relever();
   if (id === '#layoutsBtn') {
     for (const a of ['save', 'dl', 'load', 'copy']) {

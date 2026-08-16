@@ -1161,6 +1161,9 @@ await sweep(async () => {
 });
 await p2.click('.m-close');
 await ouvrirMenu();
+await sweep(async () => { await p2.click('#resetBtn'); await p2.waitForTimeout(250); });
+await p2.click('#rstCancel');
+await ouvrirMenu();
 await sweep(async () => { await p2.click('#helpBtn'); await p2.waitForTimeout(250); });
 const helpSections = await p2.locator('.help-h').count();
 check('infobulle sur chaque objet de l\'interface',
@@ -1169,6 +1172,54 @@ check('infobulle sur chaque objet de l\'interface',
 await p2.click('.m-close');
 
 await p2.screenshot({ path: path.join(SHOTS, 'desktop.png') });
+
+// ☰ → Tout remettre par défaut. Destructif par nature (il vide le stockage et
+// recharge la page) : il vient donc APRÈS tout le reste, capture comprise.
+await p2.evaluate(() => {
+  DW.store.save('témoin de réinitialisation', { version: 3, tables: [], charts: [] });
+  DW.store.setAutoload('témoin de réinitialisation');
+  try { localStorage.setItem('diagweb.lang', 'en'); } catch (e) { /* stockage absent */ }
+  DW.appearance.setLogo('data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\'/%3E');
+  DW.appearance.setCouleur('accent', '#ff00ff');
+  window.__avantReset = true;
+});
+const rstAvant = await p2.evaluate(() => ({
+  configs: DW.store.list().length,
+  auto: DW.store.getAutoload(),
+  logo: !!DW.appearance.etat().logo,
+  onglets: document.querySelectorAll('.tab').length,
+}));
+if (await p2.locator('#menuPanel.hide').count()) await p2.click('#menuBtn');
+await p2.waitForTimeout(150);
+await p2.click('#resetBtn');
+await p2.waitForSelector('#rstGo');
+// Confirmation en deux temps : le premier appui arme, le second efface.
+await p2.click('#rstGo');
+const rstArme = await p2.locator('#rstGo').textContent();
+await p2.click('#rstGo');
+await p2.waitForFunction(() => !window.__avantReset && window.DW && window.DW.store,
+  null, { timeout: 15000 });
+await p2.waitForTimeout(600);
+const rstApres = await p2.evaluate(() => ({
+  configs: DW.store.list().length,
+  auto: DW.store.getAutoload(),
+  logo: !!DW.appearance.etat().logo,
+  accent: DW.appearance.etat().colors.dark.accent || DW.appearance.etat().colors.light.accent || null,
+  langue: DW.i18n.lang,
+  onglets: document.querySelectorAll('.tab').length,
+  // L'état d'origine de Diagweb n'est pas un onglet vide : c'est l'onglet de
+  // démonstration, celui qu'on obtient à la toute première ouverture.
+  premier: (document.querySelector('.tab-name') || {}).textContent,
+  restes: Object.keys(localStorage).filter((k) => k.indexOf('diagweb.') === 0),
+}));
+check('☰ → tout remettre par défaut : le navigateur repart à neuf',
+  rstAvant.configs > 0 && rstAvant.logo && /irréversible/.test(rstArme) &&
+  rstApres.configs === 0 && rstApres.auto === null && !rstApres.logo && rstApres.accent === null &&
+  rstApres.langue === 'fr' && rstApres.onglets === 1 && rstApres.premier === 'Démo' &&
+  rstApres.restes.length === 0,
+  rstAvant.configs + ' configuration et un logo avant · après : ' + rstApres.onglets +
+  ' onglet « ' + rstApres.premier + ' », langue ' + rstApres.langue + ', ' +
+  rstApres.restes.length + ' clé « diagweb. » restante');
 await desk.close();
 await browser.close();
 

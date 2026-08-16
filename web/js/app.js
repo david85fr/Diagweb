@@ -2293,6 +2293,152 @@
   }
   DW.openVarPicker = openVarPicker;
 
+  /**
+   * Retour à la configuration d'origine (☰ → Tout remettre par défaut).
+   *
+   * Deux portées, parce que les réglages ne vivent pas au même endroit : ce que
+   * le NAVIGATEUR a mémorisé (onglets, configurations, langue, apparence) et ce
+   * que le CONTRÔLEUR détient (apparence partagée, liens réseau, configurations
+   * enregistrées sur lui, réglages de capture). La seconde n'apparaît que sur
+   * la page servie, et rien n'y est coché d'avance : effacer les liens réseau
+   * depuis un poste les efface pour tous.
+   *
+   * Le contrôleur est traité AVANT le navigateur : si un appel échoue, la page
+   * est encore debout pour le dire, au lieu de recharger sur un demi-effacement
+   * silencieux.
+   */
+  function openResetModal() {
+    const surServeur = DW.sourceMode === 'ws';
+    const root = $('modalRoot');
+    root.innerHTML = '';
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    const opt = (id, coche, titre, aide) =>
+      '<label class="rst-opt" title="' + aide.replace(/"/g, '&quot;') + '">' +
+        '<input type="checkbox" id="' + id + '"' + (coche ? ' checked' : '') +
+          ' title="' + aide.replace(/"/g, '&quot;') + '">' +
+        '<span><b>' + titre + '</b><i>' + aide + '</i></span></label>';
+    back.innerHTML =
+      '<div class="modal" role="dialog" aria-label="Tout remettre par défaut">' +
+        '<header class="m-head"><h3>Tout remettre par défaut</h3>' +
+        '<button class="iconbtn m-close" type="button" title="Fermer sans rien effacer">✕</button></header>' +
+        '<p class="m-note">Diagweb repart de son état d’origine : aucun onglet, ' +
+          'aucune variable, aucun réglage mémorisé. <b>Rien ne se récupère ensuite</b> — ' +
+          'si vous tenez à une disposition, téléchargez-la d’abord (☰ → Configurations → Télécharger).</p>' +
+        '<div class="m-section">' +
+          '<span class="m-label">Ce navigateur</span>' +
+          opt('rstNav', true, 'Onglets, configurations, langue et apparence',
+              'Tout ce que Diagweb a mémorisé dans ce navigateur. Les autres fenêtres ' +
+              'ouvertes gardent leurs onglets jusqu’à leur prochain chargement.') +
+        '</div>' +
+        (surServeur ?
+        '<div class="m-section">' +
+          '<span class="m-label">Le contrôleur — partagé par tous les postes</span>' +
+          opt('rstSkin', false, 'Apparence — logo et couleurs',
+              'Le logo de l’exploitant et les couleurs reviennent à ceux du produit, ' +
+              'pour tous les postes qui consultent ce contrôleur.') +
+          opt('rstLinks', false, 'Liens réseau déclarés',
+              'Les équipements déclarés et leurs points (@lien.point) disparaissent : ' +
+              'les variables qui les utilisent ne seront plus lisibles.') +
+          opt('rstLays', false, 'Configurations enregistrées sur le contrôleur',
+              'Les dispositions rangées dans le contrôleur, celles que retrouve ' +
+              'n’importe quel poste, sont supprimées.') +
+          opt('rstCap', false, 'Réglages de capture réseau',
+              'Quota de disque et déclencheur reviennent à leurs valeurs d’origine. ' +
+              'Les fichiers déjà capturés sont conservés.') +
+        '</div>' : '') +
+        '<p class="m-note" id="rstNote">Ne sont touchés ni les forçages en cours, ' +
+          'ni les fichiers déjà capturés, ni les journaux déjà enregistrés.</p>' +
+        '<div class="m-actions">' +
+          '<button class="btn danger" id="rstGo" type="button" ' +
+            'title="Effacer ce qui est coché ci-dessus, puis recharger la page">Tout remettre par défaut</button>' +
+          '<button class="btn" id="rstCancel" type="button" ' +
+            'title="Fermer sans rien effacer">Annuler</button>' +
+        '</div>' +
+      '</div>';
+    root.appendChild(back);
+
+    const close = () => { root.innerHTML = ''; };
+    back.addEventListener('pointerdown', (e) => { if (e.target === back) close(); });
+    back.querySelector('.m-close').addEventListener('click', close);
+    back.querySelector('#rstCancel').addEventListener('click', close);
+
+    const coche = (id) => { const el = back.querySelector('#' + id); return !!(el && el.checked); };
+    const note = back.querySelector('#rstNote');
+    const bouton = back.querySelector('#rstGo');
+    let arme = false;
+
+    bouton.addEventListener('click', async () => {
+      // Confirmation en deux temps : un effacement irréversible ne doit pas
+      // tenir à un clic mal placé dans un menu.
+      if (!arme) {
+        if (!coche('rstNav') && !coche('rstSkin') && !coche('rstLinks') &&
+            !coche('rstLays') && !coche('rstCap')) {
+          note.textContent = 'Rien n’est coché : il n’y a rien à effacer.';
+          return;
+        }
+        arme = true;
+        bouton.textContent = 'Confirmer — c’est irréversible';
+        bouton.title = 'Second appui : l’effacement a lieu et la page se recharge';
+        note.textContent = 'Second appui pour effacer. Tout autre bouton annule.';
+        return;
+      }
+      bouton.disabled = true;
+      const echecs = [];
+      const dit = (msg) => { note.textContent = msg; };
+
+      if (surServeur && coche('rstLays')) {
+        dit('Suppression des configurations du contrôleur…');
+        try {
+          const liste = await DW.store.listFromController();
+          for (const l of liste || []) await DW.store.deleteFromController(l.name);
+        } catch (e) { echecs.push('configurations du contrôleur'); }
+      }
+      if (surServeur && coche('rstSkin')) {
+        dit('Remise à zéro de l’apparence…');
+        try {
+          const r = await fetch('/api/appearance', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ version: 1, logo: '', colors: { dark: {}, light: {} } }),
+          });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+        } catch (e) { echecs.push('apparence'); }
+      }
+      if (surServeur && coche('rstLinks')) {
+        dit('Suppression des liens réseau…');
+        try {
+          const P = DW.protocols;
+          await P.load();
+          P.config.links = [];
+          await P.save();
+        } catch (e) { echecs.push('liens réseau'); }
+      }
+      if (surServeur && coche('rstCap')) {
+        dit('Réglages de capture par défaut…');
+        try {
+          const r = await fetch('/api/capture/config', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ quotaMB: 100, trigger: { enabled: false } }),
+          });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+        } catch (e) { echecs.push('réglages de capture'); }
+      }
+
+      if (echecs.length) {
+        // Le navigateur n'est pas touché : recharger masquerait l'échec, et
+        // l'utilisateur croirait tout remis à neuf.
+        note.textContent = 'Le contrôleur a refusé : ' + echecs.join(', ') +
+          '. Rien n’a été effacé dans ce navigateur — réessayez ou décochez.';
+        bouton.disabled = false;
+        arme = false;
+        bouton.textContent = 'Tout remettre par défaut';
+        return;
+      }
+      if (coche('rstNav')) DW.store.resetBrowser();
+      location.reload();
+    });
+  }
+
   function showTextModal(title, text) {
     const root = $('modalRoot');
     root.innerHTML = '';
@@ -2457,6 +2603,7 @@
     lang.addEventListener('click', () => DW.i18n.setLang(DW.i18n.autre()));
 
     $('layoutsBtn').addEventListener('click', openLayoutsModal);
+    $('resetBtn').addEventListener('click', openResetModal);
     $('logBtn').addEventListener('click', openLogModal);
     $('tabAdd').addEventListener('click', () => { createTab(); });
 
@@ -2590,6 +2737,13 @@
             ['Logo', 'Une image de l’installation remplace le logo Diagweb dans la barre du haut, et sert d’icône d’onglet. PNG, JPEG, SVG ou WebP : elle est réduite et <b>incorporée</b> à la configuration — aucune ressource extérieure n’est appelée, la page reste servable hors ligne.'],
             ['Couleurs', 'Six réglages : accent, fond, cartes, fond secondaire, texte, traits. L’aperçu est immédiat. Les gris et les nuances d’accent en sont déduits. <b>Chaque thème garde les siennes</b> : basculez le thème pour régler l’autre.'],
             ['Portée', 'Page servie par le contrôleur : l’apparence est enregistrée sur lui et <b>tous les postes</b> la voient. Page ouverte hors serveur : elle reste dans ce navigateur.'],
+          ]) +
+          S('Tout remettre par défaut (☰)') +
+          L([
+            ['Ce navigateur', 'Efface <b>tout</b> ce que Diagweb y a mémorisé : onglets et dispositions, configurations enregistrées, chargement automatique, langue, apparence locale, réglages simulés. La page se recharge sur l’état d’origine — l’onglet de démonstration, comme à la première ouverture. Les autres fenêtres ouvertes gardent leurs onglets jusqu’à leur prochain chargement.'],
+            ['Le contrôleur', 'Sur la page servie, quatre cases <b>séparées et décochées d’avance</b> : apparence partagée, liens réseau déclarés, configurations rangées dans le contrôleur, réglages de capture. Elles portent au-delà de ce poste — ce que voient tous les autres change aussi.'],
+            ['Ce qui survit', 'Les forçages en cours, les fichiers déjà capturés et les journaux déjà enregistrés. Un forçage se relâche depuis la ligne de la variable, une capture se supprime depuis sa page.'],
+            ['Prudence', 'Confirmation en deux temps, et <b>rien ne se récupère</b> ensuite : téléchargez d’abord ce que vous voulez garder (☰ → Configurations → Télécharger). Si le contrôleur refuse une des demandes, rien n’est effacé dans le navigateur et la fenêtre le dit.'],
           ]) +
           S('Liens réseau (☰ → Liens réseau)') +
           L([

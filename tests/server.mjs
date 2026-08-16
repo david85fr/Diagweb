@@ -334,6 +334,25 @@ check('arrêt de la campagne', stop.status === 200 && stop.json.ok === true && !
   }
 }
 
+// ------------------------- configurations rangées dans le contrôleur (CRUD)
+// Le retour à l'état d'origine (interface : ☰ → Tout remettre par défaut) les
+// supprime une par une : la suppression doit exister et être idempotente, deux
+// postes pouvant la demander en même temps.
+const LAY = 'essai-reinit';
+await api('/api/layouts/' + LAY, {
+  method: 'PUT', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ name: LAY, data: { version: 3, tables: [], charts: [] } }),
+});
+const listeAvant = await api('/api/layouts');
+const supp1 = await api('/api/layouts/' + LAY, { method: 'DELETE' });
+const supp2 = await api('/api/layouts/' + LAY, { method: 'DELETE' });
+const listeApres = await api('/api/layouts');
+const nomme = (l) => Array.isArray(l.json) && l.json.some((e) => e.name === LAY);
+check('configuration du contrôleur : enregistrée, listée, supprimée (idempotent)',
+  nomme(listeAvant) && supp1.status === 200 && supp1.json.supprimee === true &&
+  supp2.status === 200 && supp2.json.supprimee === false && !nomme(listeApres),
+  'seconde suppression : ok sans erreur');
+
 // ------------------------------------------ robustesse aux entrées hostiles
 // Chacune de ces requêtes provoquait auparavant une exception non capturée
 // (std::sto*) qui faisait tomber tout le serveur. Il doit y survivre.

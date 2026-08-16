@@ -615,6 +615,18 @@ bool handle_api(int fd, const Request& req, IVariableSource& src, const Options&
       respond_json(fd, body.str());
       return true;
     }
+    // Suppression : idempotente, une configuration déjà absente n'est pas une
+    // erreur. Le retour à l'état d'origine (interface : ☰ → Tout remettre par
+    // défaut) supprime en boucle et n'a rien à rattraper si deux postes le
+    // font en même temps.
+    if (req.method == "DELETE") {
+      std::error_code ec;
+      const bool efface = fs::remove(file, ec);
+      if (ec) { respond_json(fd, "{\"error\":\"suppression impossible\"}", 500); return true; }
+      if (efface) std::cout << "  configuration supprimee : " << file.string() << std::endl;
+      respond_json(fd, std::string("{\"ok\":true,\"supprimee\":") + (efface ? "true" : "false") + '}');
+      return true;
+    }
   }
 
   // ---- journalisation autonome côté serveur ------------------------

@@ -896,6 +896,33 @@ body.dnd-over-pane #panes {
 .m-import { display: inline-flex; align-items: center; }
 .m-note { font-size: 11.5px; color: var(--faint); margin: 12px 0 0; }
 .m-empty { color: var(--faint); font-size: 13px; margin: 6px 0; }
+
+/* ---------- Retour à la configuration d'origine ---------- */
+/* Chaque case porte sa conséquence sous son intitulé : « liens réseau » ne dit
+   pas, à lui seul, que les variables qui les utilisent cesseront d'être
+   lisibles — et c'est ce qu'il faut savoir AVANT de cocher. */
+.rst-opt {
+  display: grid; grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px; align-items: start;
+  padding: 8px 6px; border-radius: 9px;
+  cursor: pointer;
+}
+.rst-opt:hover { background: color-mix(in srgb, var(--panel-2) 70%, transparent); }
+.rst-opt input[type="checkbox"] { width: 16px; height: 16px; margin-top: 2px; accent-color: var(--accent); }
+.rst-opt span { display: grid; gap: 2px; min-width: 0; }
+.rst-opt b { font-size: 13.5px; font-weight: 560; }
+.rst-opt i { font-style: normal; font-size: 11.5px; color: var(--faint); }
+
+/* Bouton d'action destructrice : il doit se distinguer d'un bouton ordinaire
+   sans crier — la fenêtre, elle, demande confirmation. */
+.btn.danger {
+  color: var(--crit);
+  border-color: color-mix(in srgb, var(--crit) 50%, var(--line));
+  background: color-mix(in srgb, var(--crit) 10%, transparent);
+}
+.btn.danger:hover { border-color: var(--crit); }
+.btn.danger:disabled { opacity: .55; cursor: default; }
+.menu-panel button.danger { color: var(--crit); }
 .m-text {
   width: 100%; height: 240px;
   font: 11px var(--mono); color: var(--ink);

@@ -299,5 +299,47 @@
         return await r.json();
       } finally { clearTimeout(timer); }
     },
+    async deleteFromController(name) {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 2500);
+      try {
+        const r = await fetch('/api/layouts/' + encodeURIComponent(name), {
+          method: 'DELETE', signal: ctl.signal,
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return true;
+      } finally { clearTimeout(timer); }
+    },
+
+    // ---- Retour à l'état d'origine ----------------------------------
+    /**
+     * Efface tout ce que Diagweb a mémorisé dans ce navigateur : session de la
+     * fenêtre, configurations nommées, chargement automatique, langue,
+     * apparence locale, réglages simulés, transferts en attente.
+     *
+     * Balayage par PRÉFIXE et non énumération des clés connues : une clé
+     * ajoutée plus tard serait sinon oubliée ici, et « tout par défaut »
+     * deviendrait faux sans que rien ne le signale. `garder` liste les clés
+     * exactes à laisser en place (une portée décochée dans la fenêtre de
+     * réinitialisation).
+     *
+     * @param {string[]} [garder] clés à conserver
+     * @returns {string[]} clés effacées
+     */
+    resetBrowser(garder) {
+      const keep = new Set(garder || []);
+      const efface = [];
+      for (const st of [window.localStorage, window.sessionStorage]) {
+        try {
+          for (let i = st.length - 1; i >= 0; i--) {
+            const k = st.key(i);
+            if (!k || k.indexOf('diagweb.') !== 0 || keep.has(k)) continue;
+            st.removeItem(k);
+            efface.push(k);
+          }
+        } catch (e) { available = false; }
+      }
+      return efface;
+    },
   };
 })();

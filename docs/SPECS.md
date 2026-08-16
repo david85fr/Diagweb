@@ -471,9 +471,10 @@ configuration à la racine) est acceptée et convertie en un onglet.
 - **Fichier CSV** (export de consultation, non importable) : séparateur
   « ; », en-tête `emplacement;graphique;fenetre_s;adresse;periode_ms;`
   `echelle;visible;decalage` — une ligne par variable du tableau et par courbe.
-- **Contrôleur** : `PUT /api/layouts/<nom>` et `GET /api/layouts` (timeout
-  2,5 s). Tant que le back-end n'existe pas, échec propre avec message
-  explicite. À brancher en phase 2.
+- **Contrôleur** : `PUT /api/layouts/<nom>`, `GET /api/layouts` et
+  `DELETE /api/layouts/<nom>` (timeout 2,5 s ; la suppression est idempotente,
+  une configuration absente n'est pas une erreur). Tant que le back-end
+  n'existe pas, échec propre avec message explicite.
 
 ## 6 bis. Journalisation des données (par onglet, optionnelle)
 
@@ -523,6 +524,34 @@ configuration à la racine) est acceptée et convertie en un onglet.
 - L'activation et la destination sont mémorisées dans la session (la
   journalisation navigateur redémarre au rechargement si elle était active ;
   la journalisation serveur, elle, n'a jamais cessé).
+
+## 6 ter. Retour à la configuration d'origine (☰ → Tout remettre par défaut)
+
+Une entrée du menu général ramène Diagweb à l'état de sa première ouverture.
+Deux portées, parce que les réglages ne vivent pas au même endroit :
+
+- **Ce navigateur** (coché d'avance) : tout ce que Diagweb y a mémorisé —
+  onglets et dispositions de la fenêtre, configurations nommées, chargement
+  automatique, langue, apparence locale, réglages simulés, transferts en
+  attente. L'effacement **balaie par préfixe** (`diagweb.`) plutôt que
+  d'énumérer les clés connues : une clé ajoutée plus tard serait sinon oubliée,
+  et « tout par défaut » deviendrait faux sans que rien ne le signale.
+- **Le contrôleur** (sur la page servie seulement, chaque case **décochée**) :
+  apparence partagée, liens réseau déclarés, configurations rangées dans le
+  contrôleur (`DELETE /api/layouts/<nom>`, idempotent), réglages de capture
+  (quota et déclencheur). Ces réglages portent au-delà du poste qui les
+  efface — d'où le décochage par défaut.
+
+Ne sont touchés ni les **forçages en cours**, ni les **fichiers déjà
+capturés**, ni les **journaux déjà enregistrés** : ce sont des états
+d'exploitation, pas de la configuration, et chacun se défait là où il se fait.
+
+Le contrôleur est traité **avant** le navigateur : un appel refusé laisse la
+page debout pour le dire, au lieu de recharger sur un demi-effacement
+silencieux. Confirmation en deux temps (le premier appui arme le bouton) ;
+rien n'est récupérable ensuite, la fenêtre renvoie donc vers le téléchargement
+préalable d'une configuration. L'état retrouvé n'est pas un onglet vide mais
+l'onglet de **démonstration** — c'est ce qu'affiche une première ouverture.
 
 ## 7. Contrat DataSource (frontière front/back)
 
