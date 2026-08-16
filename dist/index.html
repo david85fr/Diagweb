@@ -372,7 +372,16 @@ button { font-family: var(--sans); }
 }
 .vrow:nth-child(odd) { background: color-mix(in srgb, var(--panel-2) 55%, transparent); }
 .v-id { display: grid; min-width: 0; }
-.v-addr { font-family: var(--mono); font-size: 13px; }
+/* L'adresse se tronque comme le libellé.
+   Elle ne le faisait pas, et une adresse longue passait PAR-DESSUS la valeur :
+   « Supervision.temps_cycle » recouvrait « 837.7 µs » de 57 px sur un écran de
+   390 px. Rien ne la coupait — les points d'un chemin de modèle n'offrent pas
+   de point de césure, et sans « nowrap + ellipsis » le texte débordait de sa
+   cellule au lieu d'y être rogné. Dans un outil de diagnostic, une valeur
+   illisible est pire qu'une adresse abrégée : c'est la valeur qu'on vient
+   lire, et l'adresse complète reste dans l'infobulle. */
+.v-addr { font-family: var(--mono); font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .v-label { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Description en tête : les deux lignes échangent leur rôle typographique —
    c'est la mise en avant qui change, pas l'information disponible. */
@@ -1216,7 +1225,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     <div class="topIcons">
       <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" aria-label="Figer ou reprendre tout l’onglet" title="Figer d’un coup tout l’onglet actif : les courbes ET les valeurs numériques s’arrêtent sur l’instant courant">⏸</button>
       <button id="stopBtn" class="iconbtn pausebtn" type="button" aria-label="Arrêter ou relancer l’acquisition" title="Arrêter l’acquisition : plus aucun échantillon n’est enregistré et l’horloge se fige. L’historique déjà acquis reste consultable et mesurable.">⏹</button>
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">d2c3d0b · #179</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">dcdd631 · #183</span>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
