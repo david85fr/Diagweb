@@ -33,8 +33,10 @@ poste.
 
 - **Paquet prêt à installer** — release
   [`paquets`](https://github.com/david85fr/Diagweb/releases/tag/paquets),
-  refaite à chaque poussée sur `main` : `..._amd64.deb` (Ubuntu 24.04+),
-  `..._arm64.deb` (Raspberry Pi OS 64 bits).
+  construite par GitHub à chaque poussée sur `main` : `..._amd64.deb`
+  (Ubuntu 24.04+), `..._arm64.deb` (Raspberry Pi OS 64 bits) et
+  `..._page-autonome.html` (l'interface en simulation, à ouvrir telle quelle).
+  Les mêmes fichiers sont attachés à l'exécution du workflow (onglet Actions).
 
   ```bash
   sudo apt install ./diagweb_<version>_arm64.deb

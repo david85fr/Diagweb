@@ -13,10 +13,30 @@ tourne sur des données simulées, la seconde sur celles du contrôleur.
 
 ---
 
-## 1. Paquet .deb prêt à installer
+## 1. Livrables prêts à l'emploi (construits par GitHub)
 
-Chaque poussée sur `main` fait construire deux paquets par l'intégration
-continue, publiés dans la **release `paquets`** du dépôt :
+Chaque poussée sur `main` dont l'intégration continue passe déclenche le
+workflow **« Livrables »**, qui construit trois fichiers et les publie dans la
+**release [`paquets`](https://github.com/david85fr/Diagweb/releases/tag/paquets)**
+du dépôt — refaite à chaque fois, on y trouve donc toujours le dernier `main` :
+
+| Fichier | Pour |
+|---|---|
+| `diagweb_<version>_amd64.deb` | PC sous Ubuntu 24.04+ (ou Debian 13+) |
+| `diagweb_<version>_arm64.deb` | Raspberry Pi OS 64 bits (Debian 13 « trixie ») |
+| `diagweb_<version>_page-autonome.html` | à ouvrir dans un navigateur : l'interface en simulation, sans rien installer |
+
+Les mêmes fichiers sont aussi attachés à l'exécution du workflow (onglet
+**Actions** → l'exécution → **Artifacts**), sous trois noms distincts :
+`paquet-ubuntu-amd64`, `paquet-raspberry-arm64`, `page-autonome-html`. La page
+autonome, elle, est produite par **chaque** exécution de l'intégration continue,
+pull requests comprises — pratique pour faire essayer une modification à
+quelqu'un qui ne compile rien.
+
+Rien de tout cela n'est construit à la main : c'est GitHub qui le fait, à partir
+du dépôt, après que les tests sont passés.
+
+Détail des deux paquets :
 
 - `diagweb_<version>_amd64.deb` — **Ubuntu** 24.04 ou plus récent, et Debian 13
   ou plus récent sur PC (le paquet est construit sur Ubuntu 24.04 : ses

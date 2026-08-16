@@ -84,14 +84,23 @@ fonctionnelles + état d'avancement) avant toute modification.
    travaillent en parallèle, et l'autre a pu le faire. Comparer le tag de
    version (`id="buildTag"`) plutôt que republier à l'aveugle.
 
-8. **Les paquets d'installation suivent `main`, comme les pages.** Le dépôt ne
-   livre pas qu'une interface : il livre un produit installable. À chaque
-   poussée sur `main`, l'intégration continue construit **deux paquets `.deb`**
-   et les publie dans la release **`paquets`**, dont les fichiers sont
-   remplacés à chaque fois :
+8. **Les livrables suivent `main`, comme les pages, et c'est GITHUB qui les
+   construit.** Le dépôt ne livre pas qu'une interface : il livre un produit
+   installable, et personne ne doit dépendre d'une session pour l'obtenir. Le
+   workflow **`.github/workflows/paquets.yml`** part à la fin de chaque
+   intégration continue réussie sur `main`, produit **trois fichiers** et les
+   publie dans la release **`paquets`** (refaite à chaque fois) ainsi qu'en
+   artefacts de l'exécution :
    - `diagweb_<version>_amd64.deb` — PC sous Ubuntu 24.04+ ou Debian 13+ ;
    - `diagweb_<version>_arm64.deb` — Raspberry Pi OS 64 bits (Debian 13
-     « trixie », le système par défaut des Raspberry Pi).
+     « trixie », le système par défaut des Raspberry Pi) ;
+   - `diagweb_<version>_page-autonome.html` — la page de simulation, la même
+     que celle publiée en Artifact et sur Pages.
+
+   Workflow **séparé** de `ci.yml` à dessein : l'intégration continue annule
+   l'exécution précédente à chaque poussée (`cancel-in-progress`), ce qui
+   tuerait à tous les coups la construction arm64 sous émulation. Ici les
+   exécutions font la queue.
 
    Sur la machine cible, un clone du dépôt suffit :
    `sudo bash tools/install.sh` (dépendances, construction, installation,
@@ -213,6 +222,8 @@ docs/           PROJET.md, SPECS.md, PROTOCOLES.md, SIMULATEUR.md, INSTALL.md
   post-create.sh  ce qui dépend du dépôt (syntaxe, compilation du serveur)
   post-attach.sh  démarre le serveur de diagnostic + la surveillance de main
 .github/workflows/ci.yml  intégration continue (push sur main, PR, claude/**)
+.github/workflows/paquets.yml  livrables : page autonome + .deb amd64 et arm64,
+                publiés en release « paquets » et en artefacts (après une CI verte)
 ```
 
 Espace de noms JS global : `window.DW`. Scripts en IIFE, pas de modules ES
