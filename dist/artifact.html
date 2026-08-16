@@ -1207,7 +1207,7 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
     <div class="topIcons">
       <button id="pauseAllBtn" class="iconbtn pausebtn" type="button" aria-label="Figer ou reprendre tout l’onglet" title="Figer d’un coup tout l’onglet actif : les courbes ET les valeurs numériques s’arrêtent sur l’instant courant">⏸</button>
       <button id="stopBtn" class="iconbtn pausebtn" type="button" aria-label="Arrêter ou relancer l’acquisition" title="Arrêter l’acquisition : plus aucun échantillon n’est enregistré et l’horloge se fige. L’historique déjà acquis reste consultable et mesurable.">⏹</button>
-      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">ffe3b1d · #171</span>
+      <span id="buildTag" class="build-tag" title="Diagweb — version : commit court · n° de commit dans la branche">ac2228a · #173</span>
       <button id="menuBtn" class="iconbtn" type="button" title="Menu général : thème, aide, à propos (fonctions indépendantes des onglets)" aria-haspopup="true">☰</button>
       <div id="menuPanel" class="menu-panel hide" role="menu">
         <button id="themeBtn" type="button" title="Alterner entre le thème clair et le thème sombre">◐ Basculer le thème</button>
@@ -4266,7 +4266,14 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
           () => this.app.removeChart(this));
       });
 
-      this._escHandler = (e) => { if (e.key === 'Escape' && this.fullscreen) this.setFullscreen(false); };
+      // Une fenêtre ouverte prend Escape pour elle (voir app.js) : sans cette
+      // garde, fermer une fenêtre depuis un graphique en plein écran ferait
+      // les deux d'un coup.
+      this._escHandler = (e) => {
+        if (e.key !== 'Escape' || !this.fullscreen) return;
+        if (document.querySelector('#modalRoot .m-close')) return;
+        this.setFullscreen(false);
+      };
       document.addEventListener('keydown', this._escHandler);
 
       this.bindCanvasGestures();
@@ -10957,6 +10964,12 @@ body.topbar-off .topbar { transform: translateY(-110%); opacity: 0; pointer-even
 
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
+      // Une fenêtre ouverte se ferme d'abord, et elle seule : Escape ferme ce
+      // qui est au-dessus, comme partout ailleurs. On passe par son bouton ✕
+      // plutôt que par un vidage direct, pour que le rangement propre à chaque
+      // fenêtre ait lieu.
+      const fermer = $('modalRoot').querySelector('.m-close');
+      if (fermer) { fermer.click(); return; }
       for (const tab of state.tabs) {
         for (const t of tab.tables) if (t.fullscreen) setTableFullscreen(t, false);
       }
