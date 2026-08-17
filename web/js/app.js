@@ -1754,6 +1754,33 @@
   // Elle est en format v3 : le tableau à gauche, les deux graphiques empilés à
   // sa droite. C'est la disposition qu'on ne pouvait pas obtenir avant, et
   // c'est celle qu'on veut montrer d'entrée.
+  /**
+   * Disposition de démonstration, complétée d'un tableau des LIENS RÉSEAU
+   * configurés — un point par lien, le premier de chacun.
+   *
+   * Construite au moment de s'en servir, et non écrite en dur : les liens
+   * livrés par défaut dépendent du mode (simulation : un lien par protocole ;
+   * contrôleur : ce qui y est réellement déclaré). Une liste figée montrerait
+   * sur un contrôleur des points qui n'existent pas, et sur la page de
+   * simulation elle raterait les liens que l'utilisateur vient d'ajouter.
+   */
+  function demoLayout() {
+    const cfg = (DW.protocols && DW.protocols.config) || { links: [] };
+    const points = [];
+    for (const l of cfg.links || []) {
+      const p = (l.points || [])[0];
+      if (p) points.push('@' + l.id + '.' + p.id);
+    }
+    if (!points.length) return DEMO;
+    const dispo = JSON.parse(JSON.stringify(DEMO));
+    dispo.tables.push({
+      name: 'Liens réseau — un point par protocole',
+      x: 0, y: 18, w: 12, h: Math.min(14, points.length + 2),
+      entries: points,
+    });
+    return dispo;
+  }
+
   const DEMO = {
     version: 3,
     tables: [{
@@ -2888,7 +2915,7 @@
     });
 
     $('demoBtn').addEventListener('click', () => {
-      applyConfigToActive(DEMO);
+      applyConfigToActive(demoLayout());
       toast('Disposition de démonstration chargée dans cet onglet.');
     });
 
@@ -2980,7 +3007,7 @@
       const auto = DW.store.getAutoload();
       const saved = auto ? DW.store.get(auto) : null;
       if (saved) createTab(saved.name, saved.data);
-      else createTab('Démo', DEMO);
+      else createTab('Démo', demoLayout());
     }
     refreshTargets();
     updateEmptyState();

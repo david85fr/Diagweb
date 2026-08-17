@@ -18,6 +18,21 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+/**
+ * Adresse d'écoute des équipements simulés.
+ *
+ * 127.0.0.1 par défaut : un banc d'essai n'a rien à faire sur le réseau, et
+ * les tests ne demandent que la boucle locale. `DIAGWEB_BENCH_BIND=0.0.0.0`
+ * (tools/bench.mjs --ouvert) l'ouvre délibérément, pour brancher un client
+ * Modbus ou OPC UA depuis une autre machine.
+ *
+ * Une FONCTION, et non une constante : les modules importés sont évalués avant
+ * le corps de celui qui les importe, si bien qu'une constante aurait figé la
+ * valeur avant que le banc n'ait pu poser la variable d'environnement.
+ */
+export const bindAddr = () => process.env.DIAGWEB_BENCH_BIND || '127.0.0.1';
+
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // --------------------------------------------------------- équipements simulés
@@ -85,7 +100,7 @@ export function startModbusSlave(port = 0) {
     // ne se règle jamais et l'appelant meurt sur une trace brute. Les tests ne
     // le voyaient pas (port 0, jamais occupé) ; le banc utilise des ports fixes.
     server.once('error', rej);
-    server.listen(port, '127.0.0.1', () => res({ server, port: server.address().port }));
+    server.listen(port, bindAddr(), () => res({ server, port: server.address().port }));
   });
 }
 
@@ -192,7 +207,7 @@ export function startIec104Station(port = 0) {
     // ne se règle jamais et l'appelant meurt sur une trace brute. Les tests ne
     // le voyaient pas (port 0, jamais occupé) ; le banc utilise des ports fixes.
     server.once('error', rej);
-    server.listen(port, '127.0.0.1', () => res({ server, port: server.address().port }));
+    server.listen(port, bindAddr(), () => res({ server, port: server.address().port }));
   });
 }
 
@@ -311,7 +326,7 @@ export function startSnmpAgent(port = 0) {
   });
   return new Promise((res, rej) => {
     sock.once('error', rej);                      // même raison que ci-dessus
-    sock.bind(port, '127.0.0.1', () => res({ sock, port: sock.address().port }));
+    sock.bind(port, bindAddr(), () => res({ sock, port: sock.address().port }));
   });
 }
 
@@ -346,7 +361,7 @@ export async function startSnmpd(port = 0) {
   if (!port) port = await freeUdpPort();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'diagweb-snmpd-'));
   fs.writeFileSync(path.join(dir, 'snmpd.conf'),
-    'rocommunity public 127.0.0.1\n' +
+    'rocommunity public default\n' +
     `createUser ${SNMPD.user} SHA "${SNMPD.auth}" AES "${SNMPD.priv}"\n` +
     `rouser ${SNMPD.user} authPriv\n`);
   // -f : reste au premier plan, pour que la fermeture du test l'emporte avec
@@ -354,7 +369,7 @@ export async function startSnmpd(port = 0) {
   // d'état va dans le dossier temporaire, jamais dans /var.
   const proc = spawn(bin, ['-f', '-C', '-c', path.join(dir, 'snmpd.conf'),
                            '-Lf', path.join(dir, 'snmpd.log'), '-r',
-                           `udp:127.0.0.1:${port}`],
+                           `udp:${bindAddr()}:${port}`],
                      { stdio: ['ignore', 'ignore', 'ignore'],
                        env: { ...process.env,
                               SNMP_PERSISTENT_FILE: path.join(dir, 'persist.conf') } });

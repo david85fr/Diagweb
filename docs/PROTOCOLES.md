@@ -857,8 +857,23 @@ lien dit clairement que les valeurs ne viennent pas du terrain.
 
 ```bash
 node tools/bench.mjs          # monte le banc, reste au premier plan
+node tools/bench.mjs --ouvert # … et ouvre les ports au réseau (clients tiers)
 node tools/bench.mjs --stop   # retire les liens du banc
 ```
+
+**Brancher un client tiers.** Par défaut, tout écoute sur `127.0.0.1` : le banc
+n'a rien à faire sur le réseau. `--ouvert` (ou `--bind <adresse>`) fait écouter
+les six équipements sur toutes les interfaces, et le banc affiche alors
+l'adresse de la machine avec, pour chaque protocole, de quoi s'y connecter —
+`opc.tcp://<ip>:14840` pour un client OPC UA, `<ip>:15020` unité 1 pour un
+client Modbus, la communauté `public` pour un navigateur MIB. C'est un choix
+explicite : **ces équipements n'ont aucune authentification** et publient des
+valeurs inventées ; à ne faire que sur un réseau de confiance. En Codespace, le
+port doit en plus être passé en « Public ».
+
+La variable qui porte cette décision est `DIAGWEB_BENCH_BIND` : `tools/bench.mjs`
+la pose, et `tests/devices.mjs`, `tests/mms_ied.mjs` comme le serveur OPC UA de
+test la lisent. Non renseignée, chacun reste sur la boucle locale.
 
 Deux choses très différentes, à ne pas confondre :
 
@@ -965,9 +980,14 @@ Deux règles, mêmes que pour le pré-remplissage :
   même vidée volontairement. Côté serveur, l'option `--sim-links` (posée par
   `tools/share.sh --server`) ; côté navigateur hors serveur, la même
   configuration sert de point de départ tant que rien n'est enregistré.
-- **Seulement sur un poste de développement** — sur un contrôleur en
-  exploitation, livrer cinq liens vers `127.0.0.1` donnerait cinq liens en
-  défaut permanent.
+- **Selon ce qui peut répondre** — page en **simulation** (aucun serveur de
+  diagnostic) : **un lien par protocole**, tous types confondus, chacun avec au
+  moins un point numérique dont la valeur bouge ; rien ne peut y être en défaut,
+  la simulation fabrique les valeurs, et c'est ce que rend « ☰ → Tout remettre
+  par défaut ». Page **servie par un poste de développement** : les seuls liens
+  dont le serveur de test existe pour de bon. Page servie par un **contrôleur en
+  exploitation** : aucun — livrer cinq liens vers `127.0.0.1` donnerait cinq
+  liens en défaut permanent.
 
 Le préfixe `banc-` est celui de `tools/bench.mjs`, délibérément : le banc
 **remplace** ces liens par les siens, plus riches, au lieu de les doubler. Seul

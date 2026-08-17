@@ -1,7 +1,14 @@
 /* Diagweb — banc d'essai : équipements simulés, maintenus en vie.
  *
  *   node tools/bench.mjs [http://localhost:8080]   monte le banc et reste
+ *   node tools/bench.mjs --ouvert                  … et OUVRE les ports au réseau
+ *   node tools/bench.mjs --bind 192.168.1.10       … sur cette adresse seulement
  *   node tools/bench.mjs --stop                    retire les liens du banc
+ *
+ * « --ouvert » sert à brancher un client TIERS (client Modbus, client OPC UA,
+ * navigateur MIB) sur ces équipements simulés, depuis une autre machine. Par
+ * défaut tout reste sur 127.0.0.1 : ces serveurs n'ont aucune authentification
+ * et publient des valeurs inventées.
  *
  * Ce que ça change par rapport à --sim-protocols
  * ---------------------------------------------
@@ -29,6 +36,7 @@
  */
 import net from 'node:net';
 import fs from 'node:fs';
+import os from 'node:os';
 import {
   startModbusSlave, startIec104Station, startSnmpAgent, startSnmpd,
   startMmsIed, startOpcUaServer, SNMPD,
@@ -38,6 +46,23 @@ const args = process.argv.slice(2);
 const STOP = args.includes('--stop');
 const BASE = args.find((a) => a.startsWith('http')) || 'http://localhost:8080';
 const PREFIXE = 'banc-';
+
+/*
+ * Adresse d'écoute des équipements simulés.
+ *
+ * 127.0.0.1 par défaut : un banc d'essai n'a rien à faire sur le réseau. Avec
+ * `--ouvert` (ou `--bind <ip>`), il écoute sur toutes les interfaces et devient
+ * joignable par un client tiers — un client Modbus, un client OPC UA, un
+ * navigateur MIB — depuis une autre machine. C'est un choix explicite : ces
+ * équipements n'ont aucune authentification et publient des valeurs inventées.
+ */
+const iBind = args.indexOf('--bind');
+const BIND = iBind >= 0 && args[iBind + 1] ? args[iBind + 1]
+           : args.includes('--ouvert') ? '0.0.0.0' : '127.0.0.1';
+process.env.DIAGWEB_BENCH_BIND = BIND;
+// Les liens posés dans Diagweb visent la machine du banc : le serveur de
+// diagnostic tourne à côté, la boucle locale reste le bon chemin pour lui.
+const HOTE_LIEN = '127.0.0.1';
 
 // Ports fixes du banc. Décalés des ports normalisés, qui sont privilégiés.
 const PORTS = {
@@ -61,7 +86,7 @@ async function api(chemin, options) {
 /** Quelqu'un accepte-t-il vraiment une connexion sur ce port ? */
 function portOuvert(port) {
   return new Promise((res) => {
-    const s = net.connect({ host: '127.0.0.1', port });
+    const s = net.connect({ host: HOTE_LIEN, port });
     const fini = (v) => { s.destroy(); res(v); };
     s.setTimeout(1200);
     s.on('connect', () => fini(true));
@@ -174,8 +199,31 @@ const equipements = [
 ];
 for (const [nom, port, tr, vivant, raison] of equipements) {
   console.log(vivant
-    ? `   ✓ ${nom.padEnd(32)} ${tr} 127.0.0.1:${port}`
+    ? `   ✓ ${nom.padEnd(32)} ${tr} ${BIND}:${port}`
     : `   ✗ ${nom.padEnd(32)} lien laissé désactivé — ${raison}`);
+}
+
+// Ouvert au réseau : dire avec quoi s'y brancher, et depuis où. Sans cela,
+// l'utilisateur devrait deviner l'adresse de la machine et le port décalé.
+if (BIND === '0.0.0.0' || BIND === '::') {
+  const adrs = [];
+  for (const [nom, ifs] of Object.entries(os.networkInterfaces())) {
+    for (const a of ifs || []) {
+      if (a.family === 'IPv4' && !a.internal) adrs.push(`${a.address} (${nom})`);
+    }
+  }
+  console.log('');
+  console.log('   Ports OUVERTS sur toutes les interfaces — clients tiers bienvenus :');
+  console.log(`   adresse(s) de cette machine : ${adrs.join(' · ') || 'aucune trouvée'}`);
+  const ip = (adrs[0] || '<adresse>').split(' ')[0];
+  console.log(`     Modbus TCP    : ${ip}:${PORTS.modbus} (unité 1 ; registres 0-99, bobines 0-63)`);
+  console.log(`     IEC-104       : ${ip}:${PORTS.iec104} (ASDU 1 ; IOA 100 mesure, 200 état)`);
+  console.log(`     SNMP v2c      : ${ip}:${PORTS.snmp}/udp (communauté « public »)`);
+  console.log(`     SNMP v3       : ${ip}:${PORTS.snmpd}/udp (utilisateur « ${SNMPD.user} », authPriv)`);
+  console.log(`     IEC 61850 MMS : ${ip}:${PORTS.mms}`);
+  console.log(`     OPC UA        : opc.tcp://${ip}:${PORTS.opcua} (anonyme, ns=1;s=pression)`);
+  console.log('   En Codespace, passer le port en « Public » pour y accéder de l’extérieur.');
+  console.log('   Ces équipements n’ont AUCUNE authentification : réseau de confiance seulement.');
 }
 
 /* ------------------------------------------------------------------ liens */
@@ -183,7 +231,7 @@ for (const [nom, port, tr, vivant, raison] of equipements) {
 const liens = [
   {
     id: PREFIXE + 'modbus', label: 'Banc — Modbus TCP', protocol: 'modbus-tcp', enabled: true,
-    params: { host: '127.0.0.1', port: modbus.port, unitId: 1, timeoutMs: 800, groupMax: 32 },
+    params: { host: HOTE_LIEN, port: modbus.port, unitId: 1, timeoutMs: 800, groupMax: 32 },
     points: [
       { id: 'reg0', label: 'Registre 0', unit: '', kind: 'word', periodMs: 200,
         params: { fn: 3, reg: 0, type: 'uint16', gain: 1, offset: 0, bit: -1 } },
@@ -201,7 +249,7 @@ const liens = [
   },
   {
     id: PREFIXE + 'iec104', label: 'Banc — IEC 60870-5-104', protocol: 'iec104', enabled: true,
-    params: { host: '127.0.0.1', port: iec.port, asdu: 1, originator: 0, gi: true,
+    params: { host: HOTE_LIEN, port: iec.port, asdu: 1, originator: 0, gi: true,
               giPeriodS: 0, k: 12, w: 8, t1: 15, t2: 10, t3: 20 },
     points: [
       { id: 'tension', label: 'Mesure flottante', unit: 'kV', kind: 'float', periodMs: 200,
@@ -219,7 +267,7 @@ const liens = [
   },
   {
     id: PREFIXE + 'snmp', label: 'Banc — SNMP v2c', protocol: 'snmp', enabled: true,
-    params: { host: '127.0.0.1', port: snmp.port, version: 'v2c', community: 'public',
+    params: { host: HOTE_LIEN, port: snmp.port, version: 'v2c', community: 'public',
               timeoutMs: 1500, maxVars: 16 },
     points: [
       { id: 'uptime', label: 'Temps depuis démarrage', unit: 's', kind: 'float', periodMs: 500,
@@ -235,7 +283,7 @@ const liens = [
   {
     id: PREFIXE + 'snmpv3', label: 'Banc — SNMP v3 authPriv (agent réel)', protocol: 'snmp',
     enabled: !snmpd.absent,
-    params: { host: '127.0.0.1', port: snmpd.port, version: 'v3', user: SNMPD.user,
+    params: { host: HOTE_LIEN, port: snmpd.port, version: 'v3', user: SNMPD.user,
               level: 'authPriv', authProto: 'SHA', privProto: 'AES',
               secretRef: SNMPD.ref, timeoutMs: 2500, maxVars: 8 },
     points: [
@@ -246,7 +294,7 @@ const liens = [
   {
     id: PREFIXE + 'iec61850', label: 'Banc — IEC 61850 (MMS)', protocol: 'iec61850',
     enabled: iedVivant,
-    params: { host: '127.0.0.1', port: ied.port, mode: 'mms', iedName: 'IED1', timeoutMs: 3000 },
+    params: { host: HOTE_LIEN, port: ied.port, mode: 'mms', iedName: 'IED1', timeoutMs: 3000 },
     points: [
       { id: 'courant', label: 'Courant phase A', unit: 'A', kind: 'float', periodMs: 300,
         params: { ref: 'LD0/MMXU1.A.phsA.cVal.mag.f', fc: 'MX', gain: 1, offset: 0 } },
@@ -256,7 +304,7 @@ const liens = [
   },
   {
     id: PREFIXE + 'opcua', label: 'Banc — OPC UA', protocol: 'opcua', enabled: uaVivant,
-    params: { endpoint: 'opc.tcp://127.0.0.1:' + ua.port, securityPolicy: 'None',
+    params: { endpoint: 'opc.tcp://' + HOTE_LIEN + ':' + ua.port, securityPolicy: 'None',
               securityMode: 'None', auth: 'anonymous', mode: 'subscribe',
               publishMs: 200, sessionTimeoutS: 60 },
     points: [

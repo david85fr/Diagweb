@@ -703,6 +703,72 @@
   ];
 
   /**
+   * Les protocoles sans serveur de test : bus série et bus CAN. Aucun banc ne
+   * peut les servir sur une socket TCP, mais la SIMULATION, elle, les rend
+   * comme les autres — chaque point y prend une valeur qui bouge.
+   *
+   * Ils complètent la liste ci-dessus pour que la configuration par défaut
+   * montre **chaque type de lien** au moins une fois : c'est ainsi qu'on
+   * découvre ce que l'outil sait lire sans avoir à déclarer quoi que ce soit.
+   * Les adresses sont celles qu'on rencontre pour de vrai — PGN 61444 (EEC1,
+   * régime moteur), PDO 0x181 d'un nœud CANopen — plutôt que des nombres
+   * arbitraires.
+   */
+  const LIENS_SIMULES_SUP = [
+    { id: 'sim-modbus-rtu', label: 'Simulation — Modbus RTU (série)', protocol: 'modbus-rtu',
+      params: { device: '/dev/ttyUSB0', baud: 19200, parity: 'even', unitId: 1 },
+      points: [
+        { id: 'temperature', label: 'Température four', unit: '°C', kind: 'float',
+          periodMs: 500, params: { fn: 3, reg: 100, type: 'int16', gain: 0.1 } },
+      ] },
+    { id: 'sim-can', label: 'Simulation — bus CAN (trames brutes)', protocol: 'can-raw',
+      params: { iface: 'can0' },
+      points: [
+        { id: 'regime', label: 'Régime moteur', unit: 'tr/min', kind: 'float',
+          periodMs: 200, params: { canId: '0x100', startBit: 0, bitLen: 16,
+                                   order: 'intel', gain: 0.25 } },
+      ] },
+    { id: 'sim-j1939', label: 'Simulation — J1939 (SPN)', protocol: 'j1939',
+      params: { iface: 'can0' },
+      points: [
+        { id: 'couple', label: 'Couple moteur demandé', unit: '%', kind: 'float',
+          periodMs: 200, params: { pgn: 61444, startBit: 16, bitLen: 8,
+                                   order: 'intel', gain: 1, offset: -125 } },
+      ] },
+    { id: 'sim-canopen', label: 'Simulation — CANopen (TPDO)', protocol: 'canopen',
+      params: { iface: 'can0', nodeId: 1 },
+      points: [
+        { id: 'position', label: 'Position codeur', unit: 'mm', kind: 'float',
+          periodMs: 200, params: { mode: 'tpdo', cobId: '0x181', startBit: 0,
+                                   bitLen: 16, order: 'intel', gain: 0.01 } },
+      ] },
+  ];
+
+  /**
+   * Configuration livrée quand la page tourne en SIMULATION : un lien par
+   * protocole, tous types confondus, chacun avec au moins un point numérique
+   * dont la valeur bouge. Rien ne peut y être « en défaut » — il n'y a pas
+   * d'équipement derrière, la simulation fabrique les valeurs.
+   *
+   * C'est ce que rend « tout remettre par défaut » : l'outil se présente
+   * complet, chaque protocole avec un exemple qui vit, au lieu d'une liste de
+   * liens vide qui ne dit rien de ce qu'il sait faire.
+   */
+  function simulatedLinks() {
+    const tous = LIENS_LOCAUX.concat(LIENS_SIMULES_SUP);
+    return {
+      version: 1,
+      links: tous.map((l) => {
+        const pre = BANC_LOCAL[l.protocol];
+        return Object.assign({}, l, {
+          enabled: true,
+          params: Object.assign({}, l.params || {}, pre ? pre.params : {}),
+        });
+      }),
+    };
+  }
+
+  /**
    * Cette configuration, complétée des paramètres de connexion du serveur de
    * test correspondant. Rendue seulement sur un poste de développement : sur
    * un contrôleur en exploitation, livrer cinq liens vers 127.0.0.1 donnerait
@@ -856,12 +922,18 @@
         const raw = typeof localStorage === 'undefined' ? null : localStorage.getItem(STORE_KEY);
         if (raw) this.config = normalize(JSON.parse(raw));
       } catch (e) { /* stockage indisponible */ }
-      // Rien de configuré, et une machine de développement : on part avec les
-      // liens vers les serveurs de test locaux plutôt qu'avec une liste vide.
+      // Rien de configuré : on part avec des liens plutôt qu'avec une liste
+      // vide, qui ne dit rien de ce que l'outil sait lire. Deux jeux, selon ce
+      // qui peut réellement répondre :
+      //   - page en SIMULATION (aucun serveur de diagnostic) : un lien par
+      //     protocole, chacun avec un point qui bouge — rien ne peut être en
+      //     défaut, la simulation fabrique les valeurs ;
+      //   - poste de développement servi par le serveur : les seuls liens dont
+      //     le serveur de test existe pour de bon.
       // Ce n'est PAS enregistré tant que rien n'est modifié — une valeur par
       // défaut ne doit pas devenir une configuration à laquelle on tient sans
       // l'avoir voulu.
-      if (!this.config.links.length) this.config = normalize(localLinks());
+      if (!this.config.links.length) this.config = normalize(simulatedLinks());
       return this.config;
     },
 

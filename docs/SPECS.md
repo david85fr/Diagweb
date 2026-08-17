@@ -556,6 +556,15 @@ Ne sont touchés ni les **forçages en cours**, ni les **fichiers déjà
 capturés**, ni les **journaux déjà enregistrés** : ce sont des états
 d'exploitation, pas de la configuration, et chacun se défait là où il se fait.
 
+**Ce que « par défaut » contient.** En simulation, la configuration d'origine
+n'est pas vide : elle porte **un lien réseau par protocole**, chacun avec au
+moins un point numérique dont la valeur bouge, et la disposition de
+démonstration en montre un tableau — un point par lien. C'est ce qui fait voir
+d'entrée ce que l'outil sait lire, sans avoir à déclarer quoi que ce soit. Rien
+n'y peut être « en défaut » : la simulation fabrique les valeurs (voir
+`docs/PROTOCOLES.md`, § « Configuration livrée »). Sur un contrôleur en
+exploitation, à l'inverse, aucun lien n'est livré.
+
 Le contrôleur est traité **avant** le navigateur : un appel refusé laisse la
 page debout pour le dire, au lieu de recharger sur un demi-effacement
 silencieux. Confirmation en deux temps (le premier appui arme le bouton) ;

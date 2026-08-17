@@ -64,9 +64,39 @@ await p1.goto(TARGET);
 await p1.waitForSelector(PANE + '.chart-card', { timeout: 20000 });
 await p1.waitForTimeout(1200);
 
-check('disposition de démonstration chargée',
+// La démonstration porte deux graphiques, le tableau des variables internes
+// (6 lignes) ET un tableau des liens réseau — un point par lien configuré. En
+// simulation, les liens livrés couvrent chaque protocole : c'est ce qui montre
+// d'entrée ce que l'outil sait lire.
+const liens = await p1.evaluate(() => (DW.protocols.config.links || []).length);
+const protosLivres = await p1.evaluate(() =>
+  new Set((DW.protocols.config.links || []).map((l) => l.protocol)).size);
+const lignesTable = (i) => p1.locator(PANE + '.table-card').nth(i).locator('.vrow').count();
+check('disposition de démonstration chargée (variables internes + liens réseau)',
   await p1.locator(PANE + '.chart-card').count() === 2 &&
-  await p1.locator(PANE + '.vrow').count() === 6);
+  await lignesTable(0) === 6 && await lignesTable(1) === liens && liens >= 9,
+  '6 variables internes · ' + liens + ' points réseau sur ' + protosLivres + ' protocoles');
+
+// Chaque protocole livré doit avoir au moins un point NUMÉRIQUE qui bouge :
+// une configuration par défaut qui n'afficherait que des tirets ne montrerait
+// rien de ce que l'outil sait faire.
+await p1.waitForTimeout(600);
+const bougent = await p1.evaluate(async () => {
+  const pts = (DW.protocols.config.links || [])
+    .map((l) => (l.points || [])[0] && '@' + l.id + '.' + l.points[0].id).filter(Boolean);
+  const t0 = pts.map((a) => DW.source.latest(a));
+  await new Promise((r) => setTimeout(r, 700));
+  const t1 = pts.map((a) => DW.source.latest(a));
+  return pts.map((a, i) => ({
+    addr: a,
+    numerique: t1[i] != null && typeof t1[i].v === 'number' && isFinite(t1[i].v),
+    bouge: !!(t0[i] && t1[i] && t1[i].t > t0[i].t),
+  }));
+});
+check('chaque lien livré a un point numérique dont la valeur avance',
+  bougent.length >= 9 && bougent.every((b) => b.numerique && b.bouge),
+  bougent.filter((b) => !(b.numerique && b.bouge)).map((b) => b.addr).join(', ') ||
+  bougent.length + ' points, tous numériques et alimentés');
 
 // Barre d'état : elle doit dire la NATURE des données, jamais laisser croire
 // que tout est simulé quand des liens réseau acquièrent réellement — ni
@@ -84,7 +114,7 @@ await p1.fill('#searchInput', 'MB520');
 await p1.selectOption('#targetSel', { index: 0 });
 await p1.click('#addBtn');
 await p1.waitForTimeout(300);
-check('ajout au tableau numérique', await p1.locator(PANE + '.vrow').count() === 7);
+check('ajout au tableau numérique', await lignesTable(0) === 7);
 
 // Une adresse longue ne doit jamais passer PAR-DESSUS sa valeur : c'est la
 // valeur qu'on vient lire. Le défaut est resté invisible longtemps —
@@ -135,7 +165,7 @@ const tab2One = await p1.locator(PANE + '.vrow').count() === 1;
 await p1.locator('.tab').first().click();
 await p1.waitForTimeout(300);
 check('onglets isolés (nouvel onglet vide, retour intact)',
-  tab2Empty && tab2One && await p1.locator(PANE + '.vrow').count() === 7);
+  tab2Empty && tab2One && await lignesTable(0) === 7);
 
 // Rangement de la barre : tout ce qui ne dépend pas du contenu affiché vit
 // dans le menu général ☰ (journal, configurations) ; « Figer » est dans la
@@ -216,7 +246,7 @@ await p1.reload();
 await p1.waitForTimeout(1500);
 check('session restaurée au rechargement (onglets + journal)',
   await p1.locator('.tab').count() === 2 &&
-  await p1.locator(PANE + '.vrow').count() === 7 &&
+  await lignesTable(0) === 7 &&
   await p1.locator('.tab .recdot').count() === 1);
 
 // Mosaïque repliée sur téléphone : une seule colonne quoi qu'en dise la

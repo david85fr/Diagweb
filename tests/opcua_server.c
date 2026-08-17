@@ -14,8 +14,9 @@
 #include <open62541/plugin/log_stdout.h>
 
 #include <signal.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 static volatile UA_Boolean tourne = true;
 static void arreter(int sig) { (void)sig; tourne = false; }
@@ -56,7 +57,7 @@ int main(int argc, char **argv) {
     UA_ServerConfig *config = UA_Server_getConfig(server);
     UA_ServerConfig_setMinimal(config, (UA_UInt16)port, NULL);
 
-    /* Écoute confinée à la boucle locale.
+    /* Écoute confinée à la boucle locale, sauf demande explicite.
      *
      * setMinimal seul laisse serverUrls vide, et open62541 se rabat alors sur
      * « opc.tcp://:<port> » — hôte vide, donc 0.0.0.0 et ::. Le message
@@ -69,8 +70,21 @@ int main(int argc, char **argv) {
      * L'allocation passe par UA_Array_new, et non par un pointeur vers la pile :
      * UA_Server_delete libère ce tableau, et lui donner une adresse de pile
      * échangerait une faille contre un plantage à l'arrêt. */
-    char url_texte[64];
-    snprintf(url_texte, sizeof url_texte, "opc.tcp://127.0.0.1:%d", port);
+    /* DIAGWEB_BENCH_BIND ouvre l'écoute au réseau — c'est « tools/bench.mjs
+     * --ouvert » qui la pose, pour brancher un client OPC UA tiers depuis une
+     * autre machine. Hôte vide dans l'URL = toutes les interfaces, la forme
+     * qu'attend open62541. Sans cette variable, rien ne change : boucle locale. */
+    const char *bind_addr = getenv("DIAGWEB_BENCH_BIND");
+    const int ouvert = bind_addr && (strcmp(bind_addr, "0.0.0.0") == 0 ||
+                                     strcmp(bind_addr, "::") == 0);
+    char url_texte[128];
+    if (ouvert) {
+        snprintf(url_texte, sizeof url_texte, "opc.tcp://:%d", port);
+    } else if (bind_addr && *bind_addr) {
+        snprintf(url_texte, sizeof url_texte, "opc.tcp://%s:%d", bind_addr, port);
+    } else {
+        snprintf(url_texte, sizeof url_texte, "opc.tcp://127.0.0.1:%d", port);
+    }
     UA_Array_delete(config->serverUrls, config->serverUrlsSize,
                     &UA_TYPES[UA_TYPES_STRING]);
     config->serverUrls = (UA_String *)UA_Array_new(1, &UA_TYPES[UA_TYPES_STRING]);

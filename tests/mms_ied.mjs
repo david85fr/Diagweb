@@ -329,6 +329,9 @@ const server = net.createServer((sock) => {
   sock.on('error', () => {});
 });
 
-server.listen(port, '127.0.0.1', () => {
-  process.stderr.write(`IED MMS simulé sur 127.0.0.1:${server.address().port}\n`);
+// Même règle que les autres équipements simulés (tests/devices.mjs) : boucle
+// locale par défaut, ouverture délibérée par DIAGWEB_BENCH_BIND.
+const BIND = process.env.DIAGWEB_BENCH_BIND || '127.0.0.1';
+server.listen(port, BIND, () => {
+  process.stderr.write(`IED MMS simulé sur ${BIND}:${server.address().port}\n`);
 });
